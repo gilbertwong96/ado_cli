@@ -27,6 +27,14 @@ defmodule AdoCli.Client do
   end
 
   @doc """
+  Makes a GET request and returns raw binary body (for file downloads).
+  Always uses Finch — az devops invoke cannot return raw binary.
+  """
+  def get_raw(path, params \\ %{}) do
+    finch_raw(:get, path, nil, params)
+  end
+
+  @doc """
   Makes a list (paginated) GET request to the Azure DevOps API.
   """
   def list(path, params \\ %{}) do
@@ -322,6 +330,38 @@ defmodule AdoCli.Client do
 
       {:error, reason} ->
         {:error, reason}
+    end
+  end
+
+  defp finch_raw(method, path, _body, params) do
+    base = finch_base_url()
+    query = URI.encode_query(Map.merge(params, %{"api-version" => @api_version}))
+    url = "#{base}/#{String.trim_leading(path, "/")}?#{query}"
+
+    with {:ok, org, auth_headers} <- AdoCli.Auth.resolve_auth() do
+      full_url = inject_org_url(url, org)
+
+      case Finch.request(Finch.build(method, full_url, auth_headers), AdoCli.Finch) do
+        {:ok, %Finch.Response{status: status, body: resp_body}} when status in 200..299 ->
+          {:ok, resp_body}
+
+        {:ok, %Finch.Response{status: status}} ->
+          {:error, %{status: status}}
+
+        {:error, reason} ->
+          {:error, reason}
+      end
+    end
+  end
+
+  # Inject org into API URL for Finch fallback: https://dev.azure.com/_apis/... → https://{org}.visualstudio.com/_apis/...
+  defp inject_org_url(url, org) do
+    server = System.get_env("ADO_SERVER")
+
+    if server do
+      String.replace(url, ~r{^(https?://[^/]+)/}, "\\1/#{org}/")
+    else
+      String.replace(url, ~r{^https?://[^/]+}, "https://#{org}.visualstudio.com")
     end
   end
 
