@@ -75,14 +75,14 @@ defmodule AdoCli.CLI do
   def main(args \\ nil) do
     start_finch()
 
-    raw_args = args || System.argv()
-
-    # In Burrito binary, System.argv() includes BEAM args.
-    # Filter to only CLI args (after --, or all if no --)
+    # Burrito passes CLI args via -extra. Use :init.get_plain_arguments().
+    # In escript mode, System.argv() works directly.
     cli_args =
-      case Enum.split_while(raw_args, &(&1 != "--")) do
-        {_beam, ["--" | rest]} -> rest
-        {all, []} -> all
+      if args do
+        args
+      else
+        plain = :init.get_plain_arguments() |> Enum.map(&List.to_string/1)
+        if plain != [], do: plain, else: System.argv()
       end
 
     run(cli_args)
