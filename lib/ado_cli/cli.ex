@@ -75,29 +75,23 @@ defmodule AdoCli.CLI do
   def main(args \\ nil) do
     start_finch()
 
+    # Burrito passes CLI args via ADO_ARGS env var (set by Zig wrapper).
+    # System.argv() in Burrito mode includes BEAM flags; prefer env var.
     cli_args =
-      cond do
-        args != nil and args != [] ->
-          args
-
-        Code.ensure_loaded?(Burrito.Util.Args) ->
-          case Burrito.Util.Args.argv() do
-            [] -> burrito_fallback_args()
-            burrito_args -> burrito_args
-          end
-
-        true ->
-          burrito_fallback_args()
+      case System.get_env("ADO_ARGS") do
+        nil -> args || System.argv()
+        "" -> args || System.argv()
+        str -> String.split(str, " ")
       end
 
     run(cli_args)
   end
 
-  defp burrito_fallback_args do
-    case System.get_env("ADO_ARGS") do
-      nil -> System.argv()
-      "" -> System.argv()
-      str -> String.split(str, " ")
+  # Filter BEAM flags from argv (look for -extra separator)
+  defp clean_args(argv) do
+    case Enum.split_while(argv, &(&1 != "-extra")) do
+      {_beam, ["-extra" | cli]} -> cli
+      {all, []} -> all
     end
   end
 

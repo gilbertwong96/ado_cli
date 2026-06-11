@@ -38,7 +38,7 @@ defmodule AdoCli.MixProject do
       {:cli_mate, "~> 0.10.2"},
       {:burrito,
        github: "gilbertwong96/burrito",
-       ref: "8ba0bdeb1f893dadc204e9c2eaff35cf85710eb6",
+       ref: "8585949cea5cce322ba06e0ecc29635abba24ecc",
        runtime: false},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:ex_dna, "~> 1.5", only: [:dev, :test], runtime: false},
