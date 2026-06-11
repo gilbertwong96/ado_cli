@@ -1,12 +1,19 @@
 defmodule AdoCli.Client do
   @moduledoc """
-  HTTP client for Azure DevOps REST API.
+  HTTP client for Azure DevOps REST API v7.1.
 
-  Delegates to `az devops invoke` which handles MSAL-based auth,
-  tenant discovery, and cookie-based sign-in for all org types
-  including MSA-backed personal orgs (`*.visualstudio.com`).
+  When `az` is available, delegates API calls to `az devops invoke`,
+  which handles MSAL-based authentication, tenant discovery, and
+  cookie-based sign-in flows automatically. Falls back to direct
+  Finch HTTP calls when `az` is not installed.
 
-  Falls back to raw Finch-based HTTP for environments where `az` is unavailable.
+  ## Supported API Areas
+
+    * **Core** — projects, teams
+    * **Git** — repositories, pull requests, branches
+    * **Work Item Tracking** — work items, WIQL queries
+    * **Build** — pipelines, builds
+    * **Release** — releases
   """
 
   @api_version "7.1"
