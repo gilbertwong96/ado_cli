@@ -1,67 +1,82 @@
 ---
-description: Azure DevOps authentication methods (PAT, OAuth, az CLI)
-version: "1.0"
+description: How to authenticate ado_cli — PAT, browser OAuth, az CLI, device code
+version: "0.1.0"
 ---
 
-# Azure DevOps Authentication
+# Authentication
 
-This skill describes the authentication methods supported by `ado_cli`.
+`ado_cli` auto-resolves auth in this priority:
 
-## Priority Order (auto-resolved)
+1. CLI flags (`--org`, `--pat`)
+2. Environment (`ADO_ORG`, `ADO_PAT`)
+3. Azure CLI (`az login` — auto-detected)
+4. Config file (`~/.ado_cli/config.json`)
 
-1. **CLI flags** `--org ORG --pat TOKEN` (per-invocation)
-2. **Environment** `ADO_ORG` + `ADO_PAT` (session-based)
-3. **Azure CLI** `az login` (auto-detected, MSAL-based)
-4. **Config file** `~/.ado_cli/config.json` (persistent, set via `ado_cli login`)
+## Choosing a method
 
-## PAT (Personal Access Token)
-
-Create at: `https://dev.azure.com/{org}/_usersSettings/tokens`
-
-Minimum scopes:
-- **Code** (Read & Write) — for repos, PRs
-- **Work Items** (Read & Write) — for work items
+### PAT (Personal Access Token) — most reliable
 
 ```bash
+# Create at: https://dev.azure.com/{org}/_usersSettings/tokens
+# Scopes: Code (Read & Write) + Work Items (Read & Write)
+
 ado_cli login --method pat --org myorg --pat mytoken
+ado_cli whoami     # verify
 ```
 
-## Browser OAuth (default)
+Works for ALL org types. No browser needed. Use this in CI/CD.
+
+### Browser OAuth — interactive login
 
 ```bash
-ado_cli login --org myorg
+ado_cli login --org myorg    # opens browser, sign in with Microsoft
 ```
 
-Uses ARM-first authentication (`organizations` tenant) then exchanges for
-a DevOps token. For MSA personal orgs, delegates to `az devops invoke`.
+Works for AAD (work/school) orgs. For MSA personal orgs (`*.visualstudio.com`),
+the CLI delegates API calls to `az devops invoke`. Keep `az` installed for MSA orgs.
 
-## Device Code OAuth
+### Azure CLI (az) — zero config
+
+```bash
+az login                     # sign in with Microsoft
+ado_cli --org myorg projects list   # CLI auto-detects az token
+```
+
+No `ado_cli login` needed. Best for MSA-backed personal orgs.
+
+### Device Code — no browser
 
 ```bash
 ado_cli login --method device --org myorg
+# prints a code → enter at https://microsoft.com/devicelogin
 ```
 
-## Azure CLI Token
-
-If `az login` is active, the CLI auto-detects the token:
+### Self-hosted Server
 
 ```bash
-az login
-export ADO_ORG=myorg
-ado_cli projects list  # uses az token
+ado_cli login --method pat --server https://ado.example.com --org DefaultCollection --pat xxx
+# or per-command
+ado_cli --server https://ado.example.com --org Coll --pat xxx projects list
 ```
 
-## Self-hosted Server
+## Checking status
 
 ```bash
-ado_cli login --method pat --server https://ado.example.com --org Coll --pat xxx
-export ADO_SERVER=https://ado.example.com
+ado_cli whoami
+# Shows: organization, auth method, server, config file location, az availability
+```
+
+## Logging out
+
+```bash
+ado_cli logout    # removes ~/.ado_cli/config.json
 ```
 
 ## Troubleshooting
 
-| Error | Fix |
-|-------|-----|
-| "Identity not materialized" | Visit `https://dev.azure.com/{org}` in browser |
-| "personal account not allowed" | Use `az login` + auto-detection or PAT |
-| 401 Unauthorized | Check `ado_cli whoami` — PAT may be expired |
+| Error | Likely cause | Fix |
+|-------|-------------|-----|
+| "Identity not materialized" | First-time access to personal org | Visit `https://dev.azure.com/{org}` in browser once |
+| "personal account not allowed" | OAuth client doesn't support MSA | Use `az login` + auto-detection, or PAT |
+| 401 / 403 | Expired or invalid credential | `ado_cli whoami`, re-login if needed |
+| "not_configured" | No auth provided | Set `ADO_ORG` + `ADO_PAT`, or run `ado_cli login` |
