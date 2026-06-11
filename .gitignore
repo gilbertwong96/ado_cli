@@ -28,6 +28,4 @@ erl_crash.dump
 ado_cli-*.tar
 
 # Ignore the local escript binary
-/ado_cli
-ado
-ado
+/ado
