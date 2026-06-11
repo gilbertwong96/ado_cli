@@ -30,3 +30,4 @@ ado_cli-*.tar
 # Ignore the local escript binary
 /ado
 /ado_cli
+/burrito_out/
