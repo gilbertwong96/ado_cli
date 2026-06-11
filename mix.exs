@@ -75,6 +75,7 @@ defmodule AdoCli.MixProject do
   defp escript_config do
     [
       main_module: AdoCli.CLI,
+      name: "ado",
       app: nil,
       emu_args: "-noshell -elixir ansi_enabled true"
     ]

@@ -8,7 +8,7 @@ defmodule AdoCli.CLI.Whoami do
   @impl true
   def command do
     [
-      name: "ado_cli whoami",
+      name: "ado whoami",
       doc: "Show current authentication status.",
       execute: &run/1
     ]

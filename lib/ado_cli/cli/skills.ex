@@ -17,11 +17,11 @@ defmodule AdoCli.CLI.Skills do
   @impl true
   def command do
     [
-      name: "ado_cli skills",
+      name: "ado skills",
       doc: "Read embedded skill content (list / read) for AI agents.",
       subcommands: [
         list: [
-          name: "ado_cli skills list",
+          name: "ado skills list",
           doc: "List skills, or list files under a skill path (like ls).",
           arguments: [
             path: [type: :string, doc: "Optional: skill name or skill/path", required: false]
@@ -29,7 +29,7 @@ defmodule AdoCli.CLI.Skills do
           execute: &list_skills/1
         ],
         read: [
-          name: "ado_cli skills read",
+          name: "ado skills read",
           doc: "Read a skill's SKILL.md or a file under the skill.",
           arguments: [
             target: [type: :string, doc: "Skill name[/path] or 'skillname path'"]

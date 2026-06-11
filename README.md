@@ -24,7 +24,7 @@ mix escript.build
 Move the escript into your PATH:
 
 ```bash
-cp ado_cli /usr/local/bin/
+cp ado /usr/local/bin/
 ```
 
 Or build standalone binaries with Burrito:
@@ -47,13 +47,13 @@ export ADO_ORG=myorg
 export ADO_PAT=mypersonalaccesstoken
 
 # List projects
-ado_cli projects list
+ado projects list
 
 # Create a work item
-ado_cli workitems create MyProject --type Bug --title "Fix login page"
+ado workitems create MyProject --type Bug --title "Fix login page"
 
 # Open a pull request
-ado_cli prs create MyProject MyRepo --title "Add feature" --source dev --target main
+ado prs create MyProject MyRepo --title "Add feature" --source dev --target main
 ```
 
 ---
@@ -73,16 +73,16 @@ Multiple auth methods, auto-resolved in priority order:
 
 ```bash
 # Personal Access Token
-ado_cli login --method pat --org myorg --pat mytoken
+ado login --method pat --org myorg --pat mytoken
 
 # Interactive browser-based OAuth (Microsoft identity platform)
-ado_cli login --method device --org myorg
+ado login --method device --org myorg
 
 # Check status
-ado_cli whoami
+ado whoami
 
 # Remove stored credentials
-ado_cli logout
+ado logout
 ```
 
 ---
@@ -93,13 +93,13 @@ For on-premises / private cloud Azure DevOps Server:
 
 ```bash
 # CLI flag
-ado_cli --server https://ado.internal.example.com --org DefaultCollection projects list
+ado --server https://ado.internal.example.com --org DefaultCollection projects list
 
 # Environment variable
 export ADO_SERVER=https://ado.internal.example.com
 
 # Login with server
-ado_cli login --method pat --server https://ado.internal.example.com --org DefaultCollection --pat xxx
+ado login --method pat --server https://ado.internal.example.com --org DefaultCollection --pat xxx
 ```
 
 When `--server` is set, `--org` becomes the collection name (e.g. `DefaultCollection`).
@@ -111,103 +111,103 @@ When `--server` is set, `--org` becomes the collection name (e.g. `DefaultCollec
 ### Projects
 
 ```bash
-ado_cli projects list                     # List all projects
-ado_cli projects list --state wellFormed   # Filter by state
-ado_cli projects list --top 10             # Paginate
+ado projects list                     # List all projects
+ado projects list --state wellFormed   # Filter by state
+ado projects list --top 10             # Paginate
 
-ado_cli projects show MyProject           # Show details
-ado_cli projects show MyProject --capabilities
+ado projects show MyProject           # Show details
+ado projects show MyProject --capabilities
 
-ado_cli projects create MyNewProject       # Create
-ado_cli projects create MyProj --description "My project" --visibility private --process agile
+ado projects create MyNewProject       # Create
+ado projects create MyProj --description "My project" --visibility private --process agile
 
-ado_cli projects update MyProject --name NewName   # Rename
-ado_cli projects update MyProject --description "Updated" --name "New Name"
+ado projects update MyProject --name NewName   # Rename
+ado projects update MyProject --description "Updated" --name "New Name"
 
-ado_cli projects delete MyProject          # Delete (with confirmation)
-ado_cli projects delete MyProject --force  # Skip confirmation
+ado projects delete MyProject          # Delete (with confirmation)
+ado projects delete MyProject --force  # Skip confirmation
 ```
 
 ### Repositories
 
 ```bash
-ado_cli repos list MyProject              # List repos
-ado_cli repos show MyProject MyRepo       # Show details
+ado repos list MyProject              # List repos
+ado repos show MyProject MyRepo       # Show details
 
-ado_cli repos create MyProject MyNewRepo                   # Create
-ado_cli repos create MyProject MyRepo --default-branch develop
+ado repos create MyProject MyNewRepo                   # Create
+ado repos create MyProject MyRepo --default-branch develop
 
-ado_cli repos delete MyProject MyRepo                       # Delete (with confirmation)
-ado_cli repos delete MyProject MyRepo --force               # Skip confirmation
+ado repos delete MyProject MyRepo                       # Delete (with confirmation)
+ado repos delete MyProject MyRepo --force               # Skip confirmation
 
-ado_cli repos branches MyProject MyRepo                    # List branches
-ado_cli repos branches MyProject MyRepo --filter "feature/" # Filter branches
+ado repos branches MyProject MyRepo                    # List branches
+ado repos branches MyProject MyRepo --filter "feature/" # Filter branches
 ```
 
 ### Work Items
 
 ```bash
-ado_cli workitems list MyProject                          # List all
-ado_cli workitems list MyProject --type Bug               # Filter by type
-ado_cli workitems list MyProject --state Active            # Filter by state
-ado_cli workitems list MyProject --assigned-to "John Doe"  # Filter by assignee
+ado workitems list MyProject                          # List all
+ado workitems list MyProject --type Bug               # Filter by type
+ado workitems list MyProject --state Active            # Filter by state
+ado workitems list MyProject --assigned-to "John Doe"  # Filter by assignee
 
-ado_cli workitems show 42                                  # Show details
-ado_cli workitems show 42 --expand all
+ado workitems show 42                                  # Show details
+ado workitems show 42 --expand all
 
-ado_cli workitems query MyProject --wiql "SELECT [System.Id] FROM WorkItems WHERE [System.State] = 'Active'"
+ado workitems query MyProject --wiql "SELECT [System.Id] FROM WorkItems WHERE [System.State] = 'Active'"
 
-ado_cli workitems create MyProject --type Bug --title "Fix login"       # Create
-ado_cli workitems create MyProject --type "User Story" --title "New feature" \
+ado workitems create MyProject --type Bug --title "Fix login"       # Create
+ado workitems create MyProject --type "User Story" --title "New feature" \
   --description "As a user..." --assigned-to "Jane" --priority 2 --tags "frontend,ux"
 
-ado_cli workitems update 42 --state Resolved               # Update state
-ado_cli workitems update 42 --title "Updated title" --assigned-to "Bob" --priority 1 --tags "bug,critical"
+ado workitems update 42 --state Resolved               # Update state
+ado workitems update 42 --title "Updated title" --assigned-to "Bob" --priority 1 --tags "bug,critical"
 ```
 
 ### Pipelines
 
 ```bash
-ado_cli pipelines list MyProject           # List pipelines
-ado_cli pipelines list MyProject --top 10
-ado_cli pipelines list MyProject --folder "\\CI"
+ado pipelines list MyProject           # List pipelines
+ado pipelines list MyProject --top 10
+ado pipelines list MyProject --folder "\\CI"
 
-ado_cli pipelines show MyProject 1         # Show pipeline definition
+ado pipelines show MyProject 1         # Show pipeline definition
 
-ado_cli pipelines run MyProject 1          # Trigger a run
-ado_cli pipelines run MyProject 1 --branch feature/login
-ado_cli pipelines run MyProject 1 --variables "ENV=staging,DEBUG=true"
+ado pipelines run MyProject 1          # Trigger a run
+ado pipelines run MyProject 1 --branch feature/login
+ado pipelines run MyProject 1 --variables "ENV=staging,DEBUG=true"
 ```
 
 ### Pull Requests
 
 ```bash
-ado_cli prs list MyProject MyRepo                        # List active PRs
-ado_cli prs list MyProject MyRepo --status all            # All PRs
-ado_cli prs list MyProject MyRepo --creator "John"        # By creator
+ado prs list MyProject MyRepo                        # List active PRs
+ado prs list MyProject MyRepo --status all            # All PRs
+ado prs list MyProject MyRepo --creator "John"        # By creator
 
-ado_cli prs show MyProject MyRepo 42                      # Show PR details
+ado prs show MyProject MyRepo 42                      # Show PR details
 
-ado_cli prs create MyProject MyRepo --title "New feature" \  # Create PR
+ado prs create MyProject MyRepo --title "New feature" \  # Create PR
   --source feature/new --target main
-ado_cli prs create MyProject MyRepo --title "WIP" \
+ado prs create MyProject MyRepo --title "WIP" \
   --source dev --target main --description "Work in progress" --draft
 
-ado_cli prs complete MyProject MyRepo 42                   # Complete (merge)
-ado_cli prs complete MyProject MyRepo 42 --delete-source    # + delete branch
-ado_cli prs complete MyProject MyRepo 42 --merge-strategy squash  # Squash merge
+ado prs complete MyProject MyRepo 42                   # Complete (merge)
+ado prs complete MyProject MyRepo 42 --delete-source    # + delete branch
+ado prs complete MyProject MyRepo 42 --merge-strategy squash  # Squash merge
 
-ado_cli prs abandon MyProject MyRepo 42                    # Abandon PR
+ado prs abandon MyProject MyRepo 42                    # Abandon PR
 ```
 
 ### Releases
 
 ```bash
-ado_cli releases list MyProject                         # List releases
-ado_cli releases list MyProject --status active          # Filter by status
-ado_cli releases list MyProject --definition-id 1        # By definition
+ado releases list MyProject                         # List releases
+ado releases list MyProject --status active          # Filter by status
+ado releases list MyProject --definition-id 1        # By definition
 
-ado_cli releases show MyProject 42                       # Show release + environments
+ado releases show MyProject 42                       # Show release + environments
 ```
 
 ---
@@ -248,7 +248,7 @@ mix run -e 'AdoCli.CLI.run(System.argv())' -- projects list
 ```bash
 # Escript (fast CLI binary for dev)
 mix escript.build
-./ado_cli projects list
+./ado projects list
 
 # Burrito native binaries (for distribution)
 MIX_ENV=prod mix release

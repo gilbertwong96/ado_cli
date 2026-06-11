@@ -18,7 +18,7 @@ defmodule AdoCli.CLI.AuthCommands do
   @impl true
   def command do
     [
-      name: "ado_cli login",
+      name: "ado login",
       doc: "Authenticate with Azure DevOps.",
       options: [
         method: [

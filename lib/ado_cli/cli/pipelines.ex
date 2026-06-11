@@ -17,11 +17,11 @@ defmodule AdoCli.CLI.Pipelines do
   @impl true
   def command do
     [
-      name: "ado_cli pipelines",
+      name: "ado pipelines",
       doc: "Manage Azure DevOps pipelines.",
       subcommands: [
         list: [
-          name: "ado_cli pipelines list",
+          name: "ado pipelines list",
           doc: "List pipelines in a project.",
           arguments: [project: [type: :string, doc: "Project name or ID"]],
           options: [
@@ -31,7 +31,7 @@ defmodule AdoCli.CLI.Pipelines do
           execute: &list_pipelines/1
         ],
         show: [
-          name: "ado_cli pipelines show",
+          name: "ado pipelines show",
           doc: "Show details of a specific pipeline.",
           arguments: [
             project: [type: :string, doc: "Project name or ID"],
@@ -40,7 +40,7 @@ defmodule AdoCli.CLI.Pipelines do
           execute: &show_pipeline/1
         ],
         run: [
-          name: "ado_cli pipelines run",
+          name: "ado pipelines run",
           doc: "Trigger a pipeline run.",
           arguments: [
             project: [type: :string, doc: "Project name or ID"],

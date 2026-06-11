@@ -29,7 +29,7 @@ defmodule AdoCli.CLI do
   alias AdoCli.CLI.WorkItems
 
   @command [
-    name: "ado_cli",
+    name: "ado",
     version: "0.1.0",
     doc:
       "Azure DevOps CLI - Manage Azure DevOps projects, repos, work items, and pipelines from the terminal.",

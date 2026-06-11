@@ -8,7 +8,7 @@ defmodule AdoCli.CLI.Logout do
   @impl true
   def command do
     [
-      name: "ado_cli logout",
+      name: "ado logout",
       doc: "Remove stored credentials.",
       execute: &run/1
     ]

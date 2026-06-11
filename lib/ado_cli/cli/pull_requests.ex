@@ -19,11 +19,11 @@ defmodule AdoCli.CLI.PullRequests do
   @impl true
   def command do
     [
-      name: "ado_cli prs",
+      name: "ado prs",
       doc: "Manage Azure DevOps pull requests.",
       subcommands: [
         list: [
-          name: "ado_cli prs list",
+          name: "ado prs list",
           doc: "List pull requests in a repository.",
           arguments: [
             project: [type: :string, doc: "Project name or ID"],
@@ -45,7 +45,7 @@ defmodule AdoCli.CLI.PullRequests do
           execute: &list_prs/1
         ],
         show: [
-          name: "ado_cli prs show",
+          name: "ado prs show",
           doc: "Show details of a specific pull request.",
           arguments: [
             project: [type: :string, doc: "Project name or ID"],
@@ -55,7 +55,7 @@ defmodule AdoCli.CLI.PullRequests do
           execute: &show_pr/1
         ],
         create: [
-          name: "ado_cli prs create",
+          name: "ado prs create",
           doc: "Create a new pull request.",
           arguments: [
             project: [type: :string, doc: "Project name or ID"],
@@ -79,7 +79,7 @@ defmodule AdoCli.CLI.PullRequests do
           execute: &create_pr/1
         ],
         complete: [
-          name: "ado_cli prs complete",
+          name: "ado prs complete",
           doc: "Complete (merge) a pull request.",
           arguments: [
             project: [type: :string, doc: "Project name or ID"],
@@ -101,7 +101,7 @@ defmodule AdoCli.CLI.PullRequests do
           execute: &complete_pr/1
         ],
         approve: [
-          name: "ado_cli prs approve",
+          name: "ado prs approve",
           doc: "Approve a pull request (vote +10).",
           arguments: [
             project: [type: :string, doc: "Project name or ID"],
@@ -111,7 +111,7 @@ defmodule AdoCli.CLI.PullRequests do
           execute: &approve_pr/1
         ],
         vote: [
-          name: "ado_cli prs vote",
+          name: "ado prs vote",
           doc: "Vote on a pull request.",
           arguments: [
             project: [type: :string, doc: "Project name or ID"],
@@ -130,7 +130,7 @@ defmodule AdoCli.CLI.PullRequests do
           execute: &vote_pr/1
         ],
         abandon: [
-          name: "ado_cli prs abandon",
+          name: "ado prs abandon",
           doc: "Abandon a pull request.",
           arguments: [
             project: [type: :string, doc: "Project name or ID"],
@@ -140,11 +140,11 @@ defmodule AdoCli.CLI.PullRequests do
           execute: &abandon_pr/1
         ],
         comments: [
-          name: "ado_cli prs comments",
+          name: "ado prs comments",
           doc: "Manage pull request review comments.",
           subcommands: [
             list: [
-              name: "ado_cli prs comments list",
+              name: "ado prs comments list",
               doc: "List review threads on a pull request.",
               arguments: [
                 project: [type: :string, doc: "Project name or ID"],
@@ -154,7 +154,7 @@ defmodule AdoCli.CLI.PullRequests do
               execute: &list_comments/1
             ],
             update: [
-              name: "ado_cli prs comments update",
+              name: "ado prs comments update",
               doc: "Update a review comment.",
               arguments: [
                 project: [type: :string, doc: "Project name or ID"],
