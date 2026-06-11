@@ -38,7 +38,7 @@ defmodule AdoCli.MixProject do
       {:cli_mate, "~> 0.10.2"},
       {:burrito,
        github: "gilbertwong96/burrito",
-       ref: "8585949cea5cce322ba06e0ecc29635abba24ecc",
+       ref: "b08d236ff54b012e6c2c4eb0fd800cd78450347a",
        runtime: false},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:ex_dna, "~> 1.5", only: [:dev, :test], runtime: false},
@@ -95,8 +95,9 @@ defmodule AdoCli.MixProject do
             targets: [
               macos: [os: :darwin, cpu: :aarch64],
               linux: [os: :linux, cpu: :x86_64],
-              linux_arm: [os: :linux, cpu: :aarch64]
-              # Windows targets disabled: std.process.Child API removed in Zig 0.16.0
+              linux_arm: [os: :linux, cpu: :aarch64],
+              windows: [os: :windows, cpu: :x86_64],
+              windows_arm: [os: :windows, cpu: :aarch64]
             ]
           ]
         ]
