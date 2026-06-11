@@ -24,6 +24,7 @@ defmodule AdoCli.CLI do
   alias AdoCli.CLI.PullRequests
   alias AdoCli.CLI.Releases
   alias AdoCli.CLI.Repos
+  alias AdoCli.CLI.Skills
   alias AdoCli.CLI.Whoami
   alias AdoCli.CLI.WorkItems
 
@@ -63,6 +64,7 @@ defmodule AdoCli.CLI do
       prs: PullRequests,
       releases: Releases,
       repos: Repos,
+      skills: Skills,
       workitems: WorkItems
     ]
   ]
