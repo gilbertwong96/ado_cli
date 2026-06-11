@@ -97,8 +97,7 @@ defmodule AdoCli.MixProject do
               macos_x86: [os: :darwin, cpu: :x86_64],
               linux: [os: :linux, cpu: :x86_64],
               linux_arm: [os: :linux, cpu: :aarch64],
-              windows: [os: :windows, cpu: :x86_64],
-              windows_arm: [os: :windows, cpu: :aarch64]
+              windows: [os: :windows, cpu: :x86_64]
             ]
           ]
         ]
