@@ -75,16 +75,30 @@ defmodule AdoCli.CLI do
   def main(args \\ nil) do
     start_finch()
 
-    # Burrito best practice: Burrito.Util.Args.argv()
-    # Falls back to passed args, then System.argv()
     cli_args =
       cond do
-        args != nil and args != [] -> args
-        Code.ensure_loaded?(Burrito.Util.Args) -> Burrito.Util.Args.argv()
-        true -> System.argv()
+        args != nil and args != [] ->
+          args
+
+        Code.ensure_loaded?(Burrito.Util.Args) ->
+          case Burrito.Util.Args.argv() do
+            [] -> burrito_fallback_args()
+            burrito_args -> burrito_args
+          end
+
+        true ->
+          burrito_fallback_args()
       end
 
     run(cli_args)
+  end
+
+  defp burrito_fallback_args do
+    case System.get_env("ADO_ARGS") do
+      nil -> System.argv()
+      "" -> System.argv()
+      str -> String.split(str, " ")
+    end
   end
 
   def command_definition, do: @command
