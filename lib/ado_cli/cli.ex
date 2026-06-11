@@ -4,15 +4,15 @@ defmodule AdoCli.CLI do
 
   Provides a command-line interface to Azure DevOps using sub-commands:
 
-    ado_cli login --method pat|device --org ORG
-    ado_cli logout
-    ado_cli whoami
-    ado_cli projects list|show|create|update|delete
-    ado_cli repos list|show|create|delete|branches
-    ado_cli workitems list|show|query|create|update
-    ado_cli pipelines list|show|run
-    ado_cli prs list|show|create|complete|abandon
-    ado_cli releases list|show
+    ado login --method pat|device --org ORG
+    ado logout
+    ado whoami
+    ado projects list|show|create|update|delete
+    ado repos list|show|create|delete|branches
+    ado workitems list|show|query|create|update
+    ado pipelines list|show|run
+    ado prs list|show|create|complete|abandon
+    ado releases list|show
   """
 
   import CliMate.CLI
@@ -75,14 +75,13 @@ defmodule AdoCli.CLI do
   def main(args \\ nil) do
     start_finch()
 
-    # Burrito passes CLI args via -extra. Use :init.get_plain_arguments().
-    # In escript mode, System.argv() works directly.
+    # Burrito best practice: Burrito.Util.Args.argv()
+    # Falls back to passed args, then System.argv()
     cli_args =
-      if args do
-        args
-      else
-        plain = :init.get_plain_arguments() |> Enum.map(&List.to_string/1)
-        if plain != [], do: plain, else: System.argv()
+      cond do
+        args != nil and args != [] -> args
+        Code.ensure_loaded?(Burrito.Util.Args) -> Burrito.Util.Args.argv()
+        true -> System.argv()
       end
 
     run(cli_args)
@@ -99,32 +98,19 @@ defmodule AdoCli.CLI do
   def run(args) do
     parsed = parse_or_halt!(args, @command)
 
-    org = Map.get(parsed.options, :org) || System.get_env("ADO_ORG")
-    pat = Map.get(parsed.options, :pat) || System.get_env("ADO_PAT")
-    server = Map.get(parsed.options, :server) || System.get_env("ADO_SERVER")
+    # Apply global options to runtime env for auth resolution
+    apply_global_opts(parsed.options)
 
-    if org, do: put_app_env(:org, org)
-    if pat, do: put_app_env(:pat, pat)
-    if server, do: put_app_env(:server, server)
-
-    if parsed.execute do
-      parsed.execute.()
-    else
-      writeln(format_usage(@command))
-      halt_success("")
-    end
+    parsed.execute.()
   end
 
-  defp put_app_env(key, value) do
-    :persistent_term.put({:ado_cli, key}, value)
+  defp apply_global_opts(opts) do
+    if org = opts[:org], do: :persistent_term.put({:ado_cli, :org}, org)
+    if pat = opts[:pat], do: :persistent_term.put({:ado_cli, :pat}, pat)
+    if server = opts[:server], do: :persistent_term.put({:ado_cli, :server}, server)
   end
 
   defp start_finch do
-    Application.ensure_all_started(:crypto)
-    Application.ensure_all_started(:ssl)
-
-    unless Process.whereis(AdoCli.Finch) do
-      Finch.start_link(name: AdoCli.Finch, pools: %{default: [size: 5, count: 1]})
-    end
+    Finch.start_link(name: AdoCli.Finch, pools: %{default: [size: 5, count: 1]})
   end
 end
