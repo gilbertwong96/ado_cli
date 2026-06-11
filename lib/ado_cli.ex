@@ -20,8 +20,11 @@ defmodule AdoCli do
     3. Azure CLI token (`az login`)
     4. Persistent config file (`ado_cli login`)
 
-      ado_cli login --method pat --org myorg --pat mytoken
-      ado_cli login --method device --org myorg
+  Default login opens a browser for OAuth sign-in. For MSA personal orgs
+  (`*.visualstudio.com`), API calls delegate to `az devops invoke` for
+  reliable cross-tenant authentication.
+
+  See [AUTH.md](AUTH.md) for the full authentication guide.
 
   ## Quick Start
 
@@ -30,6 +33,8 @@ defmodule AdoCli do
       ado_cli repos list MyProject
       ado_cli workitems create MyProject --type Bug --title "Fix login"
       ado_cli prs create MyProject myrepo --title "New feature" --source dev --target main
+
+  See [USAGE.md](USAGE.md) for the complete command reference.
 
   ## Build
 

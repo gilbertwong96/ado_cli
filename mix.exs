@@ -19,7 +19,7 @@ defmodule AdoCli.MixProject do
       docs: [
         main: "AdoCli",
         source_url: "https://github.com/your-org/ado_cli",
-        extras: ["README.md"]
+        extras: ["README.md", "USAGE.md", "AUTH.md"]
       ]
     ]
   end
