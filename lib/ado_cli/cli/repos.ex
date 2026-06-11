@@ -94,7 +94,7 @@ defmodule AdoCli.CLI.Repos do
   """
   def list_repos(parsed) do
     project = parsed.arguments.project
-    params = if(parsed.options.include_links, do: %{"includeLinks" => true}, else: %{})
+    params = if(Map.get(parsed.options, :include_links), do: %{"includeLinks" => true}, else: %{})
     result = Client.list("/#{URI.encode(project)}/_apis/git/repositories", params)
 
     Helpers.handle_api_result(result, parsed, fn repos ->
@@ -129,7 +129,7 @@ defmodule AdoCli.CLI.Repos do
   def list_branches(parsed) do
     project = parsed.arguments.project
     repo_id = parsed.arguments.repo_id
-    params = %{"filter" => parsed.options.filter || "heads/"}
+    params = %{"filter" => Map.get(parsed.options, :filter, "heads/")}
 
     result =
       Client.list(
@@ -159,8 +159,9 @@ defmodule AdoCli.CLI.Repos do
     }
 
     body =
-      if parsed.options.default_branch,
-        do: Map.put(body, "defaultBranch", "refs/heads/#{parsed.options.default_branch}"),
+      if Map.get(parsed.options, :default_branch),
+        do:
+          Map.put(body, "defaultBranch", "refs/heads/#{Map.get(parsed.options, :default_branch)}"),
         else: body
 
     case Client.post("/#{URI.encode(project)}/_apis/git/repositories", body) do
@@ -186,7 +187,7 @@ defmodule AdoCli.CLI.Repos do
     project = parsed.arguments.project
     repo_id = parsed.arguments.repo_id
 
-    unless parsed.options.force do
+    unless Map.get(parsed.options, :force) do
       confirm_delete("repository", "#{project}/#{repo_id}")
     end
 

@@ -112,7 +112,9 @@ defmodule AdoCli.CLI.Projects do
   """
   def show_project(parsed) do
     project_id = parsed.arguments.project_id
-    params = if(parsed.options.capabilities, do: %{"includeCapabilities" => true}, else: %{})
+
+    params =
+      if(Map.get(parsed.options, :capabilities), do: %{"includeCapabilities" => true}, else: %{})
 
     case Client.get("/_apis/projects/#{URI.encode(project_id)}", params) do
       {:ok, project} -> Helpers.json_or_format(project, parsed, &print_project_detail/1)
@@ -133,13 +135,17 @@ defmodule AdoCli.CLI.Projects do
     body = %{
       "name" => parsed.arguments.name,
       "capabilities" => %{
-        "versioncontrol" => %{"sourceControlType" => parsed.options.source_control || "Git"},
-        "processTemplate" => %{"templateTypeId" => process_template_id(parsed.options.process)}
+        "versioncontrol" => %{
+          "sourceControlType" => Map.get(parsed.options, :source_control, "Git")
+        },
+        "processTemplate" => %{
+          "templateTypeId" => process_template_id(Map.get(parsed.options, :process))
+        }
       }
     }
 
-    body = put_if_key(parsed.options.description, body, "description")
-    body = put_if_key(parsed.options.visibility, body, "visibility")
+    body = put_if_key(Map.get(parsed.options, :description), body, "description")
+    body = put_if_key(Map.get(parsed.options, :visibility), body, "visibility")
 
     case Client.post("/_apis/projects", body) do
       {:ok, project} ->
@@ -161,8 +167,8 @@ defmodule AdoCli.CLI.Projects do
   def update_project(parsed) do
     project_id = parsed.arguments.project_id
     body = %{}
-    body = put_if_key(parsed.options.name, body, "name")
-    body = put_if_key(parsed.options.description, body, "description")
+    body = put_if_key(Map.get(parsed.options, :name), body, "name")
+    body = put_if_key(Map.get(parsed.options, :description), body, "description")
 
     if body == %{} do
       halt_error("At least one of --name or --description is required.")
@@ -189,7 +195,7 @@ defmodule AdoCli.CLI.Projects do
   def delete_project(parsed) do
     project_id = parsed.arguments.project_id
 
-    unless parsed.options.force do
+    unless Map.get(parsed.options, :force) do
       confirm_delete("project", project_id)
     end
 

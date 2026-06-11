@@ -27,12 +27,15 @@ Move the escript into your PATH:
 cp ado_cli /usr/local/bin/
 ```
 
-Or build a standalone binary with Burrito:
+Or build standalone binaries with Burrito:
 
 ```bash
 MIX_ENV=prod mix release
-# Binaries in burrito_out/
+# Binaries in burrito_out/ (macOS aarch64, Linux x86_64/aarch64, Windows x86_64/aarch64)
 ```
+
+> **Note**: `mix release` in dev produces an OTP system service (`start`, `stop`, `eval`)
+> — not a CLI tool. Use `mix escript.build` for dev iteration.
 
 ---
 
@@ -243,14 +246,17 @@ mix run -e 'AdoCli.CLI.run(System.argv())' -- projects list
 ### Build
 
 ```bash
-# Escript (local binary)
+# Escript (fast CLI binary for dev)
 mix escript.build
 ./ado_cli projects list
 
-# Cross-platform binaries (macOS, Linux, Windows)
+# Burrito native binaries (for distribution)
 MIX_ENV=prod mix release
-# Binaries in burrito_out/
+# → burrito_out/  (macOS aarch64, Linux x86_64/aarch64, Windows x86_64/aarch64)
 ```
+
+> `mix release` in dev produces an OTP system service (`start`/`stop`/`eval`).
+> Use `mix escript.build` for CLI iteration.
 
 ### Documentation
 

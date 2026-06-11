@@ -62,9 +62,9 @@ defmodule AdoCli.CLI.Releases do
 
     params =
       %{}
-      |> put_if(parsed.options.top, "$top")
-      |> put_if(parsed.options.definition_id, "definitionId")
-      |> put_if(parsed.options.status, "statusFilter")
+      |> put_if(Map.get(parsed.options, :top), "$top")
+      |> put_if(Map.get(parsed.options, :definition_id), "definitionId")
+      |> put_if(Map.get(parsed.options, :status), "statusFilter")
 
     result = Client.list("/#{URI.encode(project)}/_apis/release/releases", params)
 

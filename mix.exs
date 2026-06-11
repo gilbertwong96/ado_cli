@@ -43,7 +43,8 @@ defmodule AdoCli.MixProject do
       {:reach, "~> 2.7", only: [:dev, :test], runtime: false},
       {:mix_audit, "~> 2.1", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
-      {:ex_doc, "~> 0.40", only: :dev, runtime: false}
+      {:ex_doc, "~> 0.40", only: :dev, runtime: false},
+      {:pi_bridge, "~> 0.6.5", only: [:dev, :test], runtime: false}
     ]
   end
 
@@ -79,6 +80,8 @@ defmodule AdoCli.MixProject do
     ]
   end
 
+  # Burrito-wrapped native binaries for distribution.
+  # Only available in prod — dev uses `mix escript.build` for CLI iteration.
   defp releases do
     if Mix.env() == :prod do
       [
@@ -96,11 +99,7 @@ defmodule AdoCli.MixProject do
         ]
       ]
     else
-      [
-        ado_cli: [
-          steps: [:assemble]
-        ]
-      ]
+      []
     end
   end
 end

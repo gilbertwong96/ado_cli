@@ -10,7 +10,8 @@ config :ado_cli, :azure_devops,
   org: System.get_env("ADO_ORG"),
   pat: System.get_env("ADO_PAT"),
   server: System.get_env("ADO_SERVER"),
-  api_version: System.get_env("ADO_API_VERSION", "7.1")
+  api_version: System.get_env("ADO_API_VERSION", "7.1"),
+  oauth_client_id: System.get_env("ADO_OAUTH_CLIENT_ID", "c33cb54f-f0d0-45e4-9aa7-5a4ee42b2ac3")
 
 # Finch configuration
 config :ado_cli, AdoCli.Client,

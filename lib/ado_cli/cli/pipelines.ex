@@ -72,7 +72,12 @@ defmodule AdoCli.CLI.Pipelines do
   """
   def list_pipelines(parsed) do
     project = parsed.arguments.project
-    params = %{} |> put_if(parsed.options.top, "$top") |> put_if(parsed.options.folder, "folder")
+
+    params =
+      %{}
+      |> put_if(Map.get(parsed.options, :top), "$top")
+      |> put_if(Map.get(parsed.options, :folder), "folder")
+
     result = Client.list("/#{URI.encode(project)}/_apis/pipelines", params)
 
     Helpers.handle_api_result(result, parsed, fn pipelines ->
@@ -114,14 +119,14 @@ defmodule AdoCli.CLI.Pipelines do
     body = %{
       "resources" => %{
         "repositories" => %{
-          "self" => %{"refName" => "refs/heads/#{parsed.options.branch || "main"}"}
+          "self" => %{"refName" => "refs/heads/#{Map.get(parsed.options, :branch, "main")}"}
         }
       }
     }
 
     body =
-      if parsed.options.variables do
-        vars = parse_variables(parsed.options.variables)
+      if vars = Map.get(parsed.options, :variables) do
+        vars = parse_variables(vars)
         Map.put(body, "variables", vars)
       else
         body

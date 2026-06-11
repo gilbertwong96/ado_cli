@@ -17,7 +17,7 @@ defmodule AdoCli.ConfigFile do
     existing = load() || %{}
     merged = Map.merge(existing, new_config)
     File.mkdir_p!(@config_dir)
-    File.write!(@config_file, apply(JSON, :encode!, [merged, [pretty: true]]))
+    File.write!(@config_file, JSON.encode!(merged))
     :ok
   end
 

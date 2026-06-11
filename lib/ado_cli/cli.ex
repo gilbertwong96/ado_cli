@@ -103,11 +103,13 @@ defmodule AdoCli.CLI do
   end
 
   defp put_app_env(key, value) do
-    current = Application.get_env(:ado_cli, :azure_devops, [])
-    Application.put_env(:ado_cli, :azure_devops, Keyword.put(current, key, value))
+    :persistent_term.put({:ado_cli, key}, value)
   end
 
   defp start_finch do
+    Application.ensure_all_started(:crypto)
+    Application.ensure_all_started(:ssl)
+
     unless Process.whereis(AdoCli.Finch) do
       Finch.start_link(name: AdoCli.Finch, pools: %{default: [size: 5, count: 1]})
     end
