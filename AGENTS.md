@@ -39,6 +39,8 @@ mix test     # Unit tests
 4. **Clean dependencies**: No unused deps, and all deps are audited for known CVEs
 5. **No orphan modules**: Every module must be reachable from the compile-connected graph
 6. **Type-safe**: Dialyzer must report zero unexpected type errors (Finch-related false positives are filtered)
+7. **Full CI on every change**: Every code change must pass `mix ci` (all 7 stages) AND `mix test` before declaring the change complete. Never skip any stage.
+8. **Run the full quality pipeline before committing**: At minimum, run `mix quality && mix ci` to validate compile, format, credo, ex_dna, reach, tests, deps, xref, and dialyzer all pass.
 
 ## Dialyzer & Finch
 
