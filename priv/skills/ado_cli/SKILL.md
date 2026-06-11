@@ -37,7 +37,7 @@ ado_cli login --method device --org {your-org}    # no browser needed
 |-------|----------|
 | `projects` | list, show, create, update, delete |
 | `repos` | list, show, create, delete, branches |
-| `workitems` | list, show, query, create, update, comments |
+| `workitems` | list, show, query, create, update, comments, attachments |
 | `pipelines` | list, show, run |
 | `prs` | list, show, create, complete, abandon, approve, vote, comments |
 | `releases` | list, show |

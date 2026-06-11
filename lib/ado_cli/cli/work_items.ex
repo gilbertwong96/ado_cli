@@ -123,6 +123,37 @@ defmodule AdoCli.CLI.WorkItems do
               execute: &update_work_item_comment/1
             ]
           ]
+        ],
+        attachments: [
+          name: "ado_cli workitems attachments",
+          doc: "Manage work item attachments.",
+          subcommands: [
+            list: [
+              name: "ado_cli workitems attachments list",
+              doc: "List attachments on a work item.",
+              arguments: [
+                id: [type: :integer, doc: "Work item ID"]
+              ],
+              execute: &list_attachments/1
+            ],
+            download: [
+              name: "ado_cli workitems attachments download",
+              doc: "Download an attachment from a work item.",
+              arguments: [
+                id: [type: :integer, doc: "Work item ID"],
+                attachment_id: [type: :string, doc: "Attachment ID"]
+              ],
+              options: [
+                output: [
+                  type: :string,
+                  short: :o,
+                  doc: "Output file path (default: attachment filename)",
+                  doc_arg: "PATH"
+                ]
+              ],
+              execute: &download_attachment/1
+            ]
+          ]
         ]
       ]
     ]
@@ -438,5 +469,71 @@ defmodule AdoCli.CLI.WorkItems do
     writeln("  [#{cid}] #{author} (#{date})")
     writeln("  #{text}")
     writeln("")
+  end
+
+  # ── Attachments ─────────────────────────────────────────────────────
+
+  @doc """
+  Lists attachments on a work item.
+  """
+  def list_attachments(parsed) do
+    id = parsed.arguments.id
+    path = "/_apis/wit/workitems/#{id}/attachments"
+
+    case Client.get(path) do
+      {:ok, %{"attachments" => attachments}} ->
+        Helpers.json_or_format(attachments, parsed, fn attachments ->
+          writeln("")
+
+          Enum.each(attachments, fn att ->
+            writeln("  #{att["id"]}  #{att["attributes"]["name"]}")
+            writeln("     #{att["url"]}")
+            writeln("")
+          end)
+        end)
+
+      {:ok, _} ->
+        writeln("No attachments found.")
+
+      {:error, reason} ->
+        Helpers.handle_api_result({:error, reason}, parsed, nil)
+    end
+
+    halt_success("Done.")
+  end
+
+  @doc """
+  Downloads an attachment from a work item to a local file.
+  """
+  def download_attachment(parsed) do
+    _id = parsed.arguments.id
+    attachment_id = parsed.arguments.attachment_id
+
+    path = "/_apis/wit/attachments/#{attachment_id}"
+
+    case Client.get(path) do
+      {:ok, meta} ->
+        file_name =
+          Map.get(parsed.options, :output) ||
+            get_in(meta, ["attributes", "name"]) ||
+            "attachment_#{attachment_id}"
+
+        download_path =
+          "/_apis/wit/attachments/#{attachment_id}?fileName=#{URI.encode(file_name)}"
+
+        case Client.get_raw(download_path) do
+          {:ok, body} ->
+            File.write!(file_name, body)
+            success("Downloaded #{byte_size(body)} bytes to #{file_name}\n")
+
+          {:error, reason} ->
+            Helpers.handle_api_result({:error, reason}, parsed, nil)
+        end
+
+      {:error, reason} ->
+        Helpers.handle_api_result({:error, reason}, parsed, nil)
+    end
+
+    halt_success("Done.")
   end
 end
