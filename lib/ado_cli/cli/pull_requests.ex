@@ -138,6 +138,42 @@ defmodule AdoCli.CLI.PullRequests do
             pr_id: [type: :integer, doc: "Pull request ID"]
           ],
           execute: &abandon_pr/1
+        ],
+        comments: [
+          name: "ado_cli prs comments",
+          doc: "Manage pull request review comments.",
+          subcommands: [
+            list: [
+              name: "ado_cli prs comments list",
+              doc: "List review threads on a pull request.",
+              arguments: [
+                project: [type: :string, doc: "Project name or ID"],
+                repo_id: [type: :string, doc: "Repository name or ID"],
+                pr_id: [type: :integer, doc: "Pull request ID"]
+              ],
+              execute: &list_comments/1
+            ],
+            update: [
+              name: "ado_cli prs comments update",
+              doc: "Update a review comment.",
+              arguments: [
+                project: [type: :string, doc: "Project name or ID"],
+                repo_id: [type: :string, doc: "Repository name or ID"],
+                pr_id: [type: :integer, doc: "Pull request ID"],
+                thread_id: [type: :integer, doc: "Thread ID"],
+                comment_id: [type: :integer, doc: "Comment ID"]
+              ],
+              options: [
+                content: [
+                  type: :string,
+                  doc: "New comment content",
+                  required: true,
+                  doc_arg: "TEXT"
+                ]
+              ],
+              execute: &update_comment/1
+            ]
+          ]
         ]
       ]
     ]
@@ -447,5 +483,76 @@ defmodule AdoCli.CLI.PullRequests do
 
     writeln("  URL:         #{pr["url"]}")
     writeln("")
+  end
+
+  # ── Comments ────────────────────────────────────────────────────────
+
+  def list_comments(parsed) do
+    path = comments_path(parsed)
+
+    case Client.list(path) do
+      {:ok, threads} ->
+        Helpers.json_or_format(threads, parsed, fn threads ->
+          writeln("")
+          Enum.each(threads, &print_thread/1)
+        end)
+
+      {:error, reason} ->
+        Helpers.handle_api_result({:error, reason}, parsed, nil)
+    end
+
+    halt_success("Done.")
+  end
+
+  defp comments_path(parsed) do
+    project = URI.encode(parsed.arguments.project)
+    repo_id = URI.encode(parsed.arguments.repo_id)
+    pr_id = parsed.arguments.pr_id
+    "/#{project}/_apis/git/repositories/#{repo_id}/pullRequests/#{pr_id}/threads"
+  end
+
+  defp print_thread(thread) do
+    id = thread["id"]
+    status = thread["status"] || "unknown"
+    writeln("  Thread #{id} [#{status}]")
+
+    case thread["comments"] do
+      nil -> :ok
+      comments -> Enum.each(comments, &print_comment/1)
+    end
+
+    writeln("")
+  end
+
+  defp print_comment(comment) do
+    author = (comment["author"] && comment["author"]["displayName"]) || "unknown"
+    content = comment["content"] || ""
+    cid = comment["id"]
+    writeln("    [#{cid}] #{author}: #{String.slice(content, 0, 80)}")
+  end
+
+  def update_comment(parsed) do
+    path = comment_path(parsed)
+    body = %{"content" => parsed.options.content}
+
+    case Client.patch(path, body) do
+      {:ok, _} ->
+        success("Comment #{parsed.arguments.comment_id} updated.\n")
+
+      {:error, reason} ->
+        Helpers.handle_api_result({:error, reason}, parsed, nil)
+    end
+
+    halt_success("Done.")
+  end
+
+  defp comment_path(parsed) do
+    project = URI.encode(parsed.arguments.project)
+    repo_id = URI.encode(parsed.arguments.repo_id)
+    pr_id = parsed.arguments.pr_id
+    thread_id = parsed.arguments.thread_id
+    comment_id = parsed.arguments.comment_id
+
+    "/#{project}/_apis/git/repositories/#{repo_id}/pullRequests/#{pr_id}/threads/#{thread_id}/comments/#{comment_id}"
   end
 end
