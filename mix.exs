@@ -36,7 +36,7 @@ defmodule AdoCli.MixProject do
     [
       {:finch, "~> 0.22.0"},
       {:cli_mate, "~> 0.10.2"},
-      {:burrito, github: "jsmestad/burrito", ref: "zig-0.16.0", runtime: false},
+      {:burrito, github: "gilbertwong96/burrito", ref: "9d4ccbfad46bf6c70cd0d5039e22ad9a0e731cb4", runtime: false},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:ex_dna, "~> 1.5", only: [:dev, :test], runtime: false},
       {:ex_slop, "~> 0.4.2", only: [:dev, :test], runtime: false},
@@ -90,7 +90,11 @@ defmodule AdoCli.MixProject do
           steps: [:assemble, &Burrito.wrap/1],
           burrito: [
             targets: [
-              macos: [os: :darwin, cpu: :aarch64]
+              macos: [os: :darwin, cpu: :aarch64],
+              linux: [os: :linux, cpu: :x86_64],
+              linux_arm: [os: :linux, cpu: :aarch64],
+              windows: [os: :windows, cpu: :x86_64],
+              windows_arm: [os: :windows, cpu: :aarch64]
             ]
           ]
         ]
