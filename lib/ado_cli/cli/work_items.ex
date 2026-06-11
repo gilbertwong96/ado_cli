@@ -19,11 +19,11 @@ defmodule AdoCli.CLI.WorkItems do
   @impl true
   def command do
     [
-      name: "ado_cli workitems",
+      name: "ado workitems",
       doc: "Manage Azure DevOps work items.",
       subcommands: [
         list: [
-          name: "ado_cli workitems list",
+          name: "ado workitems list",
           doc: "List work items in a project.",
           arguments: [project: [type: :string, doc: "Project name or ID"]],
           options: [
@@ -35,7 +35,7 @@ defmodule AdoCli.CLI.WorkItems do
           execute: &list_work_items/1
         ],
         show: [
-          name: "ado_cli workitems show",
+          name: "ado workitems show",
           doc: "Show details of a specific work item.",
           arguments: [id: [type: :integer, doc: "Work item ID"]],
           options: [
@@ -44,7 +44,7 @@ defmodule AdoCli.CLI.WorkItems do
           execute: &show_work_item/1
         ],
         query: [
-          name: "ado_cli workitems query",
+          name: "ado workitems query",
           doc: "Run a WIQL query against a project.",
           arguments: [project: [type: :string, doc: "Project name or ID"]],
           options: [
@@ -54,7 +54,7 @@ defmodule AdoCli.CLI.WorkItems do
           execute: &query_work_items/1
         ],
         create: [
-          name: "ado_cli workitems create",
+          name: "ado workitems create",
           doc: "Create a new work item.",
           arguments: [project: [type: :string, doc: "Project name or ID"]],
           options: [
@@ -74,7 +74,7 @@ defmodule AdoCli.CLI.WorkItems do
           execute: &create_work_item/1
         ],
         update: [
-          name: "ado_cli workitems update",
+          name: "ado workitems update",
           doc: "Update an existing work item.",
           arguments: [id: [type: :integer, doc: "Work item ID"]],
           options: [
@@ -88,11 +88,11 @@ defmodule AdoCli.CLI.WorkItems do
           execute: &update_work_item/1
         ],
         comments: [
-          name: "ado_cli workitems comments",
+          name: "ado workitems comments",
           doc: "Manage work item discussion comments.",
           subcommands: [
             list: [
-              name: "ado_cli workitems comments list",
+              name: "ado workitems comments list",
               doc: "List discussion comments on a work item.",
               arguments: [
                 id: [type: :integer, doc: "Work item ID"]
@@ -100,7 +100,7 @@ defmodule AdoCli.CLI.WorkItems do
               execute: &list_work_item_comments/1
             ],
             add: [
-              name: "ado_cli workitems comments add",
+              name: "ado workitems comments add",
               doc: "Add a discussion comment to a work item.",
               arguments: [
                 id: [type: :integer, doc: "Work item ID"]
@@ -111,7 +111,7 @@ defmodule AdoCli.CLI.WorkItems do
               execute: &add_work_item_comment/1
             ],
             update: [
-              name: "ado_cli workitems comments update",
+              name: "ado workitems comments update",
               doc: "Update a discussion comment on a work item.",
               arguments: [
                 id: [type: :integer, doc: "Work item ID"],
@@ -125,11 +125,11 @@ defmodule AdoCli.CLI.WorkItems do
           ]
         ],
         attachments: [
-          name: "ado_cli workitems attachments",
+          name: "ado workitems attachments",
           doc: "Manage work item attachments.",
           subcommands: [
             list: [
-              name: "ado_cli workitems attachments list",
+              name: "ado workitems attachments list",
               doc: "List attachments on a work item.",
               arguments: [
                 id: [type: :integer, doc: "Work item ID"]
@@ -137,7 +137,7 @@ defmodule AdoCli.CLI.WorkItems do
               execute: &list_attachments/1
             ],
             download: [
-              name: "ado_cli workitems attachments download",
+              name: "ado workitems attachments download",
               doc: "Download an attachment from a work item.",
               arguments: [
                 id: [type: :integer, doc: "Work item ID"],

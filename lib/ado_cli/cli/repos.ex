@@ -19,11 +19,11 @@ defmodule AdoCli.CLI.Repos do
   @impl true
   def command do
     [
-      name: "ado_cli repos",
+      name: "ado repos",
       doc: "Manage Azure DevOps Git repositories.",
       subcommands: [
         list: [
-          name: "ado_cli repos list",
+          name: "ado repos list",
           doc: "List repositories in a project.",
           arguments: [project: [type: :string, doc: "Project name or ID"]],
           options: [
@@ -32,7 +32,7 @@ defmodule AdoCli.CLI.Repos do
           execute: &list_repos/1
         ],
         show: [
-          name: "ado_cli repos show",
+          name: "ado repos show",
           doc: "Show details of a specific repository.",
           arguments: [
             project: [type: :string, doc: "Project name or ID"],
@@ -41,7 +41,7 @@ defmodule AdoCli.CLI.Repos do
           execute: &show_repo/1
         ],
         create: [
-          name: "ado_cli repos create",
+          name: "ado repos create",
           doc: "Create a new Git repository.",
           arguments: [
             project: [type: :string, doc: "Project name or ID"],
@@ -57,7 +57,7 @@ defmodule AdoCli.CLI.Repos do
           execute: &create_repo/1
         ],
         delete: [
-          name: "ado_cli repos delete",
+          name: "ado repos delete",
           doc: "Delete a repository.",
           arguments: [
             project: [type: :string, doc: "Project name or ID"],
@@ -67,7 +67,7 @@ defmodule AdoCli.CLI.Repos do
           execute: &delete_repo/1
         ],
         branches: [
-          name: "ado_cli repos branches",
+          name: "ado repos branches",
           doc: "List branches in a repository.",
           arguments: [
             project: [type: :string, doc: "Project name or ID"],

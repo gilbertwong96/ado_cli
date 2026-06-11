@@ -16,11 +16,11 @@ defmodule AdoCli.CLI.Releases do
   @impl true
   def command do
     [
-      name: "ado_cli releases",
+      name: "ado releases",
       doc: "Manage Azure DevOps releases.",
       subcommands: [
         list: [
-          name: "ado_cli releases list",
+          name: "ado releases list",
           doc: "List releases in a project.",
           arguments: [project: [type: :string, doc: "Project name or ID"]],
           options: [
@@ -35,7 +35,7 @@ defmodule AdoCli.CLI.Releases do
           execute: &list_releases/1
         ],
         show: [
-          name: "ado_cli releases show",
+          name: "ado releases show",
           doc: "Show details of a specific release.",
           arguments: [
             project: [type: :string, doc: "Project name or ID"],

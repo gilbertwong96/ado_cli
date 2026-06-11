@@ -18,7 +18,7 @@ defmodule AdoCli do
     1. CLI flags `--org` / `--pat`
     2. Environment variables `ADO_ORG` / `ADO_PAT`
     3. Azure CLI token (`az login`)
-    4. Persistent config file (`ado_cli login`)
+    4. Persistent config file (`ado login`)
 
   Default login opens a browser for OAuth sign-in. For MSA personal orgs
   (`*.visualstudio.com`), API calls delegate to `az devops invoke` for
@@ -29,10 +29,10 @@ defmodule AdoCli do
   ## Quick Start
 
       export ADO_ORG=myorg ADO_PAT=mytoken
-      ado_cli projects list
-      ado_cli repos list MyProject
-      ado_cli workitems create MyProject --type Bug --title "Fix login"
-      ado_cli prs create MyProject myrepo --title "New feature" --source dev --target main
+      ado projects list
+      ado repos list MyProject
+      ado workitems create MyProject --type Bug --title "Fix login"
+      ado prs create MyProject myrepo --title "New feature" --source dev --target main
 
   See [USAGE.md](USAGE.md) for the complete command reference.
 

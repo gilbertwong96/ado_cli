@@ -1,9 +1,9 @@
 ---
-description: Main ado_cli skill — how to use the CLI, setup, auth, and command groups
+description: Main ado skill — how to use the CLI, setup, auth, and command groups
 version: "0.1.0"
 ---
 
-# ado_cli
+# ado
 
 A command-line tool for managing Azure DevOps — projects, repositories,
 work items, pipelines, pull requests, and releases.
@@ -13,12 +13,12 @@ work items, pipelines, pull requests, and releases.
 ```bash
 # Install
 mix escript.build
-cp ado_cli /usr/local/bin/
+cp ado /usr/local/bin/
 
 # Authenticate (pick one)
-ado_cli login --org {your-org}                    # browser OAuth
-ado_cli login --method pat --org {your-org} --pat {token}
-ado_cli login --method device --org {your-org}    # no browser needed
+ado login --org {your-org}                    # browser OAuth
+ado login --method pat --org {your-org} --pat {token}
+ado login --method device --org {your-org}    # no browser needed
 ```
 
 ## Global Options (apply to any command)
@@ -47,7 +47,7 @@ ado_cli login --method device --org {your-org}    # no browser needed
 
 1. **Project and repo names with spaces**: Quote them.
    ```bash
-   ado_cli repos list "Employee Management"
+   ado repos list "Employee Management"
    ```
 
 2. **Error handling**: Non-zero exit code + stderr message. Use `--verbose` for details.
@@ -63,23 +63,23 @@ ado_cli login --method device --org {your-org}    # no browser needed
 
 ```bash
 # List projects
-ado_cli --org myorg --pat mytoken projects list
+ado --org myorg --pat mytoken projects list
 
 # Create a work item
-ado_cli workitems create MyProject --type Bug --title "Fix login page"
+ado workitems create MyProject --type Bug --title "Fix login page"
 
 # Create a PR
-ado_cli prs create MyProject MyRepo --title "Add feature" --source dev --target main
+ado prs create MyProject MyRepo --title "Add feature" --source dev --target main
 
 # Check auth status
-ado_cli whoami
+ado whoami
 ```
 
 ## Help
 
 Every command and subcommand supports `--help`:
 ```bash
-ado_cli --help
-ado_cli projects --help
-ado_cli projects create --help
+ado --help
+ado projects --help
+ado projects create --help
 ```

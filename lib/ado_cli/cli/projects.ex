@@ -19,11 +19,11 @@ defmodule AdoCli.CLI.Projects do
   @impl true
   def command do
     [
-      name: "ado_cli projects",
+      name: "ado projects",
       doc: "Manage Azure DevOps projects.",
       subcommands: [
         list: [
-          name: "ado_cli projects list",
+          name: "ado projects list",
           doc: "List all projects in the organization.",
           options: [
             state: [type: :string, doc: "Filter by project state", doc_arg: "STATE"],
@@ -33,14 +33,14 @@ defmodule AdoCli.CLI.Projects do
           execute: &list_projects/1
         ],
         show: [
-          name: "ado_cli projects show",
+          name: "ado projects show",
           doc: "Show details of a specific project.",
           arguments: [project_id: [type: :string, doc: "Project name or ID"]],
           options: [capabilities: [type: :boolean, default: false, doc: "Include capabilities"]],
           execute: &show_project/1
         ],
         create: [
-          name: "ado_cli projects create",
+          name: "ado projects create",
           doc: "Create a new project.",
           arguments: [name: [type: :string, doc: "Project name"]],
           options: [
@@ -60,7 +60,7 @@ defmodule AdoCli.CLI.Projects do
           execute: &create_project/1
         ],
         update: [
-          name: "ado_cli projects update",
+          name: "ado projects update",
           doc: "Update an existing project.",
           arguments: [project_id: [type: :string, doc: "Project name or ID"]],
           options: [
@@ -70,7 +70,7 @@ defmodule AdoCli.CLI.Projects do
           execute: &update_project/1
         ],
         delete: [
-          name: "ado_cli projects delete",
+          name: "ado projects delete",
           doc: "Delete a project.",
           arguments: [project_id: [type: :string, doc: "Project name or ID"]],
           options: [force: [type: :boolean, default: false, doc: "Skip confirmation"]],
