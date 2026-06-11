@@ -36,7 +36,7 @@ defmodule AdoCli.MixProject do
     [
       {:finch, "~> 0.22.0"},
       {:cli_mate, "~> 0.10.2"},
-      {:burrito, "~> 1.5", runtime: false},
+      {:burrito, github: "jsmestad/burrito", ref: "zig-0.16.0", runtime: false},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:ex_dna, "~> 1.5", only: [:dev, :test], runtime: false},
       {:ex_slop, "~> 0.4.2", only: [:dev, :test], runtime: false},
@@ -86,7 +86,7 @@ defmodule AdoCli.MixProject do
   defp releases do
     if Mix.env() == :prod do
       [
-        ado_cli: [
+        ado: [
           steps: [:assemble, &Burrito.wrap/1],
           burrito: [
             targets: [

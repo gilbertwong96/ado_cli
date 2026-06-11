@@ -72,9 +72,20 @@ defmodule AdoCli.CLI do
   @doc """
   Escript/Burrito entry point. Starts Finch and delegates to `run/1`.
   """
-  def main(args \\ System.argv()) do
+  def main(args \\ nil) do
     start_finch()
-    run(args)
+
+    raw_args = args || System.argv()
+
+    # In Burrito binary, System.argv() includes BEAM args.
+    # Filter to only CLI args (after --, or all if no --)
+    cli_args =
+      case Enum.split_while(raw_args, &(&1 != "--")) do
+        {_beam, ["--" | rest]} -> rest
+        {all, []} -> all
+      end
+
+    run(cli_args)
   end
 
   def command_definition, do: @command

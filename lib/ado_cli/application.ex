@@ -17,12 +17,22 @@ defmodule AdoCli.Application do
 
     {:ok, _pid} = Supervisor.start_link(children, strategy: :one_for_one)
 
-    # In Burrito mode, run the CLI then halt
+    raw_args = System.argv()
+
+    # Burrito wrapper passes CLI args via a special mechanism.
+    # Try Burrito.Util.Args first, fall back to filtered System.argv()
     args =
       if Code.ensure_loaded?(Burrito.Util.Args) do
         Burrito.Util.Args.argv()
       else
-        System.argv()
+        raw_args
+      end
+
+    # Filter out BEAM args (anything before a -- separator)
+    args =
+      case Enum.split_while(args, &(&1 != "--")) do
+        {_beam_args, ["--" | cli_args]} -> cli_args
+        {cli_args, []} -> cli_args
       end
 
     AdoCli.CLI.run(args)
