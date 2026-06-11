@@ -1,33 +1,46 @@
 defmodule AdoCli.ConfigFile do
   @moduledoc """
-  Persistent configuration file at `~/.ado_cli/config.json`.
+  Persistent configuration file at `~/.ado_cli/config.json` by default.
 
   Stores organization, auth method, and credentials for reuse across sessions.
+
+  The config path can be overridden via Application config for testing:
+      Application.put_env(:ado_cli, :config_path, "/tmp/ado_cli_test.json")
   """
 
-  @config_dir Path.join(System.user_home!(), ".ado_cli")
-  @config_file Path.join(@config_dir, "config.json")
+  @default_config_dir Path.join(System.user_home!(), ".ado_cli")
+  @default_config_file Path.join(@default_config_dir, "config.json")
 
   @doc """
-  Saves configuration to `~/.ado_cli/config.json`.
+  Returns the resolved config file path (overridable for tests).
+  """
+  def config_path do
+    Application.get_env(:ado_cli, :config_path) || @default_config_file
+  end
 
-  Merges with existing configuration if present.
+  @doc """
+  Returns the resolved config directory path.
+  """
+  def config_dir do
+    Path.dirname(config_path())
+  end
+
+  @doc """
+  Saves configuration to the config file. Merges with existing configuration.
   """
   def save(new_config) do
     existing = load() || %{}
     merged = Map.merge(existing, new_config)
-    File.mkdir_p!(@config_dir)
-    File.write!(@config_file, JSON.encode!(merged))
+    File.mkdir_p!(config_dir())
+    File.write!(config_path(), JSON.encode!(merged))
     :ok
   end
 
   @doc """
-  Loads the current configuration from `~/.ado_cli/config.json`.
-
-  Returns a map or `nil` if no config exists.
+  Loads the current configuration. Returns a map or `nil` if no config exists.
   """
   def load do
-    case File.read(@config_file) do
+    case File.read(config_path()) do
       {:ok, content} ->
         case JSON.decode(content) do
           {:ok, config} when is_map(config) -> config
@@ -43,7 +56,7 @@ defmodule AdoCli.ConfigFile do
   Deletes the configuration file (logout).
   """
   def delete do
-    File.rm_rf(@config_file)
+    File.rm_rf(config_path())
   end
 
   @doc """
