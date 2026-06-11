@@ -100,6 +100,35 @@ defmodule AdoCli.CLI.PullRequests do
           ],
           execute: &complete_pr/1
         ],
+        approve: [
+          name: "ado_cli prs approve",
+          doc: "Approve a pull request (vote +10).",
+          arguments: [
+            project: [type: :string, doc: "Project name or ID"],
+            repo_id: [type: :string, doc: "Repository name or ID"],
+            pr_id: [type: :integer, doc: "Pull request ID"]
+          ],
+          execute: &approve_pr/1
+        ],
+        vote: [
+          name: "ado_cli prs vote",
+          doc: "Vote on a pull request.",
+          arguments: [
+            project: [type: :string, doc: "Project name or ID"],
+            repo_id: [type: :string, doc: "Repository name or ID"],
+            pr_id: [type: :integer, doc: "Pull request ID"]
+          ],
+          options: [
+            vote: [
+              type: :integer,
+              required: true,
+              doc:
+                "Vote: 10 (approve), 5 (approve with suggestions), 0 (reset), -5 (wait), -10 (reject)",
+              doc_arg: "VOTE"
+            ]
+          ],
+          execute: &vote_pr/1
+        ],
         abandon: [
           name: "ado_cli prs abandon",
           doc: "Abandon a pull request.",
@@ -130,9 +159,9 @@ defmodule AdoCli.CLI.PullRequests do
     repo_id = parsed.arguments.repo_id
 
     params =
-      %{"searchCriteria.status" => parsed.options.status || "active"}
-      |> put_if(parsed.options.creator, "searchCriteria.creatorId")
-      |> put_if(parsed.options.top, "$top")
+      %{"searchCriteria.status" => Map.get(parsed.options, :status, "active")}
+      |> put_if(Map.get(parsed.options, :creator), "searchCriteria.creatorId")
+      |> put_if(Map.get(parsed.options, :top), "$top")
 
     result =
       Client.list(
@@ -213,10 +242,11 @@ defmodule AdoCli.CLI.PullRequests do
 
     body = %{
       "status" => "completed",
-      "deleteSourceBranch" => parsed.options.delete_source
+      "deleteSourceBranch" => Map.get(parsed.options, :delete_source, false)
     }
 
-    body = put_if_key(merge_strategy(parsed.options.merge_strategy), body, "mergeStrategy")
+    body =
+      put_if_key(merge_strategy(Map.get(parsed.options, :merge_strategy)), body, "mergeStrategy")
 
     path =
       "/#{URI.encode(project)}/_apis/git/repositories/#{URI.encode(repo_id)}/pullrequests/#{pr_id}"
@@ -233,6 +263,44 @@ defmodule AdoCli.CLI.PullRequests do
         halt_error(
           "Cannot complete PR ##{pr_id}: #{inspect(body["message"] || "HTTP #{status}")}"
         )
+
+      error ->
+        Helpers.handle_api_result(error, parsed, fn _ -> :ok end)
+    end
+  end
+
+  @doc """
+  Approves a pull request (vote = +10).
+  """
+  def approve_pr(parsed), do: vote_pr(%{parsed | options: Map.put(parsed.options, :vote, 10)})
+
+  @doc """
+  Votes on a pull request.
+
+  Requires `--vote` with one of: 10 (approve), 5 (approve with suggestions),
+  0 (reset), -5 (wait for author), -10 (reject).
+  """
+  def vote_pr(parsed) do
+    project = parsed.arguments.project
+    repo_id = parsed.arguments.repo_id
+    pr_id = parsed.arguments.pr_id
+    vote_value = parsed.options.vote
+    reviewer_id = resolve_reviewer_id(project, repo_id, pr_id)
+
+    path =
+      "/#{URI.encode(project)}/_apis/git/repositories/#{URI.encode(repo_id)}/pullrequests/#{pr_id}/reviewers/#{reviewer_id}"
+
+    case Client.put(path, %{"vote" => vote_value}) do
+      {:ok, _result} ->
+        label = vote_label(vote_value)
+        writeln(success("Voted #{label} on PR ##{pr_id}."))
+        halt_success("")
+
+      {:error, %{status: 404}} ->
+        halt_error("Pull request ##{pr_id} not found")
+
+      {:error, %{status: status, body: body}} ->
+        halt_error("Cannot vote on PR ##{pr_id}: #{inspect(body["message"] || "HTTP #{status}")}")
 
       error ->
         Helpers.handle_api_result(error, parsed, fn _ -> :ok end)
@@ -307,6 +375,28 @@ defmodule AdoCli.CLI.PullRequests do
     base = Application.get_env(:ado_cli, :azure_devops)[:server] || "https://dev.azure.com"
     "#{base}/#{org}/#{project}/_git/#{repo_id}/pullrequest/#{pr_id}"
   end
+
+  defp resolve_reviewer_id(project, repo_id, pr_id) do
+    case Client.list(
+           "/#{URI.encode(project)}/_apis/git/repositories/#{URI.encode(repo_id)}/pullrequests/#{pr_id}/reviewers"
+         ) do
+      {:ok, reviewers} when is_list(reviewers) and reviewers != [] ->
+        Enum.find_value(reviewers, & &1["id"]) ||
+          halt_error("Cannot determine reviewer ID for PR ##{pr_id}")
+
+      _ ->
+        halt_error(
+          "Cannot find reviewers for PR ##{pr_id}. Try opening the PR in the browser first."
+        )
+    end
+  end
+
+  defp vote_label(10), do: "+10 (approved)"
+  defp vote_label(5), do: "+5 (approved with suggestions)"
+  defp vote_label(0), do: "0 (reset)"
+  defp vote_label(-5), do: "-5 (waiting for author)"
+  defp vote_label(-10), do: "-10 (rejected)"
+  defp vote_label(n), do: "#{n}"
 
   # ── Formatting ────────────────────────────────────────────────────────
 

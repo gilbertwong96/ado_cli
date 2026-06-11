@@ -2,9 +2,11 @@ defmodule AdoCli.CLI.AuthCommands do
   @moduledoc """
   Authentication commands for Azure DevOps CLI.
 
-    ado_cli login  --method METHOD [--org ORG] [--pat TOKEN]
+    ado_cli login  [--method METHOD] --org ORG [--pat TOKEN]
     ado_cli logout
     ado_cli whoami
+
+  Default login opens your browser for interactive sign-in (like `az login`).
   """
 
   @behaviour CliMate.CLI.Command
@@ -21,8 +23,7 @@ defmodule AdoCli.CLI.AuthCommands do
       options: [
         method: [
           type: :string,
-          required: true,
-          doc: "Auth method: pat, device",
+          doc: "Auth method: browser (default), pat, device",
           doc_arg: "METHOD"
         ],
         org: [
@@ -57,35 +58,55 @@ defmodule AdoCli.CLI.AuthCommands do
     * `device` — Interactive browser-based OAuth device code flow
   """
   def login(parsed) do
-    org = parsed.options.org || System.get_env("ADO_ORG")
-    unless org, do: halt_error("--org is required (or set ADO_ORG env var)")
+    opts = parsed.options
+    method = Map.get(opts, :method, "browser")
+    org = Map.get(opts, :org) || System.get_env("ADO_ORG")
 
-    server = parsed.options.server || System.get_env("ADO_SERVER")
-
-    if server do
-      current = Application.get_env(:ado_cli, :azure_devops, [])
-      Application.put_env(:ado_cli, :azure_devops, Keyword.put(current, :server, server))
+    unless org || method == "browser" do
+      halt_error("--org is required for method='#{method}' (or set ADO_ORG env var)")
     end
 
-    case parsed.options.method do
-      "pat" -> login_with_pat(org, parsed.options)
-      "device" -> login_with_device(org)
-      other -> halt_error("Unknown method '#{other}'. Use 'pat' or 'device'.")
+    set_server(opts)
+    dispatch_login(org, opts, method)
+  end
+
+  defp set_server(opts) do
+    server = Map.get(opts, :server) || System.get_env("ADO_SERVER")
+    if server, do: :persistent_term.put({:ado_cli, :server}, server)
+  end
+
+  defp dispatch_login(org, _opts, "browser"), do: login_with_browser(org)
+  defp dispatch_login(org, opts, "pat"), do: login_with_pat(org, opts)
+  defp dispatch_login(org, _opts, "device"), do: login_with_device(org)
+
+  defp dispatch_login(_org, _opts, other),
+    do: halt_error("Unknown method '#{other}'. Use 'browser', 'pat', or 'device'.")
+
+  defp login_with_browser(org) do
+    case Auth.login_browser(org) do
+      {:ok, _org_name} -> halt_success("Done.")
+      {:error, reason} -> halt_error("Login failed: #{reason}")
     end
   end
 
   defp login_with_pat(org, opts) do
-    pat = opts.pat || System.get_env("ADO_PAT")
+    pat = Map.get(opts, :pat) || System.get_env("ADO_PAT")
     unless pat, do: halt_error("--pat is required for method=pat (or set ADO_PAT env var)")
 
-    server = Application.get_env(:ado_cli, :azure_devops)[:server]
+    server =
+      try do
+        :persistent_term.get({:ado_cli, :server}, nil)
+      catch
+        :error, :badarg -> nil
+      end || System.get_env("ADO_SERVER")
+
     server_label = if server, do: " (#{server})", else: ""
 
     case Auth.login_pat(org, pat) do
       {:ok, org_name} ->
-        writeln(success("Logged in to #{org_name}#{server_label} via Personal Access Token."))
-        writeln("Credentials saved to ~/.ado_cli/config.json")
-        halt_success("")
+        halt_success(
+          "Logged in to #{org_name}#{server_label} via Personal Access Token.\nCredentials saved to ~/.ado_cli/config.json"
+        )
 
       {:error, reason} ->
         halt_error("Login failed: #{reason}")
@@ -94,7 +115,7 @@ defmodule AdoCli.CLI.AuthCommands do
 
   defp login_with_device(org) do
     case Auth.login_device_code(org) do
-      {:ok, _org_name} -> halt_success("")
+      {:ok, _org_name} -> halt_success("Done.")
       {:error, reason} -> halt_error("Login failed: #{reason}")
     end
   end

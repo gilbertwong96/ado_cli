@@ -14,13 +14,35 @@ defmodule AdoCli.Auth do
     * `:pat` — Personal Access Token (Basic Auth)
     * `:az_cli` — Azure CLI bearer token (no PAT needed if `az login` is active)
     * `:device_code` — Interactive Microsoft Identity Platform device-code OAuth flow
+    * `:browser` — Browser-based OAuth 2.0 Authorization Code + PKCE
+
+  ## MSA (personal account) support
+
+  The Azure DevOps resource (`499b84ac-…`) blocks MSAs at the AAD sign-in page.
+  To work around this, the OAuth flows authenticate to Azure Resource Manager
+  (ARM) first — which accepts MSAs — then exchange the ARM refresh token for
+  a DevOps access token via a second token call.
+
+  Override the OAuth client ID via `ADO_OAUTH_CLIENT_ID` env var.
   """
 
   alias AdoCli.ConfigFile
   alias CliMate.CLI
 
+  # Azure DevOps resource ID. Correct value for the OAuth `resource` field.
   @ado_resource "499b84ac-1321-427f-aa17-267ca6975798"
-  @tenant "common"
+
+  # ARM resource. We authenticate here first because ARM accepts MSAs,
+  # then exchange the refresh token for a DevOps token.
+  @arm_resource "https://management.core.windows.net"
+
+  # OAuth client_id — the Azure CLI public client (same one `az login` uses).
+  # Accepts work/school AND personal Microsoft accounts. Override via env var.
+  @ado_client_id System.get_env("ADO_OAUTH_CLIENT_ID", "04b07795-8ddb-461a-bbee-02f9e1bf7b46")
+
+  @tenant "organizations"
+
+  @redirect_uri "http://localhost"
 
   @doc """
   Returns `{:ok, org, headers}` with ready-to-use HTTP auth headers,
@@ -80,10 +102,8 @@ defmodule AdoCli.Auth do
         CLI.writeln("")
 
         case poll_for_token(org, device_code, interval, 0) do
-          {:ok, token} ->
-            ConfigFile.save(%{org: org, method: "device_code", token: token})
-            CLI.writeln(CLI.success("Authenticated successfully as #{org}."))
-            {:ok, org}
+          {:ok, _arm_token, refresh_token} ->
+            exchange_and_save_device(org, refresh_token)
 
           {:error, :timeout} ->
             {:error, "Authentication timed out. Please try again."}
@@ -95,6 +115,71 @@ defmodule AdoCli.Auth do
       {:error, reason} ->
         {:error, reason}
     end
+  end
+
+  @doc """
+  Authenticate via browser-based OAuth 2.0 Authorization Code flow with PKCE.
+  Opens the system browser for the user to sign in, then captures the
+  redirect on a local HTTP server to exchange the code for a token.
+
+  This is the default login method (no `--method` flag needed).
+  `org` is optional — if omitted, the token is saved without an org
+  and you can set it later via `ADO_ORG` or `--org` on commands.
+
+      ado_cli login               # browser login, no org needed
+      ado_cli login --org myorg   # browser login with org hint
+  """
+  def login_browser(org) do
+    port = find_free_port()
+    state = generate_state()
+    code_verifier = generate_code_verifier()
+    code_challenge = generate_code_challenge(code_verifier)
+    redirect = "#{@redirect_uri}:#{port}"
+
+    auth_url = build_authorize_url(redirect, code_challenge, state)
+
+    CLI.writeln("")
+    org_hint = if org, do: " to sign in to #{org}", else: ""
+    CLI.writeln("Opening browser#{org_hint}...")
+    CLI.write("  ")
+    CLI.writeln(CLI.color(auth_url, :cyan))
+    CLI.writeln("")
+
+    open_browser(auth_url)
+
+    case listen_for_code(port) do
+      {:ok, code, ^state} -> handle_auth_code(code, redirect, code_verifier, org)
+      {:ok, _code, _mismatched_state} -> {:error, "State mismatch — possible CSRF attack."}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp handle_auth_code(code, redirect, code_verifier, org) do
+    case exchange_code_for_token(code, redirect, code_verifier) do
+      {:ok, _arm_token, refresh_token} ->
+        case exchange_refresh_for_devops(refresh_token, org) do
+          {:ok, devops_token} -> save_browser_token(devops_token, org)
+          {:error, reason} -> {:error, reason}
+        end
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp save_browser_token(token, org) do
+    config = %{"method" => "browser", "token" => token}
+    config = if org, do: Map.put(config, "org", org), else: config
+    ConfigFile.save(config)
+
+    if org do
+      CLI.success("Authenticated successfully as #{org}.\n")
+    else
+      CLI.success("Authenticated successfully.\n")
+      CLI.writeln("Set your org with: export ADO_ORG=<your-org>")
+    end
+
+    {:ok, org}
   end
 
   @doc """
@@ -112,28 +197,61 @@ defmodule AdoCli.Auth do
     config = ConfigFile.load()
     runtime_org = get_org()
     runtime_pat = get_pat()
-    server = Application.get_env(:ado_cli, :azure_devops)[:server]
+    server = safe_get_env(:server) || config[:server]
 
     %{
       configured: config != nil,
-      method: config[:method] || (runtime_pat && "pat"),
-      org: runtime_org || config[:org],
-      server: server,
+      method: config["method"] || (runtime_pat && "pat"),
+      org: runtime_org || config["org"],
+      server: server || config["server"],
       az_cli_available: az_cli_available?()
     }
   end
 
   # ── Internal ──────────────────────────────────────────────────────────
 
-  defp get_org,
-    do: Application.get_env(:ado_cli, :azure_devops)[:org] || System.get_env("ADO_ORG")
+  defp set_runtime(_org, _pat), do: :ok
 
-  defp get_pat,
-    do: Application.get_env(:ado_cli, :azure_devops)[:pat] || System.get_env("ADO_PAT")
+  defp get_org do
+    cli_org = safe_get_env(:org)
+    if cli_org, do: cli_org, else: config_org()
+  end
 
-  defp set_runtime(org, pat) do
-    Application.put_env(:ado_cli, :azure_devops, :org, org)
-    Application.put_env(:ado_cli, :azure_devops, :pat, pat)
+  defp get_pat do
+    cli_pat = safe_get_env(:pat)
+    if cli_pat, do: cli_pat, else: config_pat()
+  end
+
+  defp config_org do
+    case ConfigFile.load() do
+      %{"org" => org} when is_binary(org) and org != "" -> org
+      _ -> nil
+    end
+  end
+
+  defp config_pat do
+    case ConfigFile.load() do
+      %{"pat" => pat} -> pat
+      _ -> nil
+    end
+  end
+
+  defp safe_get_env(key) do
+    get_pt(key) || get_app(key) || get_env(key)
+  end
+
+  defp get_pt(key), do: safe_call(fn -> :persistent_term.get({:ado_cli, key}) end)
+  defp get_app(key), do: safe_call(fn -> Application.get_env(:ado_cli, :azure_devops)[key] end)
+
+  defp get_env(:org), do: System.get_env("ADO_ORG")
+  defp get_env(:pat), do: System.get_env("ADO_PAT")
+  defp get_env(:server), do: System.get_env("ADO_SERVER")
+  defp get_env(_), do: nil
+
+  defp safe_call(fun) do
+    fun.()
+  rescue
+    _ -> nil
   end
 
   defp basic_auth_headers(pat), do: [{"Authorization", "Basic #{Base.encode64(":#{pat}")}"}]
@@ -145,15 +263,18 @@ defmodule AdoCli.Auth do
         {:error, :not_configured}
 
       config ->
-        org = config[:org]
+        org = config["org"]
 
-        case config[:method] do
+        case config["method"] do
           "pat" ->
-            set_runtime(org, config[:pat])
-            {:ok, org, basic_auth_headers(config[:pat])}
+            set_runtime(org, config["pat"])
+            {:ok, org, basic_auth_headers(config["pat"])}
 
           "device_code" ->
-            {:ok, org, bearer_auth_headers(config[:token])}
+            {:ok, org, bearer_auth_headers(config["token"])}
+
+          "browser" ->
+            {:ok, org, bearer_auth_headers(config["token"])}
 
           _ ->
             {:error, :not_configured}
@@ -187,8 +308,8 @@ defmodule AdoCli.Auth do
   defp request_device_code(_org) do
     body =
       URI.encode_query(%{
-        client_id: @ado_resource,
-        resource: @ado_resource
+        client_id: @ado_client_id,
+        resource: @arm_resource
       })
 
     url = "https://login.microsoftonline.com/#{@tenant}/oauth2/devicecode"
@@ -218,7 +339,7 @@ defmodule AdoCli.Auth do
     body =
       URI.encode_query(%{
         grant_type: "urn:ietf:params:oauth:grant-type:device_code",
-        client_id: @ado_resource,
+        client_id: @ado_client_id,
         device_code: device_code
       })
 
@@ -238,10 +359,17 @@ defmodule AdoCli.Auth do
     end
   end
 
+  # Returns {:ok, access_token, refresh_token} or {:ok, access_token, nil}
   defp extract_token(resp_body) do
     case JSON.decode(resp_body) do
-      {:ok, %{"access_token" => token}} -> {:ok, token}
-      _ -> {:error, "Invalid token response"}
+      {:ok, %{"access_token" => access, "refresh_token" => refresh}} ->
+        {:ok, access, refresh}
+
+      {:ok, %{"access_token" => access}} ->
+        {:ok, access, nil}
+
+      _ ->
+        {:error, "Invalid token response"}
     end
   end
 
@@ -276,4 +404,283 @@ defmodule AdoCli.Auth do
   end
 
   defp safe_decode(body), do: inspect(body)
+
+  # ── ARM → DevOps token exchange ─────────────────────────────────────
+
+  defp exchange_refresh_for_devops(nil, _org),
+    do: {:error, "No refresh token available for DevOps exchange"}
+
+  defp exchange_refresh_for_devops(refresh_token, org) do
+    tenant = discover_devops_tenant(org)
+
+    body =
+      URI.encode_query(%{
+        client_id: @ado_client_id,
+        grant_type: "refresh_token",
+        refresh_token: refresh_token,
+        scope: "#{@ado_resource}/.default"
+      })
+
+    url = "https://login.microsoftonline.com/#{tenant}/oauth2/v2.0/token"
+    headers = [{"Content-Type", "application/x-www-form-urlencoded"}]
+    request = Finch.build(:post, url, headers, body)
+
+    case Finch.request(request, AdoCli.Finch) do
+      {:ok, %Finch.Response{status: 200, body: resp_body}} ->
+        case JSON.decode(resp_body) do
+          {:ok, %{"access_token" => token}} -> {:ok, token}
+          _ -> {:error, "Invalid DevOps token response"}
+        end
+
+      {:ok, %Finch.Response{status: status, body: resp_body}} ->
+        {:error, "DevOps token exchange failed (HTTP #{status}): #{safe_decode(resp_body)}"}
+
+      {:error, reason} ->
+        {:error, "DevOps token exchange failed: #{inspect(reason)}"}
+    end
+  end
+
+  # Discover the AAD backing tenant for a DevOps organization
+  defp discover_devops_tenant(org) do
+    url =
+      "https://login.microsoftonline.com/#{org}.visualstudio.com/.well-known/openid-configuration"
+
+    case Finch.request(Finch.build(:get, url), AdoCli.Finch) do
+      {:ok, %Finch.Response{status: 200, body: body}} ->
+        case JSON.decode(body) do
+          {:ok, %{"issuer" => issuer}} ->
+            # issuer = "https://sts.windows.net/{tenant-id}/"
+            tenant = issuer |> String.split("/") |> Enum.at(3)
+            if tenant, do: tenant, else: @tenant
+
+          _ ->
+            @tenant
+        end
+
+      _ ->
+        @tenant
+    end
+  end
+
+  defp exchange_and_save_device(org, refresh_token) do
+    case exchange_refresh_for_devops(refresh_token, org) do
+      {:ok, devops_token} ->
+        ConfigFile.save(%{org: org, method: "device_code", token: devops_token})
+        CLI.success("Authenticated successfully as #{org}.\n")
+        {:ok, org}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  # ── Browser OAuth 2.0 Authorization Code + PKCE flow ────────────────
+
+  defp generate_state do
+    random = :crypto.strong_rand_bytes(16)
+    Base.url_encode64(random, padding: false)
+  end
+
+  defp generate_code_verifier do
+    random = :crypto.strong_rand_bytes(32)
+    Base.url_encode64(random, padding: false)
+  end
+
+  defp generate_code_challenge(verifier) do
+    hash = :crypto.hash(:sha256, verifier)
+    Base.url_encode64(hash, padding: false)
+  end
+
+  defp generate_nonce do
+    random = :crypto.strong_rand_bytes(16)
+    Base.url_encode64(random, padding: false)
+  end
+
+  defp build_authorize_url(redirect_uri, code_challenge, state) do
+    nonce = generate_nonce()
+
+    params = %{
+      client_id: @ado_client_id,
+      response_type: "code",
+      redirect_uri: redirect_uri,
+      response_mode: "query",
+      scope: "#{@arm_resource}/.default offline_access openid profile",
+      code_challenge: code_challenge,
+      code_challenge_method: "S256",
+      state: state,
+      nonce: nonce,
+      prompt: "select_account",
+      client_info: "1",
+      claims: ~S'{"access_token": {"xms_cc": {"values": ["CP1"]}}}'
+    }
+
+    "https://login.microsoftonline.com/#{@tenant}/oauth2/v2.0/authorize?#{URI.encode_query(params)}"
+  end
+
+  defp find_free_port do
+    {:ok, socket} = :gen_tcp.listen(0, [{:reuseaddr, true}])
+    {:ok, port} = :inet.port(socket)
+    :gen_tcp.close(socket)
+    port
+  end
+
+  defp open_browser(url) do
+    case :os.type() do
+      {:win32, _} -> System.cmd("cmd", ["/c", "start", url], env: [])
+      {:unix, :darwin} -> System.cmd("open", [url], env: [])
+      {:unix, _} -> System.cmd("xdg-open", [url], env: [])
+    end
+  end
+
+  # HTTP listener that handles form_post (POST with form body from AAD).
+  # Also handles query-param GET for backwards compatibility.
+
+  defp listen_for_code(port) do
+    opts = [:binary, {:reuseaddr, true}, {:ip, {127, 0, 0, 1}}, {:active, false}]
+
+    case :gen_tcp.listen(port, opts) do
+      {:ok, listener} ->
+        result =
+          try do
+            wait_for_callback(listener)
+          after
+            :gen_tcp.close(listener)
+          end
+
+        result
+
+      {:error, reason} ->
+        {:error, "Cannot listen on port #{port}: #{inspect(reason)}"}
+    end
+  end
+
+  defp wait_for_callback(listener) do
+    {:ok, client} = :gen_tcp.accept(listener, 120_000)
+    {:ok, data} = recv_all(client, <<>>)
+    result = extract_code_from_request(data)
+    send_response(client, "Authentication complete. You may close this window.")
+    :gen_tcp.close(client)
+    result
+  rescue
+    _ -> {:error, "Browser login timed out or was cancelled."}
+  end
+
+  defp recv_all(socket, acc) do
+    case :gen_tcp.recv(socket, 0, 2000) do
+      {:ok, chunk} -> recv_all(socket, acc <> chunk)
+      {:error, :timeout} -> {:ok, acc}
+      {:error, _} = error -> error
+    end
+  end
+
+  defp send_response(socket, body) do
+    response = """
+    HTTP/1.1 200 OK\r
+    Content-Type: text/html; charset=utf-8\r
+    Content-Length: #{byte_size(body)}\r
+    Connection: close\r
+    \r
+    #{body}
+    """
+
+    :gen_tcp.send(socket, response)
+  end
+
+  # Handles both form_post (POST with form body) and query-param GET
+  defp extract_code_from_request(data) do
+    {method, path} = parse_request_line(data)
+    body = extract_body(data)
+    params = oauth_params(method, path, body)
+    extract_oauth_result(params)
+  end
+
+  defp parse_request_line(data) do
+    data
+    |> String.split("\r\n")
+    |> hd()
+    |> String.split(" ")
+    |> case do
+      [method, path | _] -> {method, path}
+      _ -> {"UNKNOWN", "/"}
+    end
+  end
+
+  defp extract_body(data) do
+    case String.split(data, "\r\n\r\n", parts: 2) do
+      [_, rest] ->
+        content_length =
+          case :binary.match(data, "Content-Length: ") do
+            {pos, _} ->
+              data
+              |> String.slice(pos..-1//1)
+              |> String.split("\r\n")
+              |> hd()
+              |> String.replace("Content-Length: ", "")
+              |> parse_int()
+
+            :nomatch ->
+              0
+          end
+
+        String.slice(rest, 0, content_length)
+
+      _ ->
+        ""
+    end
+  end
+
+  defp oauth_params("POST", _path, body) when body != "", do: URI.decode_query(body)
+  defp oauth_params("GET", path, _body), do: URI.decode_query(URI.parse(path).query || "")
+  defp oauth_params(_method, _path, _body), do: %{}
+
+  defp extract_oauth_result(params) do
+    case params do
+      %{"code" => code, "state" => state} -> {:ok, code, state}
+      %{"code" => code} -> {:ok, code, nil}
+      %{"error" => error} -> {:error, "Authorization failed: #{error}"}
+      _ -> {:error, "No authorization code received."}
+    end
+  end
+
+  defp parse_int(str) do
+    case Integer.parse(str) do
+      {n, _} -> n
+      :error -> 0
+    end
+  end
+
+  defp exchange_code_for_token(code, redirect_uri, code_verifier) do
+    body =
+      URI.encode_query(%{
+        client_id: @ado_client_id,
+        grant_type: "authorization_code",
+        code: code,
+        redirect_uri: redirect_uri,
+        code_verifier: code_verifier
+      })
+
+    url = "https://login.microsoftonline.com/#{@tenant}/oauth2/v2.0/token"
+    headers = [{"Content-Type", "application/x-www-form-urlencoded"}]
+    request = Finch.build(:post, url, headers, body)
+
+    case Finch.request(request, AdoCli.Finch) do
+      {:ok, %Finch.Response{status: 200, body: resp_body}} ->
+        case JSON.decode(resp_body) do
+          {:ok, %{"access_token" => access, "refresh_token" => refresh}} ->
+            {:ok, access, refresh}
+
+          {:ok, %{"access_token" => access}} ->
+            {:ok, access, nil}
+
+          _ ->
+            {:error, "Invalid token response"}
+        end
+
+      {:ok, %Finch.Response{status: status, body: resp_body}} ->
+        {:error, "Token exchange failed (HTTP #{status}): #{safe_decode(resp_body)}"}
+
+      {:error, reason} ->
+        {:error, "Token exchange failed: #{inspect(reason)}"}
+    end
+  end
 end

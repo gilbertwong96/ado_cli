@@ -106,9 +106,9 @@ defmodule AdoCli.CLI.WorkItems do
 
     filters =
       []
-      |> add_wiql_filter(parsed.options.type, "System.WorkItemType")
-      |> add_wiql_filter(parsed.options.assigned_to, "System.AssignedTo")
-      |> add_wiql_filter(parsed.options.state, "System.State")
+      |> add_wiql_filter(Map.get(parsed.options, :type), "System.WorkItemType")
+      |> add_wiql_filter(Map.get(parsed.options, :assigned_to), "System.AssignedTo")
+      |> add_wiql_filter(Map.get(parsed.options, :state), "System.State")
 
     wiql =
       ["ORDER BY [System.Id] DESC" | filters]
@@ -133,7 +133,7 @@ defmodule AdoCli.CLI.WorkItems do
   """
   def show_work_item(parsed) do
     id = parsed.arguments.id
-    params = %{"$expand" => parsed.options.expand}
+    params = %{"$expand" => Map.get(parsed.options, :expand, "all")}
 
     case Client.get("/_apis/wit/workitems/#{id}", params) do
       {:ok, wi} -> Helpers.json_or_format(wi, parsed, &print_work_item_detail/1)
@@ -149,8 +149,9 @@ defmodule AdoCli.CLI.WorkItems do
   """
   def query_work_items(parsed) do
     project = parsed.arguments.project
-    unless parsed.options.wiql, do: halt_error("--wiql is required for the query command")
-    run_wiql_query(project, parsed.options.wiql, parsed)
+    wiql = Map.get(parsed.options, :wiql)
+    unless wiql, do: halt_error("--wiql is required for the query command")
+    run_wiql_query(project, wiql, parsed)
   end
 
   # ── Write ─────────────────────────────────────────────────────────────
@@ -163,8 +164,8 @@ defmodule AdoCli.CLI.WorkItems do
   """
   def create_work_item(parsed) do
     project = parsed.arguments.project
-    type = parsed.options.type
-    title = parsed.options.title
+    type = Map.get(parsed.options, :type)
+    title = Map.get(parsed.options, :title)
 
     unless type, do: halt_error("--type is required (e.g. Bug, Task, User Story)")
     unless title, do: halt_error("--title is required")
@@ -172,11 +173,11 @@ defmodule AdoCli.CLI.WorkItems do
     patch =
       build_json_patch([
         {"/fields/System.Title", title},
-        {"/fields/System.Description", parsed.options.description},
-        {"/fields/System.AssignedTo", parsed.options.assigned_to},
-        {"/fields/System.State", parsed.options.state},
-        {"/fields/Microsoft.VSTS.Common.Priority", parsed.options.priority},
-        {"/fields/System.Tags", parsed.options.tags}
+        {"/fields/System.Description", Map.get(parsed.options, :description)},
+        {"/fields/System.AssignedTo", Map.get(parsed.options, :assigned_to)},
+        {"/fields/System.State", Map.get(parsed.options, :state)},
+        {"/fields/Microsoft.VSTS.Common.Priority", Map.get(parsed.options, :priority)},
+        {"/fields/System.Tags", Map.get(parsed.options, :tags)}
       ])
 
     case Client.post("/#{URI.encode(project)}/_apis/wit/workitems/$#{URI.encode(type)}", patch) do
@@ -203,12 +204,12 @@ defmodule AdoCli.CLI.WorkItems do
 
     patch =
       build_json_patch([
-        {"/fields/System.Title", parsed.options.title},
-        {"/fields/System.Description", parsed.options.description},
-        {"/fields/System.State", parsed.options.state},
-        {"/fields/System.AssignedTo", parsed.options.assigned_to},
-        {"/fields/Microsoft.VSTS.Common.Priority", parsed.options.priority},
-        {"/fields/System.Tags", parsed.options.tags}
+        {"/fields/System.Title", Map.get(parsed.options, :title)},
+        {"/fields/System.Description", Map.get(parsed.options, :description)},
+        {"/fields/System.State", Map.get(parsed.options, :state)},
+        {"/fields/System.AssignedTo", Map.get(parsed.options, :assigned_to)},
+        {"/fields/Microsoft.VSTS.Common.Priority", Map.get(parsed.options, :priority)},
+        {"/fields/System.Tags", Map.get(parsed.options, :tags)}
       ])
 
     if patch == [] do
@@ -246,7 +247,7 @@ defmodule AdoCli.CLI.WorkItems do
   defp format_field_value(value), do: value
 
   defp run_wiql_query(project, wiql, parsed) do
-    top = parsed.options.top
+    top = Map.get(parsed.options, :top)
     body = %{"query" => wiql}
 
     case Client.post("/#{URI.encode(project)}/_apis/wit/wiql", body) do
