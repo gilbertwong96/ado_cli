@@ -86,6 +86,43 @@ defmodule AdoCli.CLI.WorkItems do
             tags: [type: :string, doc: "Comma-separated tags (replaces all)", doc_arg: "TAGS"]
           ],
           execute: &update_work_item/1
+        ],
+        comments: [
+          name: "ado_cli workitems comments",
+          doc: "Manage work item discussion comments.",
+          subcommands: [
+            list: [
+              name: "ado_cli workitems comments list",
+              doc: "List discussion comments on a work item.",
+              arguments: [
+                id: [type: :integer, doc: "Work item ID"]
+              ],
+              execute: &list_work_item_comments/1
+            ],
+            add: [
+              name: "ado_cli workitems comments add",
+              doc: "Add a discussion comment to a work item.",
+              arguments: [
+                id: [type: :integer, doc: "Work item ID"]
+              ],
+              options: [
+                text: [type: :string, doc: "Comment text", required: true, doc_arg: "TEXT"]
+              ],
+              execute: &add_work_item_comment/1
+            ],
+            update: [
+              name: "ado_cli workitems comments update",
+              doc: "Update a discussion comment on a work item.",
+              arguments: [
+                id: [type: :integer, doc: "Work item ID"],
+                comment_id: [type: :integer, doc: "Comment revision (from history)"]
+              ],
+              options: [
+                text: [type: :string, doc: "New comment text", required: true, doc_arg: "TEXT"]
+              ],
+              execute: &update_work_item_comment/1
+            ]
+          ]
         ]
       ]
     ]
@@ -318,4 +355,88 @@ defmodule AdoCli.CLI.WorkItems do
   defp display_name(%{"displayName" => name}, _default), do: name
   defp display_name(nil, default), do: default
   defp display_name(_, default), do: default
+
+  # ── Comments ────────────────────────────────────────────────────────
+
+  @doc """
+  Lists discussion comments (history) of a work item.
+  """
+  def list_work_item_comments(parsed) do
+    id = parsed.arguments.id
+    path = "/_apis/wit/workItems/#{id}/comments"
+
+    case Client.get(path) do
+      {:ok, %{"comments" => comments}} ->
+        Helpers.json_or_format(comments, parsed, fn comments ->
+          writeln("")
+          Enum.each(comments, &print_comment/1)
+        end)
+
+      {:ok, _} ->
+        writeln("No comments found.")
+
+      {:error, reason} ->
+        Helpers.handle_api_result({:error, reason}, parsed, nil)
+    end
+
+    halt_success("Done.")
+  end
+
+  @doc """
+  Adds a discussion comment to a work item via System.History.
+  """
+  def add_work_item_comment(parsed) do
+    id = parsed.arguments.id
+    text = parsed.options.text
+
+    patch = [
+      %{"op" => "add", "path" => "/fields/System.History", "value" => text}
+    ]
+
+    path = "/_apis/wit/workitems/#{id}"
+
+    case Client.patch(path, patch) do
+      {:ok, _} ->
+        success("Comment added to work item ##{id}.\n")
+
+      {:error, reason} ->
+        Helpers.handle_api_result({:error, reason}, parsed, nil)
+    end
+
+    halt_success("Done.")
+  end
+
+  @doc """
+  Updates a discussion comment (adds a new history entry that corrects the previous).
+  """
+  def update_work_item_comment(parsed) do
+    id = parsed.arguments.id
+    text = parsed.options.text
+
+    patch = [
+      %{"op" => "add", "path" => "/fields/System.History", "value" => "[Edited] #{text}"}
+    ]
+
+    path = "/_apis/wit/workitems/#{id}"
+
+    case Client.patch(path, patch) do
+      {:ok, _} ->
+        success("Comment updated on work item ##{id}.\n")
+
+      {:error, reason} ->
+        Helpers.handle_api_result({:error, reason}, parsed, nil)
+    end
+
+    halt_success("Done.")
+  end
+
+  defp print_comment(comment) do
+    author = (comment["createdBy"] && comment["createdBy"]["displayName"]) || "unknown"
+    date = comment["createdDate"] || ""
+    text = comment["text"] || ""
+    cid = comment["id"]
+    writeln("  [#{cid}] #{author} (#{date})")
+    writeln("  #{text}")
+    writeln("")
+  end
 end
