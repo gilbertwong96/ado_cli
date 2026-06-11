@@ -1,9 +1,7 @@
 defmodule AdoCli.Application do
   @moduledoc """
   Application entry point for Burrito-wrapped binaries.
-
-  When running as a Burrito binary, this is the :mod callback.
-  It starts the Finch supervisor, runs the CLI, and then exits.
+  Uses Burrito.Util.Args.argv() — the recommended best practice.
   """
 
   use Application
@@ -16,10 +14,14 @@ defmodule AdoCli.Application do
 
     {:ok, _pid} = Supervisor.start_link(children, strategy: :one_for_one)
 
-    # Burrito passes CLI args via -extra in the BEAM command line.
-    # Use :init.get_plain_arguments() which reads -extra args.
-    args = :init.get_plain_arguments() |> Enum.map(&List.to_string/1)
-    args = if args == [], do: System.argv(), else: args
+    # Best practice: use Burrito.Util.Args.argv()
+    args =
+      if Code.ensure_loaded?(Burrito.Util.Args) do
+        Burrito.Util.Args.argv()
+      else
+        System.argv()
+      end
+
     AdoCli.CLI.run(args)
 
     {:ok, self()}
