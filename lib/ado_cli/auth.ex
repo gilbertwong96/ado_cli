@@ -256,27 +256,28 @@ defmodule AdoCli.Auth do
     headers = [{"Authorization", "Bearer #{token}"}]
     request = Finch.build(:get, url, headers)
 
-    case Finch.request(request, AdoCli.Finch) do
-      {:ok, %Finch.Response{status: 200, body: body}} ->
-        # The accounts API returns a top-level array, not the standard
-        # {value: [...]} wrapper used by other DevOps endpoints.
-        accounts =
-          case JSON.decode(body) do
-            {:ok, %{"value" => list}} when is_list(list) -> list
-            {:ok, list} when is_list(list) -> list
-            _ -> []
-          end
-
-        names =
-          accounts
-          |> Enum.map(fn a -> a["AccountName"] || a["accountName"] || a["accountUri"] || "" end)
-          |> Enum.reject(&(&1 == ""))
-
-        {:ok, names}
-
-      _ ->
-        {:error, "Failed to list accounts"}
+    with {:ok, %Finch.Response{status: 200, body: body}} <- Finch.request(request, AdoCli.Finch),
+         {:ok, accounts} <- parse_accounts_body(body) do
+      {:ok, extract_account_names(accounts)}
+    else
+      _ -> {:error, "Failed to list accounts"}
     end
+  end
+
+  # The accounts API returns a top-level array, not the standard
+  # {value: [...]} wrapper used by other DevOps endpoints.
+  defp parse_accounts_body(body) do
+    case JSON.decode(body) do
+      {:ok, %{"value" => list}} when is_list(list) -> {:ok, list}
+      {:ok, list} when is_list(list) -> {:ok, list}
+      _ -> :error
+    end
+  end
+
+  defp extract_account_names(accounts) do
+    accounts
+    |> Enum.map(fn a -> a["AccountName"] || a["accountName"] || a["accountUri"] || "" end)
+    |> Enum.reject(&(&1 == ""))
   end
 
   @doc """
