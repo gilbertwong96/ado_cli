@@ -20,6 +20,7 @@ The CI alias runs all of the following checks in order, failing on the first fai
 | 5 | Audit dependencies for vulnerabilities | `mix deps.audit` |
 | 6 | Cross-reference analysis (no orphans) | `mix xref graph --label compile-connected --fail-above 0` |
 | 7 | Type checking (with Finch false-positive filtering) | `mix ci.dialyzer` |
+| 8 | Test coverage ≥ 90% on testable modules | `MIX_ENV=test mix test --cover` |
 
 ## Additional Quality Commands
 
@@ -39,8 +40,9 @@ mix test     # Unit tests
 4. **Clean dependencies**: No unused deps, and all deps are audited for known CVEs
 5. **No orphan modules**: Every module must be reachable from the compile-connected graph
 6. **Type-safe**: Dialyzer must report zero unexpected type errors (Finch-related false positives are filtered)
-7. **Full CI on every change**: Every code change must pass `mix ci` (all 7 stages) AND `mix test` before declaring the change complete. Never skip any stage.
+7. **Full CI on every change**: Every code change must pass `mix ci` (all 8 stages) AND `mix test` before declaring the change complete. Never skip any stage.
 8. **Run the full quality pipeline before committing**: At minimum, run `mix quality && mix ci` to validate compile, format, credo, ex_dna, reach, tests, deps, xref, and dialyzer all pass.
+9. **90% test coverage on testable modules**: The following modules are excluded from coverage enforcement (tightly coupled to CliMate's halt_*): `AdoCli.Application`, `AdoCli.Auth`, `AdoCli.CLI.*`. All other modules must maintain ≥90% coverage. Run `MIX_ENV=test mix test --cover` to check.
 
 ## Dialyzer & Finch
 
