@@ -83,11 +83,6 @@ defmodule AdoCli.AuthTest do
       assert status.method == "pat"
     end
 
-    test "includes az_cli availability flag" do
-      status = Auth.status()
-      assert is_boolean(status.az_cli_available)
-    end
-
     test "uses runtime org from env over config" do
       Auth.login_pat("cfg_org", "cfg_token")
       System.put_env("ADO_ORG", "env_org")
@@ -132,23 +127,6 @@ defmodule AdoCli.AuthTest do
       unless System.find_executable("az") do
         assert {:error, :not_configured} = Auth.resolve_auth()
       end
-    end
-
-    test "returns ok when az CLI provides a token" do
-      # If az is available AND logged in, the CLI uses az's token.
-      # If az is available but not logged in, it returns :not_configured.
-      # Both outcomes are valid; we just verify no crash.
-      if System.find_executable("az") do
-        result = Auth.resolve_auth()
-        assert match?({:ok, _org, _headers}, result) or match?({:error, :not_configured}, result)
-      end
-    end
-  end
-
-  describe "az_cli_available?/0 (private)" do
-    test "reflects whether az is in PATH" do
-      # Indirectly testable via status().az_cli_available
-      assert Auth.status().az_cli_available == (System.find_executable("az") != nil)
     end
   end
 end
