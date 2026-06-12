@@ -23,7 +23,7 @@ defmodule AdoCli.Client do
   Returns `{:ok, decoded_json}` or `{:error, reason}`.
   """
   def get(path, params \\ %{}) do
-    if az_available?(), do: az_get(path, params), else: finch_get(path, params)
+    if use_az_backend?(), do: az_get(path, params), else: finch_get(path, params)
   end
 
   @doc """
@@ -50,33 +50,35 @@ defmodule AdoCli.Client do
   Makes a POST request.
   """
   def post(path, body, params \\ %{}) do
-    if az_available?(), do: az_post(path, body, params), else: finch_post(path, body, params)
+    if use_az_backend?(), do: az_post(path, body, params), else: finch_post(path, body, params)
   end
 
   @doc """
   Makes a PATCH request.
   """
   def patch(path, body, params \\ %{}) do
-    if az_available?(), do: az_patch(path, body, params), else: finch_patch(path, body, params)
+    if use_az_backend?(), do: az_patch(path, body, params), else: finch_patch(path, body, params)
   end
 
   @doc """
   Makes a DELETE request.
   """
   def delete(path, params \\ %{}) do
-    if az_available?(), do: az_delete(path, params), else: finch_delete(path, params)
+    if use_az_backend?(), do: az_delete(path, params), else: finch_delete(path, params)
   end
 
   @doc """
   Makes a PUT request.
   """
   def put(path, body, params \\ %{}) do
-    if az_available?(), do: az_put(path, body, params), else: finch_do(:put, path, body, params)
+    if use_az_backend?(), do: az_put(path, body, params), else: finch_do(:put, path, body, params)
   end
 
   # ── az devops backend ────────────────────────────────────────────────
 
-  defp az_available?, do: System.find_executable("az") != nil
+  defp use_az_backend? do
+    false
+  end
 
   defp az_get(path, params) do
     org = runtime_org()
