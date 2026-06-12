@@ -87,14 +87,6 @@ defmodule AdoCli.CLI do
     run(cli_args)
   end
 
-  # Filter BEAM flags from argv (look for -extra separator)
-  defp clean_args(argv) do
-    case Enum.split_while(argv, &(&1 != "-extra")) do
-      {_beam, ["-extra" | cli]} -> cli
-      {all, []} -> all
-    end
-  end
-
   def command_definition, do: @command
 
   @doc """
