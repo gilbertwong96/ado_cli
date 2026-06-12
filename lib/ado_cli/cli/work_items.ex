@@ -250,7 +250,7 @@ defmodule AdoCli.CLI.WorkItems do
 
     case Client.post("/#{URI.encode(project)}/_apis/wit/workitems/$#{URI.encode(type)}", patch) do
       {:ok, wi} ->
-        writeln(success("Work item ##{wi["id"]} created: #{wi["fields"]["System.Title"]}"))
+        success("Work item ##{wi["id"]} created: #{wi["fields"]["System.Title"]}\n")
         writeln("  Type:  #{wi["fields"]["System.WorkItemType"]}")
         writeln("  State: #{wi["fields"]["System.State"]}")
         writeln("  URL:   #{wi["_links"]["html"]["href"]}")
@@ -288,7 +288,7 @@ defmodule AdoCli.CLI.WorkItems do
 
     case Client.patch("/_apis/wit/workitems/#{id}", patch) do
       {:ok, wi} ->
-        writeln(success("Work item ##{wi["id"]} updated."))
+        success("Work item ##{wi["id"]} updated.\n")
         writeln("  Title: #{wi["fields"]["System.Title"]}")
         writeln("  State: #{wi["fields"]["System.State"]}")
         halt_success("")
@@ -367,7 +367,7 @@ defmodule AdoCli.CLI.WorkItems do
   defp print_work_item_detail(wi) do
     fields = wi["fields"] || %{}
     writeln("")
-    writeln(success("Work Item ##{wi["id"]}"))
+    success("Work Item ##{wi["id"]}\n")
     writeln(String.duplicate("─", 60))
     writeln("  Type:        #{fields["System.WorkItemType"] || "?"}")
     writeln("  Title:       #{fields["System.Title"] || "?"}")
@@ -428,7 +428,7 @@ defmodule AdoCli.CLI.WorkItems do
 
     case Client.patch(path, patch) do
       {:ok, _} ->
-        success("Comment added to work item ##{id}.\n")
+        success("Comment added to work item ##{id}.\n\n")
 
       {:error, reason} ->
         Helpers.handle_api_result({:error, reason}, parsed, nil)
@@ -452,7 +452,7 @@ defmodule AdoCli.CLI.WorkItems do
 
     case Client.patch(path, patch) do
       {:ok, _} ->
-        success("Comment updated on work item ##{id}.\n")
+        success("Comment updated on work item ##{id}.\n\n")
 
       {:error, reason} ->
         Helpers.handle_api_result({:error, reason}, parsed, nil)
@@ -524,7 +524,7 @@ defmodule AdoCli.CLI.WorkItems do
         case Client.get_raw(download_path) do
           {:ok, body} ->
             File.write!(file_name, body)
-            success("Downloaded #{byte_size(body)} bytes to #{file_name}\n")
+            success("Downloaded #{byte_size(body)} bytes to #{file_name}\n\n")
 
           {:error, reason} ->
             Helpers.handle_api_result({:error, reason}, parsed, nil)

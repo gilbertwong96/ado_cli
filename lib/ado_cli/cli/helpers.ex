@@ -45,8 +45,7 @@ defmodule AdoCli.CLI.Helpers do
           no_return()
   def json_or_format(data, parsed, formatter_fn) do
     if parsed.options.json do
-      # Use apply/3 to avoid gradualizer type tracing through JSON.encode_to_iodata!/2
-      writeln(apply(JSON, :encode_to_iodata!, [data, [pretty: true]]))
+      IO.puts(Jason.encode_to_iodata!(data, pretty: true))
     else
       formatter_fn.(data)
     end
