@@ -8,14 +8,16 @@ defmodule AdoCli.ConfigFile do
       Application.put_env(:ado_cli, :config_path, "/tmp/ado_cli_test.json")
   """
 
-  @default_config_dir Path.join(System.user_home!(), ".ado_cli")
-  @default_config_file Path.join(@default_config_dir, "config.json")
-
   @doc """
   Returns the resolved config file path (overridable for tests).
+  Computed at runtime so the binary is portable across machines.
   """
   def config_path do
-    Application.get_env(:ado_cli, :config_path) || @default_config_file
+    Application.get_env(:ado_cli, :config_path) || default_config_path()
+  end
+
+  defp default_config_path do
+    Path.join(System.user_home!(), ".ado_cli/config.json")
   end
 
   @doc """
