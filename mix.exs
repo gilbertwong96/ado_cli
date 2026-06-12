@@ -26,7 +26,7 @@ defmodule AdoCli.MixProject do
 
   def application do
     if Mix.env() == :prod do
-      [mod: {AdoCli.Application, []}, extra_applications: [:logger]]
+      [mod: {AdoCli.Application, []}, extra_applications: [:logger, :ssl, :crypto, :public_key]]
     else
       [extra_applications: [:logger]]
     end
