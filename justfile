@@ -85,11 +85,24 @@ skill-read name:
 
 # ── Demo / Smoke Test ──────────────────────────────────────────────────
 
-# Quick smoke test (usage: just smoke-test gilbertscode)
+# Quick smoke test using saved browser auth (usage: just smoke-test gilbertscode)
 smoke-test org:
     @echo "=== whoami ===" && ./ado whoami
     @echo "=== projects ===" && ./ado projects list --org {{org}} || true
     @echo "=== skills ===" && ./ado skills list
+
+# Headless smoke test using PAT (no browser needed) — for CI / Linux servers.
+# usage: just smoke-test-pat myorg xxxxxxxxxxxxx
+smoke-test-pat org pat:
+    @echo "=== whoami ===" && ./ado whoami --org {{org}} --pat {{pat}}
+    @echo "=== projects ===" && ./ado projects list --org {{org}} --pat {{pat}} || true
+    @echo "=== skills ===" && ./ado skills list
+
+# Set up PAT-based login (writes config, no browser)
+# usage: just login-pat myorg xxxxxxxxxxxxx
+login-pat org pat:
+    ./ado login --method pat --org {{org}} --pat {{pat}}
+    @echo "✓ saved to ~/.ado_cli/config.json"
 
 # ── Helpers ────────────────────────────────────────────────────────────
 
