@@ -45,7 +45,9 @@ defmodule AdoCli.CLI.Helpers do
           no_return()
   def json_or_format(data, parsed, formatter_fn) do
     if parsed.options.json do
-      IO.puts(Jason.encode_to_iodata!(data, pretty: true))
+      # Elixir 1.20's built-in JSON module expects an encoder callback,
+      # not options. Use compact output — valid JSON for machine consumption.
+      IO.puts(JSON.encode!(data))
     else
       formatter_fn.(data)
     end
