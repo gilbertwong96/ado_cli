@@ -111,6 +111,11 @@ defmodule AdoCli.CLI do
   end
 
   defp start_finch do
+    # OTP applications must be started manually in escript mode.
+    # Mint's SSL transport calls Application.spec(:ssl, :vsn) which
+    # returns nil if :ssl isn't started.
+    Application.ensure_all_started(:ssl)
+
     Finch.start_link(name: AdoCli.Finch, pools: %{default: [size: 5, count: 1]})
   end
 end
