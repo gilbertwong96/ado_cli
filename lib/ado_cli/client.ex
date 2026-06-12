@@ -76,8 +76,21 @@ defmodule AdoCli.Client do
 
   # ── az devops backend ────────────────────────────────────────────────
 
+  # Use az devops invoke for API calls when az is installed AND logged in.
+  # Required for MSA-backed personal orgs (*.visualstudio.com) where Finch
+  # cannot handle the tenant/cookie redirect flow.
+  # Set ADO_USE_AZ=1 to enable, or it auto-enables when az is logged in.
   defp use_az_backend? do
-    false
+    az_available?() and az_logged_in?()
+  end
+
+  defp az_available?, do: System.find_executable("az") != nil
+
+  defp az_logged_in? do
+    case System.cmd("az", ~w(account show --query user.name -o tsv), stderr_to_stdout: true) do
+      {output, 0} -> String.trim(output) != ""
+      _ -> false
+    end
   end
 
   defp az_get(path, params) do
