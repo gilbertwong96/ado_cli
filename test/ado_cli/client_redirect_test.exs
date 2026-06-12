@@ -42,28 +42,17 @@ defmodule AdoCli.ClientTest do
   end
 
   describe "redirect handling" do
-    @tag :skip
-    test "follows 302 and retries with cookies", %{bypass: bypass} do
+    test "returns clear auth error on 302", %{bypass: bypass} do
       port = bypass.port
 
       Bypass.expect(bypass, "GET", api("/_apis/projects"), fn conn ->
         conn
         |> Plug.Conn.put_resp_header("location", "http://localhost:#{port}/signin")
-        |> Plug.Conn.put_resp_header("set-cookie", "session=s1; Path=/")
         |> Plug.Conn.resp(302, "")
       end)
 
-      Bypass.expect(bypass, "GET", "/signin", fn conn ->
-        conn
-        |> Plug.Conn.put_resp_header("set-cookie", "auth=a1; Path=/")
-        |> Plug.Conn.resp(200, "OK")
-      end)
-
-      Bypass.expect(bypass, "GET", api("/_apis/projects"), fn conn ->
-        Plug.Conn.resp(conn, 200, ~s({"value":[],"count":0}))
-      end)
-
-      assert {:ok, _} = Client.get("/_apis/projects")
+      assert {:error, %{status: 302, body: body}} = Client.get("/_apis/projects")
+      assert body =~ "ado login"
     end
   end
 
