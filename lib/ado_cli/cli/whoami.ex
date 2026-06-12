@@ -40,7 +40,6 @@ defmodule AdoCli.CLI.Whoami do
     writeln("  Server:       #{status.server || "dev.azure.com (cloud)"}")
     writeln("  Auth Method:  #{status.method || "none"}")
     writeln("  Config File:  #{config_file_label(status)}")
-    writeln("  Az CLI:       #{az_cli_label(status)}")
   end
 
   defp print_unauthenticated(status) do
@@ -55,7 +54,4 @@ defmodule AdoCli.CLI.Whoami do
 
   defp config_file_label(status),
     do: if(status.configured, do: "~/.ado_cli/config.json", else: "(none)")
-
-  defp az_cli_label(status),
-    do: if(status.az_cli_available, do: "available", else: "not available")
 end

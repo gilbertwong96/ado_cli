@@ -49,26 +49,13 @@ defmodule AdoCli.Auth do
   or `{:error, :not_configured}` if no auth method is available.
   """
   def resolve_auth do
-    # Priority 1: CLI flags (already applied to app env by CLI module)
-    # Priority 2: Environment variables
-    # Priority 3: Azure CLI token
-    # Priority 4: Config file
-
     org = get_org()
     pat = get_pat()
 
-    cond do
-      org && pat ->
-        {:ok, org, basic_auth_headers(pat)}
-
-      org && az_cli_available?() ->
-        case az_cli_token() do
-          {:ok, token} -> {:ok, org, bearer_auth_headers(token)}
-          {:error, _} -> try_config_file()
-        end
-
-      true ->
-        try_config_file()
+    if org && pat do
+      {:ok, org, basic_auth_headers(pat)}
+    else
+      try_config_file()
     end
   end
 
@@ -203,8 +190,7 @@ defmodule AdoCli.Auth do
       configured: config != nil,
       method: config["method"] || (runtime_pat && "pat"),
       org: runtime_org || config["org"],
-      server: server || config["server"],
-      az_cli_available: az_cli_available?()
+      server: server || config["server"]
     }
   end
 
@@ -279,27 +265,6 @@ defmodule AdoCli.Auth do
           _ ->
             {:error, :not_configured}
         end
-    end
-  end
-
-  # ── Azure CLI token ──────────────────────────────────────────────────
-
-  defp az_cli_available? do
-    System.find_executable("az") != nil
-  end
-
-  defp az_cli_token do
-    args =
-      ~w(account get-access-token --resource) ++
-        [@ado_resource, "--query", "accessToken", "-o", "tsv"]
-
-    case System.cmd("az", args, env: []) do
-      {token, 0} ->
-        token = String.trim(token)
-        if token == "", do: {:error, :no_token}, else: {:ok, token}
-
-      {_, _} ->
-        {:error, :az_cli_failed}
     end
   end
 
