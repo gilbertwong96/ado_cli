@@ -66,6 +66,11 @@ release-clean:
 release-list:
     @ls -lh burrito_out/
 
+# Build, sign, and notarize the macOS binary. See bin/sign.sh for env vars.
+release-macos:
+    @just release
+    @bin/sign.sh
+
 # ── Skills ─────────────────────────────────────────────────────────────
 
 # List embedded skills
