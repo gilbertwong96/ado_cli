@@ -32,6 +32,34 @@ mix health   # Dead code & smell detection (reach)
 mix test     # Unit tests
 ```
 
+## Testing without a browser (CI / Linux servers)
+
+Use a Personal Access Token (PAT). No browser required.
+
+```bash
+# 1. Generate a PAT in Azure DevOps:
+#    User Settings -> Personal Access Tokens -> New Token
+#    Required scopes: vso.work, vso.code, vso.project, vso.build, vso.release
+#    Or use a "Full access" token for broadest coverage.
+
+# 2. One-off (don't save to disk) — env vars
+export ADO_ORG=myorg
+export ADO_PAT=xxxxxxxxxxxxxxxxxxxxxxxxxxxx
+./ado projects list
+
+# 3. Or save to config (preferred for repeated use)
+just login-pat myorg xxxxxxxxxxxxxxxxxxxxxxxxxxxx
+./ado projects list
+
+# 4. Headless smoke test (any CI runner)
+just smoke-test-pat myorg xxxxxxxxxxxxxxxxxxxxxxxxxxxx
+```
+
+For a quick test on a Linux server without a desktop:
+1. Build the escript: `mix escript.build` (or use a pre-built `ado_linux` from burrito_out)
+2. Copy to the server along with `~/.ado_cli/config.json` (or set env vars)
+3. Or use the Burrito-built `ado_linux` directly: `./burrito_out/ado_linux projects list --org X --pat Y`
+
 ## Development Principles
 
 1. **No warnings**: The project must compile with zero warnings (`--all-warnings --warnings-as-errors`)
