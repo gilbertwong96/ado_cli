@@ -430,15 +430,19 @@ defmodule AdoCli.Auth do
   # ── ARM → DevOps token exchange ─────────────────────────────────────
 
   defp do_exchange_refresh_token(refresh_token, tenant) do
+    # Use the v1.0 OAuth endpoint with 'resource' parameter, matching
+    # what the Azure CLI uses internally (profile.get_raw_token).
+    # The v1.0 endpoint handles cross-tenant/cross-resource exchange
+    # correctly for both AAD and MSA accounts.
     body =
       URI.encode_query(%{
         client_id: @ado_client_id,
         grant_type: "refresh_token",
         refresh_token: refresh_token,
-        scope: "#{@ado_resource}/.default"
+        resource: @ado_resource
       })
 
-    url = "https://login.microsoftonline.com/#{tenant}/oauth2/v2.0/token"
+    url = "https://login.microsoftonline.com/#{tenant}/oauth2/token"
     headers = [{"Content-Type", "application/x-www-form-urlencoded"}]
     request = Finch.build(:post, url, headers, body)
 
