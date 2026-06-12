@@ -129,7 +129,7 @@ defmodule AdoCli.CLI.Releases do
 
   defp print_release_detail(release) do
     writeln("")
-    writeln(success("Release Details"))
+    success("Release Details\n")
     writeln(String.duplicate("─", 60))
     writeln("  ID:          #{release["id"]}")
     writeln("  Name:        #{release["name"]}")

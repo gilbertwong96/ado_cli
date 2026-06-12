@@ -166,7 +166,7 @@ defmodule AdoCli.CLI.Repos do
 
     case Client.post("/#{URI.encode(project)}/_apis/git/repositories", body) do
       {:ok, repo} ->
-        writeln(success("Repository '#{repo["name"]}' created."))
+        success("Repository '#{repo["name"]}' created.\n")
         writeln("  ID:             #{repo["id"]}")
         writeln("  Default Branch: #{get_in(repo, ["defaultBranch"]) || "refs/heads/main"}")
         writeln("  SSH URL:        #{repo["sshUrl"]}")
@@ -193,7 +193,7 @@ defmodule AdoCli.CLI.Repos do
 
     case Client.delete("/#{URI.encode(project)}/_apis/git/repositories/#{URI.encode(repo_id)}") do
       :ok ->
-        writeln(success("Repository '#{repo_id}' deleted from '#{project}'."))
+        success("Repository '#{repo_id}' deleted from '#{project}'.\n")
         halt_success("")
 
       {:error, %{status: 404}} ->
@@ -246,7 +246,7 @@ defmodule AdoCli.CLI.Repos do
 
   defp print_repo_detail(repo) do
     writeln("")
-    writeln(success("Repository Details"))
+    success("Repository Details\n")
     writeln(String.duplicate("─", 60))
     writeln("  ID:             #{repo["id"]}")
     writeln("  Name:           #{repo["name"]}")

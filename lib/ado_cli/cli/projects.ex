@@ -149,7 +149,7 @@ defmodule AdoCli.CLI.Projects do
 
     case Client.post("/_apis/projects", body) do
       {:ok, project} ->
-        writeln(success("Project '#{project["name"]}' created (ID: #{project["id"]})."))
+        success("Project '#{project["name"]}' created (ID: #{project["id"]}).\n")
         writeln("  Status: #{project["status"]}")
         writeln("  URL:    #{project["url"]}")
         halt_success("")
@@ -176,7 +176,7 @@ defmodule AdoCli.CLI.Projects do
 
     case Client.patch("/_apis/projects/#{URI.encode(project_id)}", body) do
       {:ok, project} ->
-        writeln(success("Project updated: #{project["name"]}"))
+        success("Project updated: #{project["name"]}\n")
         halt_success("")
 
       {:error, %{status: 404}} ->
@@ -201,7 +201,7 @@ defmodule AdoCli.CLI.Projects do
 
     case Client.delete("/_apis/projects/#{URI.encode(project_id)}") do
       :ok ->
-        writeln(success("Project '#{project_id}' queued for deletion."))
+        success("Project '#{project_id}' queued for deletion.\n")
         halt_success("")
 
       {:error, %{status: 404}} ->
@@ -265,7 +265,7 @@ defmodule AdoCli.CLI.Projects do
 
   defp print_project_detail(project) do
     writeln("")
-    writeln(success("Project Details"))
+    success("Project Details\n")
     writeln(String.duplicate("─", 60))
     writeln("  ID:          #{project["id"]}")
     writeln("  Name:        #{project["name"]}")

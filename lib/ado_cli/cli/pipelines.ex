@@ -134,7 +134,7 @@ defmodule AdoCli.CLI.Pipelines do
 
     case Client.post("/#{URI.encode(project)}/_apis/pipelines/#{pipeline_id}/runs", body) do
       {:ok, run} ->
-        writeln(success("Pipeline run triggered!"))
+        success("Pipeline run triggered!\n")
         writeln("  Run ID:   #{run["id"]}")
         writeln("  State:    #{run["state"]}")
         writeln("  Pipeline: #{run["pipeline"]["name"]}")
@@ -186,7 +186,7 @@ defmodule AdoCli.CLI.Pipelines do
 
   defp print_pipeline_detail(pipeline) do
     writeln("")
-    writeln(success("Pipeline Details"))
+    success("Pipeline Details\n")
     writeln(String.duplicate("─", 60))
     writeln("  ID:     #{pipeline["id"]}")
     writeln("  Name:   #{pipeline["name"]}")

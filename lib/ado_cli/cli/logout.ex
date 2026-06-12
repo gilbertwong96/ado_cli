@@ -22,7 +22,7 @@ defmodule AdoCli.CLI.Logout do
   """
   def run(_parsed) do
     AdoCli.Auth.logout()
-    writeln(success("Logged out. Credentials removed from ~/.ado_cli/config.json"))
+    success("Logged out. Credentials removed from ~/.ado_cli/config.json\n")
     halt_success("")
   end
 end

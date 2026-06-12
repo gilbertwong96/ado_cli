@@ -252,7 +252,7 @@ defmodule AdoCli.CLI.PullRequests do
            body
          ) do
       {:ok, pr} ->
-        writeln(success("Pull request ##{pr["pullRequestId"]} created: #{pr["title"]}"))
+        success("Pull request ##{pr["pullRequestId"]} created: #{pr["title"]}\n")
         writeln("  Status:    #{pr["status"]}")
         writeln("  Source:    #{pr["sourceRefName"]}")
         writeln("  Target:    #{pr["targetRefName"]}")
@@ -289,7 +289,7 @@ defmodule AdoCli.CLI.PullRequests do
 
     case Client.patch(path, body) do
       {:ok, pr} ->
-        writeln(success("Pull request ##{pr["pullRequestId"]} completed (merged)."))
+        success("Pull request ##{pr["pullRequestId"]} completed (merged).\n")
         halt_success("")
 
       {:error, %{status: 404}} ->
@@ -329,7 +329,7 @@ defmodule AdoCli.CLI.PullRequests do
     case Client.put(path, %{"vote" => vote_value}) do
       {:ok, _result} ->
         label = vote_label(vote_value)
-        writeln(success("Voted #{label} on PR ##{pr_id}."))
+        success("Voted #{label} on PR ##{pr_id}.\n")
         halt_success("")
 
       {:error, %{status: 404}} ->
@@ -358,7 +358,7 @@ defmodule AdoCli.CLI.PullRequests do
 
     case Client.patch(path, body) do
       {:ok, pr} ->
-        writeln(success("Pull request ##{pr["pullRequestId"]} abandoned."))
+        success("Pull request ##{pr["pullRequestId"]} abandoned.\n")
         halt_success("")
 
       {:error, %{status: 404}} ->
@@ -467,7 +467,7 @@ defmodule AdoCli.CLI.PullRequests do
 
   defp print_pr_detail(pr) do
     writeln("")
-    writeln(success("Pull Request ##{pr["pullRequestId"]}"))
+    success("Pull Request ##{pr["pullRequestId"]}\n")
     writeln(String.duplicate("─", 60))
     writeln("  Title:       #{pr["title"]}")
     writeln("  Description: #{pr["description"] || "(none)"}")
@@ -537,7 +537,7 @@ defmodule AdoCli.CLI.PullRequests do
 
     case Client.patch(path, body) do
       {:ok, _} ->
-        success("Comment #{parsed.arguments.comment_id} updated.\n")
+        success("Comment #{parsed.arguments.comment_id} updated.\n\n")
 
       {:error, reason} ->
         Helpers.handle_api_result({:error, reason}, parsed, nil)
