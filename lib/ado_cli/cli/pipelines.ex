@@ -348,10 +348,13 @@ defmodule AdoCli.CLI.Pipelines do
   end
 
   defp merge_var_group_body(existing, parsed) do
+    body = base_group_body(existing, parsed)
+    add_variables_to_body(body, existing, parsed)
+  end
+
+  defp base_group_body(existing, parsed) do
     name = Map.get(parsed.options, :name) || existing["name"]
     desc = Map.get(parsed.options, :description) || existing["description"]
-    variables = Map.get(parsed.options, :variables)
-    secret_keys = Map.get(parsed.options, :secret)
 
     body = %{
       "name" => name,
@@ -359,19 +362,25 @@ defmodule AdoCli.CLI.Pipelines do
       "variableGroupProjectReferences" => existing["variableGroupProjectReferences"] || []
     }
 
-    body = if desc, do: Map.put(body, "description", desc), else: body
+    if desc, do: Map.put(body, "description", desc), else: body
+  end
 
-    existing_vars = existing["variables"] || %{}
-
-    vars_map =
-      if variables do
-        parsed_vars = parse_var_group_variables(variables, secret_keys)
-        Map.merge(existing_vars, parsed_vars)
-      else
-        existing_vars
-      end
-
+  defp add_variables_to_body(body, existing, parsed) do
+    vars_map = merged_variables(existing, parsed)
     if vars_map == %{}, do: body, else: Map.put(body, "variables", vars_map)
+  end
+
+  defp merged_variables(existing, parsed) do
+    existing_vars = existing["variables"] || %{}
+    variables = Map.get(parsed.options, :variables)
+
+    if variables do
+      secret_keys = Map.get(parsed.options, :secret)
+      parsed_vars = parse_var_group_variables(variables, secret_keys)
+      Map.merge(existing_vars, parsed_vars)
+    else
+      existing_vars
+    end
   end
 
   defp parse_var_group_variables(vars_string, secret_keys) do

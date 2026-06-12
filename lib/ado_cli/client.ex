@@ -101,25 +101,24 @@ defmodule AdoCli.Client do
     do: {:error, %{status: 302, body: "Too many redirects"}}
 
   defp do_request(method, path, body, params, attempt) do
+    with {:ok, org, auth_headers} <- AdoCli.Auth.resolve_auth() do
+      do_request_with_auth(method, path, body, params, attempt, org, auth_headers)
+    end
+  end
+
+  defp do_request_with_auth(method, path, body, params, attempt, org, auth_headers) do
     url = build_url(path, params)
+    full_url = inject_org(url, org)
+    headers = [{"Content-Type", "application/json"} | auth_headers]
+    encoded = if body, do: JSON.encode!(body)
 
-    case AdoCli.Auth.resolve_auth() do
-      {:ok, org, auth_headers} ->
-        full_url = inject_org(url, org)
-        headers = [{"Content-Type", "application/json"} | auth_headers]
-        encoded = if body, do: JSON.encode!(body)
+    case Finch.request(Finch.build(method, full_url, headers, encoded), AdoCli.Finch) do
+      {:ok, %Finch.Response{status: status, headers: resp_headers}}
+      when status in [301, 302, 307, 308] ->
+        handle_redirect(method, path, body, params, resp_headers, auth_headers, attempt)
 
-        case Finch.request(Finch.build(method, full_url, headers, encoded), AdoCli.Finch) do
-          {:ok, %Finch.Response{status: status, headers: resp_headers}}
-          when status in [301, 302, 307, 308] ->
-            handle_redirect(method, path, body, params, resp_headers, auth_headers, attempt)
-
-          {:ok, %Finch.Response{status: status, body: resp_body}} ->
-            {:ok, %{status: status, body: resp_body}}
-
-          {:error, reason} ->
-            {:error, reason}
-        end
+      {:ok, %Finch.Response{status: status, body: resp_body}} ->
+        {:ok, %{status: status, body: resp_body}}
 
       {:error, reason} ->
         {:error, reason}

@@ -20,6 +20,29 @@ defmodule AdoCli.MixProject do
         main: "AdoCli",
         source_url: "https://github.com/your-org/ado_cli",
         extras: ["README.md", "USAGE.md", "AUTH.md"]
+      ],
+      test_coverage: [
+        # Only enforce coverage on testable modules.
+        # CLI command modules and Auth are tightly coupled to CliMate's halt_*
+        # and require integration testing — skip them here.
+        ignore_modules: [
+          AdoCli.Application,
+          AdoCli.Auth,
+          AdoCli.CLI,
+          AdoCli.CLI.Helpers,
+          AdoCli.CLI.AuthCommands,
+          AdoCli.CLI.Logout,
+          AdoCli.CLI.Pipelines,
+          AdoCli.CLI.Projects,
+          AdoCli.CLI.PullRequests,
+          AdoCli.CLI.Releases,
+          AdoCli.CLI.Repos,
+          AdoCli.CLI.Skills,
+          AdoCli.CLI.Whoami,
+          AdoCli.CLI.WorkItems,
+          Mix.Tasks.Ci.Dialyzer
+        ],
+        threshold: 90
       ]
     ]
   end
