@@ -153,9 +153,20 @@ defmodule AdoCli.CLI.Repos do
   def create_repo(parsed) do
     project = parsed.arguments.project
 
+    # Resolve project name to ID for the request body
+    project_id =
+      case Client.list("/_apis/projects") do
+        {:ok, projects} ->
+          found = Enum.find(projects, &(&1["name"] == project))
+          if found, do: found["id"], else: project
+
+        _ ->
+          project
+      end
+
     body = %{
       "name" => parsed.arguments.name,
-      "project" => %{"id" => project}
+      "project" => %{"id" => project_id}
     }
 
     body =
