@@ -212,6 +212,7 @@ defmodule AdoCli.Auth do
   end
 
   defp save_browser_token(token, org) do
+    org = org || auto_detect_org(token)
     config = %{"method" => "browser", "token" => token}
     config = if org, do: Map.put(config, "org", org), else: config
     ConfigFile.save(config)
@@ -220,10 +221,62 @@ defmodule AdoCli.Auth do
       CLI.success("Authenticated successfully as #{org}.\n")
     else
       CLI.success("Authenticated successfully.\n")
+      CLI.writeln("No Azure DevOps organizations were found for this account.")
       CLI.writeln("Set your org with: export ADO_ORG=<your-org>")
     end
 
     {:ok, org}
+  end
+
+  # Try to auto-detect the org by listing accounts the user has access to
+  # with the freshly obtained token. Used when `ado login` is called without
+  # an explicit --org argument.
+  defp auto_detect_org(token) do
+    case list_accounts(token) do
+      {:ok, []} ->
+        nil
+
+      {:ok, [only]} ->
+        CLI.writeln("Detected org: #{only}")
+        only
+
+      {:ok, accounts} ->
+        names = Enum.map_join(accounts, ", ", & &1)
+        CLI.writeln("Multiple organizations found: #{names}")
+        CLI.writeln("Re-run with --org <name> to pick one.")
+        nil
+
+      {:error, _} ->
+        nil
+    end
+  end
+
+  defp list_accounts(token) do
+    url = "https://app.vssps.visualstudio.com/_apis/accounts"
+    headers = [{"Authorization", "Bearer #{token}"}]
+    request = Finch.build(:get, url, headers)
+
+    case Finch.request(request, AdoCli.Finch) do
+      {:ok, %Finch.Response{status: 200, body: body}} ->
+        # The accounts API returns a top-level array, not the standard
+        # {value: [...]} wrapper used by other DevOps endpoints.
+        accounts =
+          case JSON.decode(body) do
+            {:ok, %{"value" => list}} when is_list(list) -> list
+            {:ok, list} when is_list(list) -> list
+            _ -> []
+          end
+
+        names =
+          accounts
+          |> Enum.map(fn a -> a["AccountName"] || a["accountName"] || a["accountUri"] || "" end)
+          |> Enum.reject(&(&1 == ""))
+
+        {:ok, names}
+
+      _ ->
+        {:error, "Failed to list accounts"}
+    end
   end
 
   @doc """
