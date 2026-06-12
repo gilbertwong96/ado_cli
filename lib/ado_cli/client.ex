@@ -95,7 +95,12 @@ defmodule AdoCli.Client do
 
   defp safe_decode(body), do: body
 
-  defp do_request(method, path, body, params) do
+  defp do_request(method, path, body, params, attempt \\ 0)
+
+  defp do_request(_method, _path, _body, _params, 3),
+    do: {:error, %{status: 302, body: "Too many redirects"}}
+
+  defp do_request(method, path, body, params, attempt) do
     url = build_url(path, params)
 
     case AdoCli.Auth.resolve_auth() do
@@ -105,6 +110,10 @@ defmodule AdoCli.Client do
         encoded = if body, do: JSON.encode!(body)
 
         case Finch.request(Finch.build(method, full_url, headers, encoded), AdoCli.Finch) do
+          {:ok, %Finch.Response{status: status, headers: resp_headers}}
+          when status in [301, 302, 307, 308] ->
+            handle_redirect(method, path, body, params, resp_headers, auth_headers, attempt)
+
           {:ok, %Finch.Response{status: status, body: resp_body}} ->
             {:ok, %{status: status, body: resp_body}}
 
@@ -115,6 +124,95 @@ defmodule AdoCli.Client do
       {:error, reason} ->
         {:error, reason}
     end
+  end
+
+  # Follow a 302 redirect, collect cookies via sign-in flow, then retry original request.
+  defp handle_redirect(method, path, body, params, resp_headers, auth_headers, attempt) do
+    location =
+      Enum.find_value(resp_headers, fn
+        {"location", v} -> v
+        _ -> nil
+      end)
+
+    if location do
+      cookies = extract_cookies(resp_headers)
+
+      case follow_redirects(location, cookies, auth_headers, attempt) do
+        {:ok, final_cookies} ->
+          do_request_with_cookies(method, path, body, params, auth_headers, final_cookies)
+
+        {:error, reason} ->
+          {:error, reason}
+      end
+    else
+      {:error, %{status: 302, body: "Redirect without Location header"}}
+    end
+  end
+
+  # Follow the redirect chain, accumulating cookies. Returns {:ok, cookies} on success.
+  defp follow_redirects(_location, _cookies, _auth_headers, 4) do
+    {:error, %{status: 302, body: "Too many sign-in redirects"}}
+  end
+
+  defp follow_redirects(location, cookies, auth_headers, attempt) do
+    redirect_headers = auth_headers ++ cookies
+
+    case Finch.request(Finch.build(:get, location, redirect_headers), AdoCli.Finch) do
+      {:ok, %Finch.Response{status: redir_status, headers: redir_headers}}
+      when redir_status in [301, 302, 307, 308] ->
+        # Another redirect — follow it with accumulated cookies
+        new_location =
+          Enum.find_value(redir_headers, fn
+            {"location", v} -> v
+            _ -> nil
+          end)
+
+        if new_location do
+          more_cookies = cookies ++ extract_cookies(redir_headers)
+          follow_redirects(new_location, more_cookies, auth_headers, attempt + 1)
+        else
+          {:error, %{status: redir_status, body: "Redirect without Location header"}}
+        end
+
+      {:ok, %Finch.Response{status: redir_status, headers: redir_headers}}
+      when redir_status in 200..299 ->
+        {:ok, cookies ++ extract_cookies(redir_headers)}
+
+      {:ok, %Finch.Response{status: redir_status, body: redir_body}} ->
+        {:error, %{status: redir_status, body: safe_decode(redir_body)}}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  # Retry the original request with accumulated cookies from the sign-in flow.
+  defp do_request_with_cookies(method, path, body, params, auth_headers, cookies) do
+    url = build_url(path, params)
+
+    case AdoCli.Auth.resolve_auth() do
+      {:ok, org, _} ->
+        full_url = inject_org(url, org)
+        retry_headers = [{"Content-Type", "application/json"} | auth_headers ++ cookies]
+        encoded = if body, do: JSON.encode!(body)
+
+        case Finch.request(Finch.build(method, full_url, retry_headers, encoded), AdoCli.Finch) do
+          {:ok, %Finch.Response{status: status, body: final_body}} ->
+            {:ok, %{status: status, body: final_body}}
+
+          {:error, reason} ->
+            {:error, reason}
+        end
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp extract_cookies(headers) do
+    headers
+    |> Enum.filter(fn {k, _v} -> String.downcase(k) == "set-cookie" end)
+    |> Enum.map(fn {_k, v} -> {"Cookie", hd(String.split(v, ";"))} end)
   end
 
   defp do_request_raw(method, path, _body, params) do
