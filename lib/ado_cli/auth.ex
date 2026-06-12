@@ -142,41 +142,71 @@ defmodule AdoCli.Auth do
   end
 
   defp handle_auth_code(code, redirect, code_verifier, org) do
-    case exchange_code_for_devops(code, redirect, code_verifier, org) do
-      {:ok, devops_token} -> save_browser_token(devops_token, org)
-      {:error, reason} -> {:error, reason}
+    case exchange_code_for_arm(code, redirect, code_verifier) do
+      {:ok, _arm_token, refresh_token} ->
+        case exchange_refresh_for_devops(refresh_token, org) do
+          {:ok, devops_token} -> save_browser_token(devops_token, org)
+          {:error, reason} -> {:error, reason}
+        end
+
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 
-  defp exchange_code_for_devops(code, redirect_uri, code_verifier, org) do
-    tenant = discover_devops_tenant(org)
-
+  # Exchange auth code for ARM access token + refresh token.
+  defp exchange_code_for_arm(code, redirect_uri, code_verifier) do
     body =
       URI.encode_query(%{
         client_id: @ado_client_id,
         grant_type: "authorization_code",
         code: code,
         redirect_uri: redirect_uri,
-        code_verifier: code_verifier,
-        scope: "#{@ado_resource}/.default offline_access openid profile"
+        code_verifier: code_verifier
       })
 
-    url = "https://login.microsoftonline.com/#{tenant}/oauth2/v2.0/token"
+    url = "https://login.microsoftonline.com/#{@tenant}/oauth2/v2.0/token"
     headers = [{"Content-Type", "application/x-www-form-urlencoded"}]
     request = Finch.build(:post, url, headers, body)
 
     case Finch.request(request, AdoCli.Finch) do
       {:ok, %Finch.Response{status: 200, body: resp_body}} ->
         case JSON.decode(resp_body) do
-          {:ok, %{"access_token" => token}} -> {:ok, token}
-          _ -> {:error, "Invalid DevOps token response"}
+          {:ok, %{"access_token" => access, "refresh_token" => refresh}} ->
+            {:ok, access, refresh}
+
+          {:ok, %{"access_token" => access}} ->
+            {:ok, access, nil}
+
+          _ ->
+            {:error, "Invalid ARM token response"}
         end
 
       {:ok, %Finch.Response{status: status, body: resp_body}} ->
-        {:error, "DevOps token exchange failed (HTTP #{status}): #{safe_decode(resp_body)}"}
+        {:error, "ARM token exchange failed (HTTP #{status}): #{safe_decode(resp_body)}"}
 
       {:error, reason} ->
-        {:error, "DevOps token exchange failed: #{inspect(reason)}"}
+        {:error, "ARM token exchange failed: #{inspect(reason)}"}
+    end
+  end
+
+  # Exchange ARM refresh token for a DevOps access token.
+  # Tries tenants: discovered → consumers → organizations.
+  defp exchange_refresh_for_devops(nil, _org),
+    do: {:error, "No refresh token available for DevOps exchange"}
+
+  defp exchange_refresh_for_devops(refresh_token, org) do
+    tenants = Enum.uniq([discover_devops_tenant(org), "consumers", @tenant])
+    try_tenants(refresh_token, tenants)
+  end
+
+  defp try_tenants(_refresh_token, []),
+    do: {:error, "DevOps token exchange failed with all tenants"}
+
+  defp try_tenants(refresh_token, [tenant | rest]) do
+    case do_exchange_refresh_token(refresh_token, tenant) do
+      {:ok, _token} = ok -> ok
+      {:error, _reason} -> try_tenants(refresh_token, rest)
     end
   end
 
@@ -456,7 +486,9 @@ defmodule AdoCli.Auth do
   end
 
   defp exchange_and_save_device(org, refresh_token) do
-    case do_exchange_refresh_token(refresh_token, @tenant) do
+    tenants = Enum.uniq([@tenant, "consumers"])
+
+    case try_tenants(refresh_token, tenants) do
       {:ok, devops_token} ->
         ConfigFile.save(%{org: org, method: "device_code", token: devops_token})
         CLI.success("Authenticated successfully as #{org}.\n")
@@ -497,7 +529,7 @@ defmodule AdoCli.Auth do
       response_type: "code",
       redirect_uri: redirect_uri,
       response_mode: "query",
-      scope: "#{@arm_resource}/.default #{@ado_resource}/.default offline_access openid profile",
+      scope: "#{@arm_resource}/.default offline_access openid profile",
       code_challenge: code_challenge,
       code_challenge_method: "S256",
       state: state,
