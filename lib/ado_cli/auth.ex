@@ -191,13 +191,14 @@ defmodule AdoCli.Auth do
   end
 
   # Exchange ARM refresh token for a DevOps access token.
-  # Tries tenants: discovered → consumers → organizations.
+  # Tries: organizations (default issuer) → consumers (MSA fallback).
+  # We skip discover_devops_tenant because the refresh token was issued
+  # from "organizations" and can't reliably be exchanged at a different tenant.
   defp exchange_refresh_for_devops(nil, _org),
     do: {:error, "No refresh token available for DevOps exchange"}
 
-  defp exchange_refresh_for_devops(refresh_token, org) do
-    tenants = Enum.uniq([discover_devops_tenant(org), "consumers", @tenant])
-    try_tenants(refresh_token, tenants)
+  defp exchange_refresh_for_devops(refresh_token, _org) do
+    try_tenants(refresh_token, [@tenant, "consumers"])
   end
 
   defp try_tenants(_refresh_token, []),
@@ -453,35 +454,6 @@ defmodule AdoCli.Auth do
 
       {:error, reason} ->
         {:error, "DevOps token exchange failed: #{inspect(reason)}"}
-    end
-  end
-
-  # Discover the AAD backing tenant for a DevOps organization.
-  # Falls back to "organizations" if discovery fails.
-  defp discover_devops_tenant(org) do
-    url =
-      "https://login.microsoftonline.com/#{org}.visualstudio.com/.well-known/openid-configuration"
-
-    case Finch.request(Finch.build(:get, url), AdoCli.Finch) do
-      {:ok, %Finch.Response{status: 200, body: body}} ->
-        case JSON.decode(body) do
-          {:ok, %{"issuer" => issuer}} ->
-            # issuer = "https://sts.windows.net/{tenant-id}/" or
-            # "https://login.microsoftonline.com/{tenant-id}/v2.0"
-            tenant =
-              issuer
-              |> String.replace(~r{/v2\.0$}, "")
-              |> String.split("/")
-              |> List.last()
-
-            if tenant && tenant != "", do: tenant, else: @tenant
-
-          _ ->
-            @tenant
-        end
-
-      _ ->
-        @tenant
     end
   end
 
