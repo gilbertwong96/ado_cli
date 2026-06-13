@@ -73,24 +73,94 @@ required. The CLI is self-contained.
 
 ### Login (persistent)
 
-```bash
-# Personal Access Token (recommended for CI / headless)
-ado login --method pat --org myorg --pat mytoken
+Three login methods are supported. Pick the one that fits your situation:
 
-# Interactive browser-based OAuth (auto-detects org on success)
-ado login --org myorg
-# Or just:
+#### 1. Browser OAuth (default) — recommended for interactive use
+
+Opens your default browser to the Microsoft sign-in page, then captures the
+auth code on a local callback. Works with both work/school (AAD) and personal
+(MSA) Microsoft accounts. Personal accounts (e.g. `me@outlook.com`) on
+`*.visualstudio.com` orgs are supported via an ARM-first token-exchange flow.
+
+```bash
+# Open browser, sign in, get redirected back. Org auto-detected.
 ado login
 
-# Device code (no browser on this machine)
-ado login --method device --org myorg
-
-# Check status
-ado whoami
-
-# Remove stored credentials
-ado logout
+# Hint the org (avoids the auto-detect query)
+ado login --org myorg
 ```
+
+What happens:
+1. `ado` opens `https://login.microsoftonline.com/...` in your browser
+2. You sign in with AAD or MSA credentials
+3. The CLI captures the auth code on a localhost callback
+4. The CLI exchanges the code for an ARM token, then for an Azure DevOps
+   access token, and saves the token to `~/.ado_cli/config.json`
+5. Org is auto-detected from the token (or use `--org` to pin it)
+
+#### 2. Device code — recommended for SSH / no-browser sessions
+
+For headless terminals, remote boxes, or any machine without a browser
+reachable from the same shell. The CLI prints a URL and a code; you visit
+the URL in any browser (laptop, phone) and enter the code to authenticate.
+
+```bash
+ado login --method device --org myorg
+```
+
+Example output:
+
+```
+To sign in, use a web browser to open:
+  https://microsoft.com/devicelogin
+And enter the code: ABC123XYZ
+```
+
+The CLI polls the token endpoint every few seconds; once you complete the
+sign-in on the other device, the CLI saves the token and you're logged in.
+
+#### 3. Personal Access Token (PAT) — recommended for CI / scripts
+
+Stores a PAT in `~/.ado_cli/config.json` for repeated use. Best for
+automation, CI runners, and scripts. See
+[How to create a PAT](https://learn.microsoft.com/azure/devops/organizations/accounts/use-personal-access-tokens-to-authenticate).
+
+```bash
+ado login --method pat --org myorg --pat mytoken
+```
+
+Required scopes for full CLI coverage: `vso.work`, `vso.code`, `vso.project`,
+`vso.build`, `vso.release` (or "Full access" if you prefer).
+
+#### 4. Environment variables (no login) — recommended for ephemeral CI
+
+Skip `ado login` entirely by setting env vars in the runner / shell:
+
+```bash
+export ADO_ORG=myorg
+export ADO_PAT=mytoken
+ado projects list
+```
+
+`ADO_PAT` is only read from the environment; it is never written to the
+config file. `ADO_ORG` is also accepted as a CLI flag (`--org myorg`).
+
+#### Check status / log out
+
+```bash
+ado whoami       # Show current auth method, org, server
+ado logout       # Remove ~/.ado_cli/config.json
+```
+
+### Auth priority order
+
+When you run a command, the CLI resolves credentials in this order:
+
+1. `--pat` / `--org` CLI flags (per-invocation)
+2. `ADO_PAT` / `ADO_ORG` env vars (per-session)
+3. `~/.ado_cli/config.json` (persistent, set via `ado login`)
+
+The first source that provides both an org and a token wins.
 
 ---
 
