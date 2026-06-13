@@ -20,7 +20,7 @@ The CI alias runs all of the following checks in order, failing on the first fai
 | 5 | Audit dependencies for vulnerabilities | `mix deps.audit` |
 | 6 | Cross-reference analysis (no orphans) | `mix xref graph --label compile-connected --fail-above 0` |
 | 7 | Type checking (with Finch false-positive filtering) | `mix ci.dialyzer` |
-| 8 | Test coverage ≥ 90% on testable modules | `MIX_ENV=test mix test --cover` |
+| 8 | Run unit tests with coverage | `mix test --cover` |
 
 ## GitHub Actions CI
 
@@ -41,6 +41,23 @@ it will pass on CI. Never skip a check before pushing.
 
 ## Coverage reporting (Codecov)
 
+Total project coverage is **7.9%** as of v0.2.0. This is honest: the 27
+CLI command modules have 0% coverage because they call
+`CliMate.halt_success` / `halt_error` (which exit the BEAM), making them
+hard to unit-test. The `test_coverage.ignore_modules` list only excludes
+4 modules that genuinely can't be tested (`AdoCli.Application`,
+`AdoCli.TestServer`, `AdoCli.TestServer.Plug`, `Mix.Tasks.Ci.Dialyzer`).
+
+The `mix test --cover` threshold check is set to `0` in `mix.exs`
+(no enforced floor) until CLI integration tests bring the number up.
+The Codecov badge shows the raw total.
+
+**The right path forward** is integration tests for the CLI command
+modules, not a bigger ignore list. Tests should run in a subprocess
+and capture stdout/exit code — CliMate's `halt_*` pattern makes
+this straightforward. Adding these would push coverage into the
+70-90% range, at which point a 70% threshold becomes meaningful.
+
 Coverage is reported to Codecov via the official bash uploader. To enable
 it on CI, the user must add a `CODECOV_TOKEN` secret to the repo:
 
@@ -59,7 +76,8 @@ showing coverage data within a few minutes of a CI run.
 
 Note: `mix coveralls.post` is NOT the right path here — it posts to
 coveralls.io, not codecov.io. For Codecov, the canonical path is
-`mix coveralls.json` + the codecov bash uploader.
+`mix test --cover` (with `tool: ExCoveralls`) + the codecov bash
+uploader.
 
 ## Additional Quality Commands
 
