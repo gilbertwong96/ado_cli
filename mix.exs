@@ -79,7 +79,8 @@ defmodule AdoCli.MixProject do
         # (1%) to avoid a spurious failure — the strict threshold check
         # is on the upstream `mix test --cover` step.
         minimum_coverage: 1,
-        ignore_modules: [          AdoCli.Application,
+        ignore_modules: [
+          AdoCli.Application,
           AdoCli.Auth,
           AdoCli.CLI,
           AdoCli.CLI.Helpers,
