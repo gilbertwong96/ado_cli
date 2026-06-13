@@ -9,7 +9,7 @@ Built with [Finch](https://hex.pm/packages/finch),
 [Burrito](https://hex.pm/packages/burrito).
 
 [![CI](https://github.com/gilbertwong96/ado_cli/actions/workflows/ci.yml/badge.svg)](https://github.com/gilbertwong96/ado_cli/actions/workflows/ci.yml)
-[![codecov](https://img.shields.io/codecov/c/github/gilbertwong96/ado_cli?logo=codecov)](https://codecov.io/gh/gilbertwong96/ado_cli)
+[![codecov](https://codecov.io/gh/gilbertwong96/ado_cli/graph/badge.svg)](https://codecov.io/gh/gilbertwong96/ado_cli)
 [![Elixir](https://img.shields.io/badge/elixir-1.20+-purple.svg)](https://elixir-lang.org)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
@@ -18,7 +18,7 @@ Built with [Finch](https://hex.pm/packages/finch),
 ## Installation
 
 ```bash
-git clone https://github.com/your-org/ado_cli.git
+git clone https://github.com/gilbertwong96/ado_cli.git
 cd ado_cli
 mix deps.get
 mix escript.build
@@ -551,4 +551,14 @@ self-hosted deployments.
 
 ## License
 
-MIT
+Copyright © 2026 Gilbert Wong
+
+This project is licensed under the **Apache License, Version 2.0** — see the
+[LICENSE](LICENSE) file for the full text. You may obtain a copy of the
+license at <https://www.apache.org/licenses/LICENSE-2.0>.
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
