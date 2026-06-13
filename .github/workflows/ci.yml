@@ -20,7 +20,7 @@ env:
 jobs:
   # ── Linux: full CI quality gate ─────────────────────────────────────
   linux:
-    name: Linux · Elixir ${{ env.ELIXIR_VERSION }} · OTP ${{ env.OTP_VERSION }}
+    name: "Linux · Elixir 1.20.1 · OTP 29.0"
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -67,7 +67,6 @@ jobs:
 
       - name: Dialyzer
         run: mix ci.dialyzer
-        # Dialyzer is slow — give it a wider window
         timeout-minutes: 15
 
       - name: Run tests with coverage
@@ -92,7 +91,7 @@ jobs:
 
   # ── macOS: smoke test (the CLI is cross-compiled via Burrito) ──────
   macos:
-    name: macOS · Elixir ${{ env.ELIXIR_VERSION }}
+    name: "macOS · Elixir 1.20.1"
     runs-on: macos-latest
     timeout-minutes: 15
     steps:
