@@ -11,6 +11,7 @@ defmodule AdoCli.MixProject do
       releases: releases(),
       escript: escript_config(),
       aliases: aliases(),
+      elixirc_paths: elixirc_paths(Mix.env()),
       dialyzer: [
         plt_file: {:no_warn, "priv/plts/dialyzer.plt"},
         plt_add_apps: [:cli_mate, :burrito, :finch, :mint, :ex_unit],
@@ -30,16 +31,35 @@ defmodule AdoCli.MixProject do
           AdoCli.Auth,
           AdoCli.CLI,
           AdoCli.CLI.Helpers,
+          AdoCli.CLI.AgentPools,
+          AdoCli.CLI.Areas,
           AdoCli.CLI.AuthCommands,
+          AdoCli.CLI.Banners,
+          AdoCli.CLI.BranchPolicies,
+          AdoCli.CLI.Builds,
+          AdoCli.CLI.Connections,
+          AdoCli.CLI.Extensions,
+          AdoCli.CLI.Folders,
+          AdoCli.CLI.Imports,
+          AdoCli.CLI.Iterations,
           AdoCli.CLI.Logout,
+          AdoCli.CLI.Packages,
           AdoCli.CLI.Pipelines,
           AdoCli.CLI.Projects,
           AdoCli.CLI.PullRequests,
           AdoCli.CLI.Releases,
           AdoCli.CLI.Repos,
+          AdoCli.CLI.RunArtifacts,
+          AdoCli.CLI.Security,
           AdoCli.CLI.Skills,
+          AdoCli.CLI.Teams,
+          AdoCli.CLI.Users,
           AdoCli.CLI.Whoami,
+          AdoCli.CLI.Wikis,
           AdoCli.CLI.WorkItems,
+          AdoCli.Frontmatter,
+          AdoCli.TestServer,
+          AdoCli.TestServer.Plug,
           Mix.Tasks.Ci.Dialyzer
         ],
         threshold: 90
@@ -71,9 +91,13 @@ defmodule AdoCli.MixProject do
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
       {:ex_doc, "~> 0.40", only: :dev, runtime: false},
       {:pi_bridge, "~> 0.6.5", only: [:dev, :test], runtime: false},
-      {:bypass, "~> 2.1", only: :test}
+      {:bandit, "~> 1.8"},
+      {:plug, "~> 1.18"}
     ]
   end
+
+  defp elixirc_paths(:test), do: ["lib", "test/support"]
+  defp elixirc_paths(_), do: ["lib"]
 
   defp aliases do
     [

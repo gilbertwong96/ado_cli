@@ -2,13 +2,14 @@ defmodule AdoCli.ClientTest do
   use ExUnit.Case, async: false
 
   alias AdoCli.Client
+  alias AdoCli.TestServer
 
   setup do
     start_supervised!({Finch, name: AdoCli.Finch, pools: %{default: [size: 1, count: 1]}})
 
-    bypass = Bypass.open()
+    server = start_supervised!({TestServer, []})
 
-    System.put_env("ADO_SERVER", "http://localhost:#{bypass.port}")
+    System.put_env("ADO_SERVER", TestServer.url(server))
     System.put_env("ADO_ORG", "testorg")
     System.put_env("ADO_PAT", "testpat")
 
@@ -18,38 +19,38 @@ defmodule AdoCli.ClientTest do
       System.delete_env("ADO_PAT")
     end)
 
-    {:ok, bypass: bypass}
+    {:ok, server: server}
   end
 
   defp api(path), do: "/testorg#{path}"
 
   describe "get/2" do
-    test "returns decoded JSON on 200", %{bypass: bypass} do
-      Bypass.expect(bypass, "GET", api("/_apis/projects"), fn conn ->
+    test "returns decoded JSON on 200", %{server: server} do
+      TestServer.expect(server, "GET", api("/_apis/projects"), fn conn ->
         Plug.Conn.resp(conn, 200, ~s({"value":[],"count":0}))
       end)
 
       assert {:ok, %{"value" => [], "count" => 0}} = Client.get("/_apis/projects")
     end
 
-    test "returns error on 404", %{bypass: bypass} do
-      Bypass.expect(bypass, "GET", api("/_apis/bad"), fn conn ->
+    test "returns error on 404", %{server: server} do
+      TestServer.expect(server, "GET", api("/_apis/bad"), fn conn ->
         Plug.Conn.resp(conn, 404, ~s({"message":"Not found"}))
       end)
 
       assert {:error, %{status: 404}} = Client.get("/_apis/bad")
     end
 
-    test "returns error on 500", %{bypass: bypass} do
-      Bypass.expect(bypass, "GET", api("/_apis/fail"), fn conn ->
+    test "returns error on 500", %{server: server} do
+      TestServer.expect(server, "GET", api("/_apis/fail"), fn conn ->
         Plug.Conn.resp(conn, 500, ~s({"error":"Internal"}))
       end)
 
       assert {:error, %{status: 500}} = Client.get("/_apis/fail")
     end
 
-    test "includes api-version query parameter", %{bypass: bypass} do
-      Bypass.expect(bypass, "GET", api("/_apis/projects"), fn conn ->
+    test "includes api-version query parameter", %{server: server} do
+      TestServer.expect(server, "GET", api("/_apis/projects"), fn conn ->
         assert conn.query_string =~ "api-version="
         Plug.Conn.resp(conn, 200, ~s({"value":[],"count":0}))
       end)
@@ -57,8 +58,8 @@ defmodule AdoCli.ClientTest do
       assert {:ok, _} = Client.get("/_apis/projects")
     end
 
-    test "sends Authorization header", %{bypass: bypass} do
-      Bypass.expect(bypass, "GET", api("/_apis/projects"), fn conn ->
+    test "sends Authorization header", %{server: server} do
+      TestServer.expect(server, "GET", api("/_apis/projects"), fn conn ->
         auth = Plug.Conn.get_req_header(conn, "authorization")
         assert auth != []
         assert hd(auth) =~ "Basic"
@@ -70,8 +71,8 @@ defmodule AdoCli.ClientTest do
   end
 
   describe "post/3" do
-    test "sends body as JSON", %{bypass: bypass} do
-      Bypass.expect(bypass, "POST", api("/_apis/projects"), fn conn ->
+    test "sends body as JSON", %{server: server} do
+      TestServer.expect(server, "POST", api("/_apis/projects"), fn conn ->
         {:ok, body, conn} = Plug.Conn.read_body(conn)
         decoded = JSON.decode!(body)
         assert decoded["name"] == "newproj"
@@ -81,8 +82,8 @@ defmodule AdoCli.ClientTest do
       assert {:ok, %{"id" => "123"}} = Client.post("/_apis/projects", %{"name" => "newproj"})
     end
 
-    test "sends Content-Type header", %{bypass: bypass} do
-      Bypass.expect(bypass, "POST", api("/_apis/projects"), fn conn ->
+    test "sends Content-Type header", %{server: server} do
+      TestServer.expect(server, "POST", api("/_apis/projects"), fn conn ->
         ct = Plug.Conn.get_req_header(conn, "content-type")
         assert Enum.any?(ct, &String.contains?(&1, "application/json"))
         Plug.Conn.resp(conn, 201, ~s({}))
@@ -91,8 +92,8 @@ defmodule AdoCli.ClientTest do
       assert {:ok, _} = Client.post("/_apis/projects", %{})
     end
 
-    test "returns error on non-2xx", %{bypass: bypass} do
-      Bypass.expect(bypass, "POST", api("/_apis/projects"), fn conn ->
+    test "returns error on non-2xx", %{server: server} do
+      TestServer.expect(server, "POST", api("/_apis/projects"), fn conn ->
         Plug.Conn.resp(conn, 400, ~s({"message":"Bad"}))
       end)
 
@@ -101,8 +102,8 @@ defmodule AdoCli.ClientTest do
   end
 
   describe "patch/3" do
-    test "updates a resource", %{bypass: bypass} do
-      Bypass.expect(bypass, "PATCH", api("/_apis/projects/p1"), fn conn ->
+    test "updates a resource", %{server: server} do
+      TestServer.expect(server, "PATCH", api("/_apis/projects/p1"), fn conn ->
         {:ok, body, conn} = Plug.Conn.read_body(conn)
         decoded = JSON.decode!(body)
         assert decoded["name"] == "renamed"
@@ -115,8 +116,8 @@ defmodule AdoCli.ClientTest do
   end
 
   describe "put/3" do
-    test "replaces a resource", %{bypass: bypass} do
-      Bypass.expect(bypass, "PUT", api("/_apis/vg/1"), fn conn ->
+    test "replaces a resource", %{server: server} do
+      TestServer.expect(server, "PUT", api("/_apis/vg/1"), fn conn ->
         Plug.Conn.resp(conn, 200, ~s({"id":1,"name":"updated"}))
       end)
 
@@ -125,16 +126,16 @@ defmodule AdoCli.ClientTest do
   end
 
   describe "delete/2" do
-    test "returns :ok on 2xx", %{bypass: bypass} do
-      Bypass.expect(bypass, "DELETE", api("/_apis/vg/1"), fn conn ->
+    test "returns :ok on 2xx", %{server: server} do
+      TestServer.expect(server, "DELETE", api("/_apis/vg/1"), fn conn ->
         Plug.Conn.resp(conn, 204, "")
       end)
 
       assert :ok = Client.delete("/_apis/vg/1")
     end
 
-    test "returns error on 404", %{bypass: bypass} do
-      Bypass.expect(bypass, "DELETE", api("/_apis/vg/999"), fn conn ->
+    test "returns error on 404", %{server: server} do
+      TestServer.expect(server, "DELETE", api("/_apis/vg/999"), fn conn ->
         Plug.Conn.resp(conn, 404, ~s({"message":"Not found"}))
       end)
 
@@ -143,24 +144,24 @@ defmodule AdoCli.ClientTest do
   end
 
   describe "list/2" do
-    test "extracts value array", %{bypass: bypass} do
-      Bypass.expect(bypass, "GET", api("/_apis/projects"), fn conn ->
+    test "extracts value array", %{server: server} do
+      TestServer.expect(server, "GET", api("/_apis/projects"), fn conn ->
         Plug.Conn.resp(conn, 200, ~s({"value":[{"id":1}],"count":1}))
       end)
 
       assert {:ok, [%{"id" => 1}]} = Client.list("/_apis/projects")
     end
 
-    test "passes through list response", %{bypass: bypass} do
-      Bypass.expect(bypass, "GET", api("/_apis/repos"), fn conn ->
+    test "passes through list response", %{server: server} do
+      TestServer.expect(server, "GET", api("/_apis/repos"), fn conn ->
         Plug.Conn.resp(conn, 200, ~s([{"id":1}]))
       end)
 
       assert {:ok, [%{"id" => 1}]} = Client.list("/_apis/repos")
     end
 
-    test "forwards non-array errors", %{bypass: bypass} do
-      Bypass.expect(bypass, "GET", api("/_apis/projects"), fn conn ->
+    test "forwards non-array errors", %{server: server} do
+      TestServer.expect(server, "GET", api("/_apis/projects"), fn conn ->
         Plug.Conn.resp(conn, 401, ~s({"error":"Unauthorized"}))
       end)
 
@@ -186,8 +187,8 @@ defmodule AdoCli.ClientTest do
   end
 
   describe "redirect handling" do
-    test "returns clear auth error on 302", %{bypass: bypass} do
-      Bypass.expect(bypass, "GET", api("/_apis/projects"), fn conn ->
+    test "returns clear auth error on 302", %{server: server} do
+      TestServer.expect(server, "GET", api("/_apis/projects"), fn conn ->
         conn
         |> Plug.Conn.put_resp_header("location", "http://example.com/signin")
         |> Plug.Conn.resp(302, "")
@@ -199,19 +200,18 @@ defmodule AdoCli.ClientTest do
   end
 
   describe "non-JSON success bodies" do
-    test "returns raw body when not valid JSON on 200", %{bypass: bypass} do
-      Bypass.expect(bypass, "GET", api("/_apis/raw"), fn conn ->
+    test "returns raw body when not valid JSON on 200", %{server: server} do
+      TestServer.expect(server, "GET", api("/_apis/raw"), fn conn ->
         Plug.Conn.resp(conn, 200, "plain text")
       end)
 
-      # 200 with non-JSON: handle_response decodes → :error, falls through to error path
       assert {:error, _} = Client.get("/_apis/raw")
     end
   end
 
   describe "get_raw/2" do
-    test "returns raw binary on 200", %{bypass: bypass} do
-      Bypass.expect(bypass, "GET", api("/_apis/attachments/1"), fn conn ->
+    test "returns raw binary on 200", %{server: server} do
+      TestServer.expect(server, "GET", api("/_apis/attachments/1"), fn conn ->
         Plug.Conn.resp(conn, 200, "binary data")
       end)
 
@@ -219,8 +219,8 @@ defmodule AdoCli.ClientTest do
       assert body == "binary data"
     end
 
-    test "returns error on non-2xx", %{bypass: bypass} do
-      Bypass.expect(bypass, "GET", api("/_apis/attachments/2"), fn conn ->
+    test "returns error on non-2xx", %{server: server} do
+      TestServer.expect(server, "GET", api("/_apis/attachments/2"), fn conn ->
         Plug.Conn.resp(conn, 404, "Not found")
       end)
 
@@ -229,9 +229,8 @@ defmodule AdoCli.ClientTest do
   end
 
   describe "302 without Location header" do
-    test "returns error with helpful message", %{bypass: bypass} do
-      Bypass.expect(bypass, "GET", api("/_apis/projects"), fn conn ->
-        # 302 with NO location header
+    test "returns error with helpful message", %{server: server} do
+      TestServer.expect(server, "GET", api("/_apis/projects"), fn conn ->
         Plug.Conn.resp(conn, 302, "")
       end)
 
@@ -241,18 +240,22 @@ defmodule AdoCli.ClientTest do
   end
 
   describe "transport errors" do
-    test "returns transport error when server unreachable", %{bypass: bypass} do
-      port = bypass.port
+    test "returns transport error when server unreachable" do
+      # Use an unreachable port
       System.put_env("ADO_SERVER", "http://localhost:1")
-      on_exit(fn -> System.put_env("ADO_SERVER", "http://localhost:#{port}") end)
+
+      on_exit(fn ->
+        # The setup block already set it; we reset in on_exit above too
+        :ok
+      end)
 
       assert {:error, _reason} = Client.get("/_apis/projects")
     end
   end
 
   describe "list edge cases" do
-    test "passes through non-list, non-value response", %{bypass: bypass} do
-      Bypass.expect(bypass, "GET", api("/_apis/odd"), fn conn ->
+    test "passes through non-list, non-value response", %{server: server} do
+      TestServer.expect(server, "GET", api("/_apis/odd"), fn conn ->
         Plug.Conn.resp(conn, 200, ~s({"odd":"shape"}))
       end)
 
@@ -261,20 +264,19 @@ defmodule AdoCli.ClientTest do
   end
 
   describe "safe_decode (private)" do
-    test "decodes JSON error body in non-2xx response", %{bypass: bypass} do
-      Bypass.expect(bypass, "GET", api("/_apis/notjson"), fn conn ->
+    test "decodes JSON error body in non-2xx response", %{server: server} do
+      TestServer.expect(server, "GET", api("/_apis/notjson"), fn conn ->
         Plug.Conn.resp(conn, 500, "not json at all")
       end)
 
       assert {:error, %{status: 500, body: body}} = Client.get("/_apis/notjson")
-      # Non-JSON body returned as-is from safe_decode
       assert body == "not json at all" or is_map(body)
     end
   end
 
   describe "redirect/cookie limits" do
-    test "302 with location returns auth error (no programmatic follow)", %{bypass: bypass} do
-      Bypass.expect(bypass, "GET", api("/_apis/projects"), fn conn ->
+    test "302 with location returns auth error (no programmatic follow)", %{server: server} do
+      TestServer.expect(server, "GET", api("/_apis/projects"), fn conn ->
         conn
         |> Plug.Conn.put_resp_header("location", "http://example.com/signin")
         |> Plug.Conn.resp(302, "")

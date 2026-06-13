@@ -29,29 +29,8 @@ defmodule AdoCli.Skills do
              {description, version} =
                if File.exists?(skill_md_path) do
                  content = File.read!(skill_md_path)
-
-                 case String.split(content, "\n") do
-                   ["---" | rest] ->
-                     {fm_lines, _} = Enum.split_while(rest, &(&1 != "---"))
-
-                     fm =
-                       Enum.reduce(fm_lines, %{}, fn line, acc ->
-                         case String.split(line, ":", parts: 2) do
-                           [k, v] ->
-                             ke = String.trim(k)
-                             ve = String.trim(String.replace(v, ~S("), ""))
-                             Map.put(acc, ke, ve)
-
-                           _ ->
-                             acc
-                         end
-                       end)
-
-                     {Map.get(fm, "description", ""), Map.get(fm, "version", "")}
-
-                   _ ->
-                     {"", ""}
-                 end
+                 fm = AdoCli.Frontmatter.parse(content)
+                 {Map.get(fm, "description", ""), Map.get(fm, "version", "")}
                else
                  {"", ""}
                end
