@@ -65,7 +65,7 @@ defmodule AdoCli.MixProject do
         threshold: 90
       ],
       coveralls: [
-        # Mirror the test_coverage ignore list so ex_coveralls reports the
+        # Mirror the test_coverage ignore list so excoveralls reports the
         # same modules and threshold. Used by `mix coveralls` and the
         # `mix coveralls.html` workflow.
         ignore_modules: [
@@ -123,16 +123,13 @@ defmodule AdoCli.MixProject do
     [
       {:finch, "~> 0.22.0"},
       {:cli_mate, "~> 0.10.2"},
-      {:burrito,
-       github: "gilbertwong96/burrito",
-       ref: "ef2ff340fbd2b4b71b8dd0953177504074bba8ba",
-       runtime: false},
+      {:burrito, github: "gilbertwong96/burrito", branch: "zig-0.16.0", runtime: false},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:ex_dna, "~> 1.5", only: [:dev, :test], runtime: false},
       {:ex_slop, "~> 0.4.2", only: [:dev, :test], runtime: false},
       {:reach, "~> 2.7", only: [:dev, :test], runtime: false},
       {:mix_audit, "~> 2.1", only: [:dev, :test], runtime: false},
-      {:ex_coveralls, "~> 0.18", only: [:dev, :test], runtime: false},
+      {:excoveralls, "~> 0.18", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
       {:ex_doc, "~> 0.40", only: :dev, runtime: false},
       {:pi_bridge, "~> 0.6.5", only: [:dev, :test], runtime: false},
