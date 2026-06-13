@@ -27,8 +27,6 @@ defmodule AdoCli.TestServer do
 
   use GenServer
 
-  alias Plug.Conn
-
   defstruct port: nil, bandit_pid: nil, expectations: []
 
   @type method :: String.t()
@@ -79,12 +77,13 @@ defmodule AdoCli.TestServer do
   # Keeping it at top-level keeps the code clean.
   defmodule Plug do
     @moduledoc false
-    @behaviour Plug
-
     # Nested-module gotcha: `Plug` inside `AdoCli.TestServer.Plug` refers
-    # to the inner Plug (this module), so `Plug.Conn` would resolve to
-    # `AdoCli.TestServer.Plug.Conn`. Use the full `Elixir.Plug.Conn` name
-    # to disambiguate.
+    # to the inner Plug (this module), so `@behaviour Plug` would refer
+    # to itself and `@behaviour Plug` would be treated as a self-reference.
+    # Use the full `Elixir.Plug` name to disambiguate.
+    @behaviour Elixir.Plug
+
+    # Same disambiguation for `Plug.Conn`.
     import Elixir.Plug.Conn, only: [put_resp_content_type: 2, resp: 3]
 
     @impl true
