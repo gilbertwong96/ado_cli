@@ -74,6 +74,24 @@ defmodule AdoCli.CLI.Security do
               ]
             ]
           ]
+        ],
+        permissions: [
+          name: "ado security permissions",
+          doc: "Manage access control permissions.",
+          subcommands: [
+            list: [
+              name: "ado security permissions list",
+              doc: "List permissions for a namespace.",
+              arguments: [namespace_id: [type: :string, doc: "Security namespace ID"]],
+              options: [token: [type: :string, doc: "Security token to filter", doc_arg: "TOKEN"]],
+              execute: &list_permissions/1
+            ],
+            namespaces: [
+              name: "ado security permissions namespaces",
+              doc: "List available security namespaces.",
+              execute: &list_namespaces/1
+            ]
+          ]
         ]
       ]
     ]
@@ -208,6 +226,57 @@ defmodule AdoCli.CLI.Security do
 
       writeln("")
       writeln("#{length(members)} member(s)")
+    end
+  end
+
+  # ── Permissions ────────────────────────────────────────────────────
+
+  def list_namespaces(parsed) do
+    result = Client.list("/_apis/securitynamespaces")
+
+    Helpers.handle_api_result(result, parsed, fn ns ->
+      Helpers.json_or_format(ns, parsed, fn namespaces ->
+        writeln("")
+        writeln("#{String.pad_trailing("ID", 40)}  Name")
+        writeln(String.duplicate("─", 80))
+
+        Enum.each(namespaces, fn n ->
+          writeln("#{String.pad_trailing(n["namespaceId"] || "", 40)}  #{n["name"]}")
+        end)
+
+        writeln("")
+        writeln("#{length(namespaces)} namespace(s)")
+        halt_success("")
+      end)
+    end)
+  end
+
+  def list_permissions(parsed) do
+    ns_id = parsed.arguments.namespace_id
+    token = Map.get(parsed.options, :token, "")
+    path = "/_apis/permissions/#{URI.encode(ns_id)}/#{URI.encode(token)}"
+
+    case Client.get(path, %{"api-version" => "7.1"}) do
+      {:ok, aces} ->
+        Helpers.json_or_format(aces, parsed, fn perm ->
+          writeln("")
+          writeln("#{String.pad_trailing("Identity", 36)}  Allow  Deny")
+          writeln(String.duplicate("─", 60))
+          acl = perm["acesDictionary"] || %{}
+
+          Enum.each(acl, fn {_k, ace} ->
+            id = ace["descriptor"] || ""
+            allow = ace["allow"] || 0
+            deny = ace["deny"] || 0
+            writeln("#{String.pad_trailing(String.slice(id, 0, 34), 36)}  #{allow}     #{deny}")
+          end)
+
+          writeln("")
+          halt_success("")
+        end)
+
+      error ->
+        Helpers.handle_api_result(error, parsed, fn _ -> :ok end)
     end
   end
 end

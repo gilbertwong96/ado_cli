@@ -26,9 +26,13 @@ defmodule AdoCli.CLI do
   import CliMate.CLI
 
   alias AdoCli.CLI.AgentPools
+  alias AdoCli.CLI.Areas
   alias AdoCli.CLI.AuthCommands
+  alias AdoCli.CLI.BranchPolicies
+  alias AdoCli.CLI.Builds
   alias AdoCli.CLI.Connections
   alias AdoCli.CLI.Extensions
+  alias AdoCli.CLI.Folders
   alias AdoCli.CLI.Iterations
   alias AdoCli.CLI.Logout
   alias AdoCli.CLI.Pipelines
@@ -36,6 +40,7 @@ defmodule AdoCli.CLI do
   alias AdoCli.CLI.PullRequests
   alias AdoCli.CLI.Releases
   alias AdoCli.CLI.Repos
+  alias AdoCli.CLI.RunArtifacts
   alias AdoCli.CLI.Security
   alias AdoCli.CLI.Skills
   alias AdoCli.CLI.Teams
@@ -76,14 +81,19 @@ defmodule AdoCli.CLI do
       logout: Logout,
       whoami: Whoami,
       "agent-pools": AgentPools,
+      areas: Areas,
       connections: Connections,
       extensions: Extensions,
       iterations: Iterations,
       pipelines: Pipelines,
+      "pipelines-builds": Builds,
+      "pipelines-folders": Folders,
+      "pipelines-artifacts": RunArtifacts,
       projects: Projects,
       prs: PullRequests,
       releases: Releases,
       repos: Repos,
+      "branch-policies": BranchPolicies,
       security: Security,
       skills: Skills,
       teams: Teams,
