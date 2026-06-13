@@ -127,3 +127,4 @@ mix escript.build
 # Burrito cross-platform binary (prod)
 MIX_ENV=prod mix release
 ```
+
