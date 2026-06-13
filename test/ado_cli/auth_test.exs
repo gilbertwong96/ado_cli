@@ -54,29 +54,6 @@ defmodule AdoCli.AuthTest do
     end
   end
 
-  describe "login_browser/1 (org auto-detect path)" do
-    test "skipped — login_browser requires TCP listener mocking, covered by integration test", %{
-      server: _server
-    } do
-      # The full browser OAuth flow requires mocking the TCP listener.
-      # We test the lower-level parts (list_accounts, exchange, etc.)
-      # separately. The browser flow itself is exercised in the manual
-      # integration tests documented in AUTH.md.
-      assert true
-    end
-  end
-
-  describe "login_device_code/1 (device flow HTTP)" do
-    test "skipped — request_device_code uses hardcoded Microsoft URL", %{server: _server} do
-      # request_device_code/1 uses a hardcoded URL
-      # "https://login.microsoftonline.com/.../devicecode" which is
-      # outside the ADO_SERVER env var. To test the full flow we'd
-      # need to mock the Finch HTTP layer, not just the API.
-      # For now, this test is a placeholder.
-      assert true
-    end
-  end
-
   describe "logout/0" do
     test "removes stored credentials" do
       Auth.login_pat("testorg", "token")

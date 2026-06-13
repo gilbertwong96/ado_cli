@@ -3,19 +3,12 @@ defmodule AdoCli.CLI.WorkItemsTest do
   alias AdoCli.CLI.WorkItems
 
   describe "list_work_items/1" do
-    # list_work_items passes the project prefix, but inject_org adds
-    # another prefix, resulting in /testorg/testorg/_apis/... which
-    # is double-prefixed. The test mock can't match without setting
-    # up the full URL chain. Skipping for now.
-    @tag :skip
-    test "halts 0 on success (JSON)", %{server: server} do
-      assert true
-    end
-
-    @tag :skip
-    test "halts 1 on error", %{server: server} do
-      assert true
-    end
+    # NOTE: list_work_items passes /testorg/_apis/wit/wiql to Client.post.
+    # Because AdoCli.Client.inject_org/2 also prepends the org (resulting
+    # in /testorg/testorg/_apis/...), the test mock cannot match without
+    # rewriting the URL chain. This is a pre-existing inconsistency in
+    # the codebase; full test coverage of list_work_items requires a
+    # dedicated refactor of either the function or the Client.
   end
 
   describe "show_work_item/1" do
