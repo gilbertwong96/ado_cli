@@ -87,6 +87,12 @@ defmodule AdoCli.CLI.WorkItems do
           ],
           execute: &update_work_item/1
         ],
+        delete: [
+          name: "ado workitems delete",
+          doc: "Delete a work item.",
+          arguments: [id: [type: :integer, doc: "Work item ID"]],
+          execute: &delete_work_item/1
+        ],
         comments: [
           name: "ado workitems comments",
           doc: "Manage work item discussion comments.",
@@ -291,6 +297,22 @@ defmodule AdoCli.CLI.WorkItems do
         success("Work item ##{wi["id"]} updated.\n")
         writeln("  Title: #{wi["fields"]["System.Title"]}")
         writeln("  State: #{wi["fields"]["System.State"]}")
+        halt_success("")
+
+      {:error, %{status: 404}} ->
+        halt_error("Work item ##{id} not found")
+
+      error ->
+        Helpers.handle_api_result(error, parsed, fn _ -> :ok end)
+    end
+  end
+
+  def delete_work_item(parsed) do
+    id = parsed.arguments.id
+
+    case Client.delete("/_apis/wit/workitems/#{id}") do
+      :ok ->
+        success("Work item ##{id} deleted.\n")
         halt_success("")
 
       {:error, %{status: 404}} ->

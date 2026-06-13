@@ -61,6 +61,40 @@ defmodule AdoCli.CLI.Pipelines do
           ],
           execute: &run_pipeline/1
         ],
+        create: [
+          name: "ado pipelines create",
+          doc: "Create a new pipeline.",
+          arguments: [project: [type: :string, doc: "Project name or ID"]],
+          options: [
+            name: [type: :string, required: true, doc: "Pipeline name", doc_arg: "NAME"],
+            repo: [type: :string, required: true, doc: "Repository ID or name", doc_arg: "REPO"],
+            path: [type: :string, required: true, doc: "YAML file path", doc_arg: "PATH"],
+            folder: [type: :string, doc: "Pipeline folder", doc_arg: "FOLDER"]
+          ],
+          execute: &create_pipeline/1
+        ],
+        update: [
+          name: "ado pipelines update",
+          doc: "Update a pipeline definition.",
+          arguments: [
+            project: [type: :string, doc: "Project name or ID"],
+            pipeline_id: [type: :integer, doc: "Pipeline definition ID"]
+          ],
+          options: [
+            name: [type: :string, doc: "New pipeline name", doc_arg: "NAME"],
+            path: [type: :string, doc: "New YAML path", doc_arg: "PATH"]
+          ],
+          execute: &update_pipeline/1
+        ],
+        delete: [
+          name: "ado pipelines delete",
+          doc: "Delete a pipeline definition.",
+          arguments: [
+            project: [type: :string, doc: "Project name or ID"],
+            pipeline_id: [type: :integer, doc: "Pipeline definition ID"]
+          ],
+          execute: &delete_pipeline/1
+        ],
         vars: [
           name: "ado pipelines vars",
           doc: "Manage variable groups (pipeline library).",
@@ -116,6 +150,47 @@ defmodule AdoCli.CLI.Pipelines do
                 group_id: [type: :integer, doc: "Variable group ID"]
               ],
               execute: &delete_var_group/1
+            ]
+          ]
+        ],
+        variables: [
+          name: "ado pipelines variables",
+          doc: "Manage per-pipeline variables.",
+          subcommands: [
+            list: [
+              name: "ado pipelines variables list",
+              doc: "List variables on a pipeline.",
+              arguments: [
+                project: [type: :string, doc: "Project name or ID"],
+                pipeline_id: [type: :integer, doc: "Pipeline definition ID"]
+              ],
+              execute: &list_pipeline_vars/1
+            ],
+            create: [
+              name: "ado pipelines variables create",
+              doc: "Add a variable to a pipeline.",
+              arguments: [
+                project: [type: :string, doc: "Project name or ID"],
+                pipeline_id: [type: :integer, doc: "Pipeline definition ID"]
+              ],
+              options: [
+                key: [type: :string, required: true, doc: "Variable name", doc_arg: "KEY"],
+                value: [type: :string, required: true, doc: "Variable value", doc_arg: "VALUE"],
+                secret: [type: :boolean, default: false, doc: "Mark as secret"]
+              ],
+              execute: &create_pipeline_var/1
+            ],
+            delete: [
+              name: "ado pipelines variables delete",
+              doc: "Remove a variable from a pipeline.",
+              arguments: [
+                project: [type: :string, doc: "Project name or ID"],
+                pipeline_id: [type: :integer, doc: "Pipeline definition ID"]
+              ],
+              options: [
+                key: [type: :string, required: true, doc: "Variable name", doc_arg: "KEY"]
+              ],
+              execute: &delete_pipeline_var/1
             ]
           ]
         ]
@@ -407,6 +482,162 @@ defmodule AdoCli.CLI.Pipelines do
     str |> String.split(",") |> Enum.map(&String.trim/1) |> MapSet.new()
   end
 
+  # ── Pipeline Definitions: Create/Update/Delete ──────────────────────
+
+  def create_pipeline(parsed) do
+    project = parsed.arguments.project
+    name = Map.fetch!(parsed.options, :name)
+    repo = Map.fetch!(parsed.options, :repo)
+    yaml_path = Map.fetch!(parsed.options, :path)
+    folder = Map.get(parsed.options, :folder, "/")
+
+    body = %{
+      "name" => name,
+      "folder" => folder,
+      "configuration" => %{
+        "type" => "yaml",
+        "path" => yaml_path,
+        "repository" => %{"id" => repo, "name" => repo, "type" => "azureReposGit"}
+      }
+    }
+
+    case Client.post("/#{URI.encode(project)}/_apis/pipelines", body) do
+      {:ok, pipeline} ->
+        success("Pipeline '#{pipeline["name"]}' created (ID: #{pipeline["id"]}).\n")
+        halt_success("")
+
+      error ->
+        Helpers.handle_api_result(error, parsed, fn _ -> :ok end)
+    end
+  end
+
+  def update_pipeline(parsed) do
+    project = parsed.arguments.project
+    pipeline_id = parsed.arguments.pipeline_id
+    body = %{}
+    body = if name = Map.get(parsed.options, :name), do: Map.put(body, "name", name), else: body
+
+    body =
+      if path = Map.get(parsed.options, :path),
+        do: put_in(body, ["configuration", "path"], path),
+        else: body
+
+    if body == %{}, do: halt_error("At least one of --name or --path is required.")
+
+    case Client.patch("/#{URI.encode(project)}/_apis/pipelines/#{pipeline_id}", body) do
+      {:ok, _} ->
+        success("Pipeline updated.\n")
+        halt_success("")
+
+      {:error, %{status: 404}} ->
+        halt_error("Pipeline ##{pipeline_id} not found")
+
+      error ->
+        Helpers.handle_api_result(error, parsed, fn _ -> :ok end)
+    end
+  end
+
+  def delete_pipeline(parsed) do
+    project = parsed.arguments.project
+    pipeline_id = parsed.arguments.pipeline_id
+
+    case Client.delete("/#{URI.encode(project)}/_apis/pipelines/#{pipeline_id}") do
+      :ok ->
+        success("Pipeline deleted.\n")
+        halt_success("")
+
+      {:error, %{status: 404}} ->
+        halt_error("Pipeline ##{pipeline_id} not found")
+
+      error ->
+        Helpers.handle_api_result(error, parsed, fn _ -> :ok end)
+    end
+  end
+
+  # ── Pipeline Variables (per-definition) ────────────────────────────────
+
+  def list_pipeline_vars(parsed) do
+    project = parsed.arguments.project
+    pipeline_id = parsed.arguments.pipeline_id
+
+    case Client.get("/#{URI.encode(project)}/_apis/pipelines/#{pipeline_id}") do
+      {:ok, pipeline} ->
+        vars = get_in(pipeline, ["configuration", "variables"]) || %{}
+
+        var_list =
+          Enum.map(vars, fn {k, v} ->
+            %{"key" => k, "value" => v["value"], "isSecret" => v["isSecret"]}
+          end)
+
+        Helpers.json_or_format(var_list, parsed, &print_pipeline_vars_table/1)
+
+      {:error, %{status: 404}} ->
+        halt_error("Pipeline ##{pipeline_id} not found")
+
+      error ->
+        Helpers.handle_api_result(error, parsed, fn _ -> :ok end)
+    end
+  end
+
+  def create_pipeline_var(parsed) do
+    project = parsed.arguments.project
+    pipeline_id = parsed.arguments.pipeline_id
+    key = Map.fetch!(parsed.options, :key)
+    value = Map.fetch!(parsed.options, :value)
+    is_secret = Map.get(parsed.options, :secret, false)
+
+    case Client.get("/#{URI.encode(project)}/_apis/pipelines/#{pipeline_id}") do
+      {:ok, pipeline} ->
+        existing_vars = get_in(pipeline, ["configuration", "variables"]) || %{}
+        new_var = %{"value" => value, "isSecret" => is_secret}
+        updated_vars = Map.put(existing_vars, key, new_var)
+        update_body = put_in(pipeline, ["configuration", "variables"], updated_vars)
+
+        case Client.patch("/#{URI.encode(project)}/_apis/pipelines/#{pipeline_id}", update_body) do
+          {:ok, _} ->
+            success("Variable '#{key}' added.\n")
+            halt_success("")
+
+          error ->
+            Helpers.handle_api_result(error, parsed, fn _ -> :ok end)
+        end
+
+      {:error, %{status: 404}} ->
+        halt_error("Pipeline ##{pipeline_id} not found")
+
+      error ->
+        Helpers.handle_api_result(error, parsed, fn _ -> :ok end)
+    end
+  end
+
+  def delete_pipeline_var(parsed) do
+    project = parsed.arguments.project
+    pipeline_id = parsed.arguments.pipeline_id
+    key = Map.fetch!(parsed.options, :key)
+
+    case Client.get("/#{URI.encode(project)}/_apis/pipelines/#{pipeline_id}") do
+      {:ok, pipeline} ->
+        existing_vars = get_in(pipeline, ["configuration", "variables"]) || %{}
+        updated_vars = Map.delete(existing_vars, key)
+        update_body = put_in(pipeline, ["configuration", "variables"], updated_vars)
+
+        case Client.patch("/#{URI.encode(project)}/_apis/pipelines/#{pipeline_id}", update_body) do
+          {:ok, _} ->
+            success("Variable '#{key}' removed.\n")
+            halt_success("")
+
+          error ->
+            Helpers.handle_api_result(error, parsed, fn _ -> :ok end)
+        end
+
+      {:error, %{status: 404}} ->
+        halt_error("Pipeline ##{pipeline_id} not found")
+
+      error ->
+        Helpers.handle_api_result(error, parsed, fn _ -> :ok end)
+    end
+  end
+
   # ── Generic Helpers ───────────────────────────────────────────────────
 
   defp put_if(map, nil, _key), do: map
@@ -510,5 +741,26 @@ defmodule AdoCli.CLI.Pipelines do
     end
 
     writeln("")
+  end
+
+  defp print_pipeline_vars_table(vars) do
+    if Enum.empty?(vars) do
+      writeln("No pipeline variables defined.")
+    else
+      writeln("")
+      writeln("#{String.pad_trailing("Key", 25)}  #{String.pad_trailing("Value", 30)}  Secret")
+      writeln(String.duplicate("─", 70))
+
+      Enum.each(vars, fn v ->
+        secret_label = if v["isSecret"], do: "yes", else: "no"
+
+        writeln(
+          "#{String.pad_trailing(v["key"] || "", 25)}  #{String.pad_trailing(v["value"] || "", 30)}  #{secret_label}"
+        )
+      end)
+
+      writeln("")
+      writeln("#{length(vars)} variable(s)")
+    end
   end
 end
