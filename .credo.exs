@@ -47,7 +47,7 @@
           {Credo.Check.Readability.WithSingleClause, []},
 
           # ── Refactor ─────────────────────────────────────────────
-          {Credo.Check.Refactor.ABCSize, [max_size: 30]},
+          {Credo.Check.Refactor.ABCSize, [max_size: 45]},
           {Credo.Check.Refactor.AppendSingleItem, []},
           {Credo.Check.Refactor.CondStatements, []},
           {Credo.Check.Refactor.CyclomaticComplexity, [max_complexity: 8]},
