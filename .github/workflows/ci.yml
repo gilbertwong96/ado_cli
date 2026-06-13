@@ -92,8 +92,9 @@ jobs:
         with:
           files: ./cover/excoveralls.json
           flags: linux
+          # No token = Codecov uses its public GitHub App integration
+          # to pick up coverage from public repos without manual setup.
           fail_ci_if_error: false
-          token: ${{ secrets.CODECOV_TOKEN }}
 
       - name: Upload coverage artifact
         if: always()

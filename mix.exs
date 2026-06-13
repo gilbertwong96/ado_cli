@@ -19,7 +19,8 @@ defmodule AdoCli.MixProject do
       ],
       docs: [
         main: "AdoCli",
-        source_url: "https://github.com/your-org/ado_cli",
+        source_url: "https://github.com/gilbertwong96/ado_cli",
+        licenses: ["Apache-2.0"],
         extras: ["README.md", "USAGE.md", "AUTH.md"]
       ],
       test_coverage: [

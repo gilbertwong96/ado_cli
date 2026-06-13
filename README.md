@@ -9,9 +9,9 @@ Built with [Finch](https://hex.pm/packages/finch),
 [Burrito](https://hex.pm/packages/burrito).
 
 [![CI](https://github.com/gilbertwong96/ado_cli/actions/workflows/ci.yml/badge.svg)](https://github.com/gilbertwong96/ado_cli/actions/workflows/ci.yml)
-[![codecov](https://codecov.io/gh/gilbertwong96/ado_cli/graph/badge.svg?token=CHANGEME)](https://codecov.io/gh/gilbertwong96/ado_cli)
+[![codecov](https://img.shields.io/codecov/c/github/gilbertwong96/ado_cli?logo=codecov)](https://codecov.io/gh/gilbertwong96/ado_cli)
 [![Elixir](https://img.shields.io/badge/elixir-1.20+-purple.svg)](https://elixir-lang.org)
-[![License](https://img.shields.io/github/license/gilbertwong96/ado_cli)](LICENSE)
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
 ---
 
