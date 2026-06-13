@@ -53,10 +53,34 @@ The `mix test --cover` threshold check is set to `0` in `mix.exs`
 The Codecov badge shows the raw total.
 
 **The right path forward** is integration tests for the CLI command
-modules, not a bigger ignore list. Tests should run in a subprocess
-and capture stdout/exit code — CliMate's `halt_*` pattern makes
-this straightforward. Adding these would push coverage into the
-70-90% range, at which point a 70% threshold becomes meaningful.
+modules, not a bigger ignore list. The pattern (proven in
+`test/ado_cli/cli/projects_test.exs`) is:
+
+```elixir
+# In setup:
+CliMate.CLI.put_shell(CliMate.CLI.ProcessShell)
+# This makes halt_success/halt_error send messages to the caller
+# instead of calling System.halt/1.
+
+# In each test:
+TestServer.expect(server, "GET", api("/_apis/projects"), fn conn ->
+  Plug.Conn.resp(conn, 200, body)
+end)
+
+Projects.list_projects(parsed)  # would normally exit the BEAM
+
+assert_receive {:cli_mate_shell, :info, _}, 200
+assert_receive {:cli_mate_shell, :halt, 0}, 200
+```
+
+Adding tests for all 27 CLI modules would push coverage from 7.9%
+into the 60-80% range, at which point a meaningful threshold (e.g.
+70%) becomes viable.
+
+**AdoCli.Auth** (~700 lines, 16%): the bulk of the uncovered code is
+the OAuth browser flow, token exchange, and device code polling. These
+can be tested by mocking the Finch HTTP calls + the TCP listener —
+similar pattern to the Client tests.
 
 Coverage is reported to Codecov via the official bash uploader. To enable
 it on CI, the user must add a `CODECOV_TOKEN` secret to the repo:
