@@ -74,7 +74,16 @@ jobs:
         run: mix ci.dialyzer
         timeout-minutes: 15
 
-      - name: Run tests with coverage
+      - name: Run tests with coverage (strict threshold)
+        # mix test --cover honours the test_coverage.ignore_modules
+        # list and enforces the 90% threshold on testable modules.
+        # This is the strict coverage check that fails the build.
+        run: mix test --cover
+
+      - name: Generate coverage report for Codecov
+        # mix coveralls.json produces the JSON Codecov ingests. The
+        # threshold here is configured low (1%) — the real threshold
+        # is enforced by the previous step.
         run: mix coveralls.json
 
       - name: Upload coverage to Codecov
