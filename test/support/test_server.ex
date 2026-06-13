@@ -127,6 +127,11 @@ defmodule AdoCli.TestServer do
     # can find us. We clean this up in terminate/2.
     :persistent_term.put({__MODULE__.Plug.Server, :pid}, self())
 
+    # Clear any leftover persistent_term from the previous TestServer.
+    # (Erlang's :persistent_term has process-global scope; the previous
+    # supervisor's pid was stored under this same key.)
+    :persistent_term.erase({__MODULE__, :state})
+
     # Start Bandit. Port 0 means "OS-assigned free port". We use
     # ThousandIsland's `listener_info/1` to read the bound port back
     # after Bandit is up.

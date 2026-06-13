@@ -7,19 +7,19 @@ defmodule AdoCli.CLI.RunArtifactsTest do
       body =
         ~s({"value":[{"id":1,"name":"drop","resource":{"url":"http://example.com/drop.zip"}}]})
 
-      expect_success_json(server, "/test/_apis/pipelines/1/runs/1/artifacts", body, fn ->
+      expect_success_json(server, "/testorg/_apis/pipelines/1/runs/1/artifacts", body, fn ->
         RunArtifacts.list_artifacts(%{
           options: %{json: true},
-          arguments: %{project: "test", pipeline_id: 1, run_id: 1}
+          arguments: %{project: "testorg", pipeline_id: 1, run_id: 1}
         })
       end)
     end
 
     test "halts 1 on API error", %{server: server} do
-      expect_api_error(server, "/test/_apis/pipelines/1/runs/1/artifacts", 404, "{}", fn ->
+      expect_api_error(server, "/testorg/_apis/pipelines/1/runs/1/artifacts", 404, "{}", fn ->
         RunArtifacts.list_artifacts(%{
           options: %{json: true},
-          arguments: %{project: "test", pipeline_id: 1, run_id: 1}
+          arguments: %{project: "testorg", pipeline_id: 1, run_id: 1}
         })
       end)
     end
@@ -32,7 +32,7 @@ defmodule AdoCli.CLI.RunArtifactsTest do
       list_body =
         ~s({"value":[{"id":1,"name":"drop","resource":{"url":"http://example.com/drop.zip"}}]})
 
-      TestServer.expect(server, "GET", "/test/_apis/pipelines/1/runs/1/artifacts", fn conn ->
+      TestServer.expect(server, "GET", "/testorg/_apis/pipelines/1/runs/1/artifacts", fn conn ->
         Plug.Conn.resp(conn, 200, list_body)
       end)
 
@@ -46,7 +46,12 @@ defmodule AdoCli.CLI.RunArtifactsTest do
       try do
         RunArtifacts.download_artifact(%{
           options: %{json: true, output: nil},
-          arguments: %{project: "test", pipeline_id: 1, run_id: 1, artifact_name: "nonexistent"}
+          arguments: %{
+            project: "testorg",
+            pipeline_id: 1,
+            run_id: 1,
+            artifact_name: "nonexistent"
+          }
         })
 
         # Should hit "Artifact not found" halt_error path
