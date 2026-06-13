@@ -36,7 +36,22 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 BURRITO_OUT="$ROOT/burrito_out"
-BINARY="$BURRITO_OUT/ado_macos"
+# Use the renamed binary (versioned, e.g. ado-0.1.0-macos-aarch64).
+# If only the legacy Burrito name is present (ado_macos), use that as
+# a fallback so the script keeps working on older release artifacts.
+VERSION=$(grep -E '^\s*version:\s*"' "$ROOT/mix.exs" | head -1 | sed -E 's/.*"([^"]+)".*/\1/')
+NEW_BINARY="$BURRITO_OUT/ado-${VERSION}-macos-aarch64"
+LEGACY_BINARY="$BURRITO_OUT/ado_macos"
+if [[ -f "$NEW_BINARY" ]]; then
+  BINARY="$NEW_BINARY"
+elif [[ -f "$LEGACY_BINARY" ]]; then
+  BINARY="$LEGACY_BINARY"
+else
+  printf '\033[1;31mxx  macOS binary not found: tried %s and %s\033[0m\n' \
+    "$NEW_BINARY" "$LEGACY_BINARY" >&2
+  printf '    Run '\''just release'\'' first.\n' >&2
+  exit 1
+fi
 
 MACOS_SIGN_IDENTITY="${MACOS_SIGN_IDENTITY:-}"
 MACOS_KEYCHAIN_PROFILE="${MACOS_KEYCHAIN_PROFILE:-}"
