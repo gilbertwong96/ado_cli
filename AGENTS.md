@@ -3,7 +3,7 @@
 ## CI Quality Gate
 
 Every change to this project **must** pass the full CI pipeline before merging.
-Run the pipeline with:
+Run the pipeline locally with:
 
 ```bash
 mix ci
@@ -21,6 +21,23 @@ The CI alias runs all of the following checks in order, failing on the first fai
 | 6 | Cross-reference analysis (no orphans) | `mix xref graph --label compile-connected --fail-above 0` |
 | 7 | Type checking (with Finch false-positive filtering) | `mix ci.dialyzer` |
 | 8 | Test coverage ≥ 90% on testable modules | `MIX_ENV=test mix test --cover` |
+
+## GitHub Actions CI
+
+In addition to the local pipeline, every push and PR runs the same checks
+in `.github/workflows/ci.yml` on Linux + macOS runners:
+
+- **Linux (Ubuntu)** — full quality gate (steps 1–8 above) + coverage
+  uploaded to Codecov via `ex_coveralls`
+- **macOS** — build the escript and run the unit test suite as a smoke test
+  (Burrito cross-compilation is exercised in a separate workflow)
+
+Coverage is tracked by Codecov. The badge in the README points to the
+Codecov dashboard; configuration lives in the `coveralls:` section of
+`mix.exs`.
+
+The local `mix ci` command is the source of truth — if it passes locally
+it will pass on CI. Never skip a check before pushing.
 
 ## Additional Quality Commands
 

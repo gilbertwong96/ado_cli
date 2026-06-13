@@ -8,7 +8,10 @@ Built with [Finch](https://hex.pm/packages/finch),
 [CLI Mate](https://hex.pm/packages/cli_mate), and
 [Burrito](https://hex.pm/packages/burrito).
 
-[![CI](https://img.shields.io/badge/ci-passing-brightgreen)]()
+[![CI](https://github.com/gilbertwong96/ado_cli/actions/workflows/ci.yml/badge.svg)](https://github.com/gilbertwong96/ado_cli/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/gilbertwong96/ado_cli/graph/badge.svg?token=CHANGEME)](https://codecov.io/gh/gilbertwong96/ado_cli)
+[![Elixir](https://img.shields.io/badge/elixir-1.20+-purple.svg)](https://elixir-lang.org)
+[![License](https://img.shields.io/github/license/gilbertwong96/ado_cli)](LICENSE)
 
 ---
 
