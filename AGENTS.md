@@ -13,7 +13,7 @@ The CI alias runs all of the following checks in order, failing on the first fai
 
 | Step | Check | Tool |
 |------|-------|------|
-| 1 | Compile with all warnings as errors | `mix compile --all-warnings --warnings-as-errors` |
+| 1 | Compile with all warnings as errors (our code only) | `mix compile --warnings-as-errors` |
 | 2 | Ensure code is formatted | `mix format --check-formatted` |
 | 3 | Static code analysis | `mix credo --strict` |
 | 4 | Check for unused dependencies | `mix deps.unlock --check-unused` |
