@@ -191,7 +191,7 @@ defmodule GenCli do
 
     body_arg =
       case method do
-        :get -> ~s(, ~s({\\"value\\":[]}))
+        :get -> ", ~s({\"value\":[]})"
         m when m in [:post, :put, :patch] -> ~s(, "", "{\\"id\\":1}")
         :delete -> ""
       end

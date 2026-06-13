@@ -26,9 +26,7 @@ defmodule AdoCli.CLI.TestHelper do
       alias AdoCli.TestServer
 
       setup do
-        start_supervised!(
-          {Finch, name: AdoCli.Finch, pools: %{default: [size: 1, count: 1]}}
-        )
+        start_supervised!({Finch, name: AdoCli.Finch, pools: %{default: [size: 1, count: 1]}})
 
         server = start_supervised!({TestServer, []})
 

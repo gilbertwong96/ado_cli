@@ -5,6 +5,7 @@ defmodule AdoCli.CLI.WorkItemsTest do
   describe "list_work_items/1" do
     test "halts 0 on success (JSON)", %{server: server} do
       body = ~s({"value":[{"id":1,"fields":{"System.Title":"Bug"}}],"count":1})
+
       expect_success_json(server, "/test/_apis/wit/wiql", body, fn ->
         WorkItems.list_work_items(%{
           options: %{json: true, type: "Bug", assigned_to: nil, state: nil, top: nil},
@@ -26,6 +27,7 @@ defmodule AdoCli.CLI.WorkItemsTest do
   describe "show_work_item/1" do
     test "halts 0 on success", %{server: server} do
       body = ~s({"id":1,"fields":{"System.Title":"Bug"}})
+
       expect_success_json(server, "/_apis/wit/workitems/1", body, fn ->
         WorkItems.show_work_item(%{
           options: %{json: true, expand: "all"},
@@ -38,6 +40,7 @@ defmodule AdoCli.CLI.WorkItemsTest do
   describe "query_work_items/1" do
     test "halts 0 on success", %{server: server} do
       body = ~s({"queryType":"flat","workItems":[{"id":1}]})
+
       expect_post_success(server, "/test/_apis/wit/wiql", "", body, fn ->
         WorkItems.query_work_items(%{
           options: %{json: true, wiql: "SELECT [System.Id] FROM WorkItems", top: nil},
@@ -50,9 +53,18 @@ defmodule AdoCli.CLI.WorkItemsTest do
   describe "create_work_item/1" do
     test "halts 0 on success", %{server: server} do
       body = ~s({"id":2,"fields":{"System.Title":"New Bug"}})
+
       expect_post_success(server, "/test/_apis/wit/workitems/$Bug", "", body, fn ->
         WorkItems.create_work_item(%{
-          options: %{json: true, type: "Bug", title: "New Bug", description: nil, assigned_to: nil, additional_fields: nil, tags: nil},
+          options: %{
+            json: true,
+            type: "Bug",
+            title: "New Bug",
+            description: nil,
+            assigned_to: nil,
+            additional_fields: nil,
+            tags: nil
+          },
           arguments: %{project: "test"}
         })
       end)
@@ -62,9 +74,18 @@ defmodule AdoCli.CLI.WorkItemsTest do
   describe "update_work_item/1" do
     test "halts 0 on success", %{server: server} do
       body = ~s({"id":1,"fields":{"System.Title":"Updated"}})
+
       expect_patch_success(server, "/_apis/wit/workitems/1", "", body, fn ->
         WorkItems.update_work_item(%{
-          options: %{json: true, title: "Updated", state: nil, assigned_to: nil, additional_fields: nil, add_tags: nil, remove_tags: nil},
+          options: %{
+            json: true,
+            title: "Updated",
+            state: nil,
+            assigned_to: nil,
+            additional_fields: nil,
+            add_tags: nil,
+            remove_tags: nil
+          },
           arguments: %{id: 1}
         })
       end)
@@ -85,6 +106,7 @@ defmodule AdoCli.CLI.WorkItemsTest do
   describe "list_work_item_comments/1" do
     test "halts 0 on success", %{server: server} do
       body = ~s({"value":[{"id":1,"text":"comment"}]})
+
       expect_success_json(server, "/_apis/wit/workitems/1/comments", body, fn ->
         WorkItems.list_work_item_comments(%{
           options: %{json: true, top: nil},
@@ -97,6 +119,7 @@ defmodule AdoCli.CLI.WorkItemsTest do
   describe "add_work_item_comment/1" do
     test "halts 0 on success", %{server: server} do
       body = ~s({"id":2,"text":"new comment"})
+
       expect_post_success(server, "/_apis/wit/workitems/1/comments", "", body, fn ->
         WorkItems.add_work_item_comment(%{
           options: %{json: true, text: "new comment"},
@@ -109,6 +132,7 @@ defmodule AdoCli.CLI.WorkItemsTest do
   describe "update_work_item_comment/1" do
     test "halts 0 on success", %{server: server} do
       body = ~s({"id":1,"text":"updated"})
+
       expect_patch_success(server, "/_apis/wit/workItems/1/comments/1", "", body, fn ->
         WorkItems.update_work_item_comment(%{
           options: %{json: true, text: "updated"},
@@ -121,6 +145,7 @@ defmodule AdoCli.CLI.WorkItemsTest do
   describe "list_attachments/1" do
     test "halts 0 on success", %{server: server} do
       body = ~s({"value":[{"id":1,"name":"file.txt","url":"http://example.com/file.txt"}]})
+
       expect_success_json(server, "/_apis/wit/workitems/1/attachments", body, fn ->
         WorkItems.list_attachments(%{
           options: %{json: true},
