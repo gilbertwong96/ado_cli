@@ -28,6 +28,7 @@ defmodule AdoCli.CLI do
   alias AdoCli.CLI.AgentPools
   alias AdoCli.CLI.Areas
   alias AdoCli.CLI.AuthCommands
+  alias AdoCli.CLI.Banners
   alias AdoCli.CLI.BranchPolicies
   alias AdoCli.CLI.Builds
   alias AdoCli.CLI.Connections
@@ -35,6 +36,7 @@ defmodule AdoCli.CLI do
   alias AdoCli.CLI.Folders
   alias AdoCli.CLI.Iterations
   alias AdoCli.CLI.Logout
+  alias AdoCli.CLI.Packages
   alias AdoCli.CLI.Pipelines
   alias AdoCli.CLI.Projects
   alias AdoCli.CLI.PullRequests
@@ -89,11 +91,13 @@ defmodule AdoCli.CLI do
       "pipelines-builds": Builds,
       "pipelines-folders": Folders,
       "pipelines-artifacts": RunArtifacts,
+      packages: Packages,
       projects: Projects,
       prs: PullRequests,
       releases: Releases,
       repos: Repos,
       "branch-policies": BranchPolicies,
+      banners: Banners,
       security: Security,
       skills: Skills,
       teams: Teams,
