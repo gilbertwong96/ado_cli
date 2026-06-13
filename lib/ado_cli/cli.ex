@@ -10,22 +10,38 @@ defmodule AdoCli.CLI do
     ado projects list|show|create|update|delete
     ado repos list|show|create|delete|branches
     ado workitems list|show|query|create|update
-    ado pipelines list|show|run
-    ado prs list|show|create|complete|abandon
+    ado pipelines list|show|run|vars
+    ado prs list|show|create|complete|abandon|comments
     ado releases list|show
+    ado teams list|show|create|update|delete|members
+    ado users list|show|add|remove
+    ado iterations list|show|create|update|delete
+    ado wikis list|show|pages
+    ado connections list|show
+    ado security groups list|show|create|delete|members
+    ado extensions list|show|install|uninstall|enable|disable
+    ado agent-pools list|show|queues
   """
 
   import CliMate.CLI
 
+  alias AdoCli.CLI.AgentPools
   alias AdoCli.CLI.AuthCommands
+  alias AdoCli.CLI.Connections
+  alias AdoCli.CLI.Extensions
+  alias AdoCli.CLI.Iterations
   alias AdoCli.CLI.Logout
   alias AdoCli.CLI.Pipelines
   alias AdoCli.CLI.Projects
   alias AdoCli.CLI.PullRequests
   alias AdoCli.CLI.Releases
   alias AdoCli.CLI.Repos
+  alias AdoCli.CLI.Security
   alias AdoCli.CLI.Skills
+  alias AdoCli.CLI.Teams
+  alias AdoCli.CLI.Users
   alias AdoCli.CLI.Whoami
+  alias AdoCli.CLI.Wikis
   alias AdoCli.CLI.WorkItems
 
   @command [
@@ -59,12 +75,20 @@ defmodule AdoCli.CLI do
       login: AuthCommands,
       logout: Logout,
       whoami: Whoami,
+      "agent-pools": AgentPools,
+      connections: Connections,
+      extensions: Extensions,
+      iterations: Iterations,
       pipelines: Pipelines,
       projects: Projects,
       prs: PullRequests,
       releases: Releases,
       repos: Repos,
+      security: Security,
       skills: Skills,
+      teams: Teams,
+      users: Users,
+      wikis: Wikis,
       workitems: WorkItems
     ]
   ]
