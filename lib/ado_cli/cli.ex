@@ -34,6 +34,7 @@ defmodule AdoCli.CLI do
   alias AdoCli.CLI.Connections
   alias AdoCli.CLI.Extensions
   alias AdoCli.CLI.Folders
+  alias AdoCli.CLI.Imports
   alias AdoCli.CLI.Iterations
   alias AdoCli.CLI.Logout
   alias AdoCli.CLI.Packages
@@ -87,6 +88,7 @@ defmodule AdoCli.CLI do
       connections: Connections,
       extensions: Extensions,
       iterations: Iterations,
+      imports: Imports,
       pipelines: Pipelines,
       "pipelines-builds": Builds,
       "pipelines-folders": Folders,
