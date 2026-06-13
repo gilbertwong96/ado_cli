@@ -63,6 +63,50 @@ defmodule AdoCli.MixProject do
           Mix.Tasks.Ci.Dialyzer
         ],
         threshold: 90
+      ],
+      coveralls: [
+        # Mirror the test_coverage ignore list so ex_coveralls reports the
+        # same modules and threshold. Used by `mix coveralls` and the
+        # `mix coveralls.html` workflow.
+        ignore_modules: [
+          AdoCli.Application,
+          AdoCli.Auth,
+          AdoCli.CLI,
+          AdoCli.CLI.Helpers,
+          AdoCli.CLI.AgentPools,
+          AdoCli.CLI.Areas,
+          AdoCli.CLI.AuthCommands,
+          AdoCli.CLI.Banners,
+          AdoCli.CLI.BranchPolicies,
+          AdoCli.CLI.Builds,
+          AdoCli.CLI.Connections,
+          AdoCli.CLI.Extensions,
+          AdoCli.CLI.Folders,
+          AdoCli.CLI.Imports,
+          AdoCli.CLI.Iterations,
+          AdoCli.CLI.Logout,
+          AdoCli.CLI.Packages,
+          AdoCli.CLI.Pipelines,
+          AdoCli.CLI.Projects,
+          AdoCli.CLI.PullRequests,
+          AdoCli.CLI.Releases,
+          AdoCli.CLI.Repos,
+          AdoCli.CLI.RunArtifacts,
+          AdoCli.CLI.Security,
+          AdoCli.CLI.Skills,
+          AdoCli.CLI.Teams,
+          AdoCli.CLI.Users,
+          AdoCli.CLI.Whoami,
+          AdoCli.CLI.Wikis,
+          AdoCli.CLI.WorkItems,
+          AdoCli.Frontmatter,
+          AdoCli.TestServer,
+          AdoCli.TestServer.Plug,
+          Mix.Tasks.Ci.Dialyzer
+        ],
+        coverage_options: [treat_no_relevant_lines_as_covered: true],
+        json: true,
+        html: true
       ]
     ]
   end
@@ -88,6 +132,7 @@ defmodule AdoCli.MixProject do
       {:ex_slop, "~> 0.4.2", only: [:dev, :test], runtime: false},
       {:reach, "~> 2.7", only: [:dev, :test], runtime: false},
       {:mix_audit, "~> 2.1", only: [:dev, :test], runtime: false},
+      {:ex_coveralls, "~> 0.18", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
       {:ex_doc, "~> 0.40", only: :dev, runtime: false},
       {:pi_bridge, "~> 0.6.5", only: [:dev, :test], runtime: false},

@@ -1,0 +1,151 @@
+name: CI
+
+on:
+  push:
+    branches: [main, "feature/*", "fix/*"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# Cancel in-progress runs for the same branch / PR
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  MIX_ENV: test
+  OTP_VERSION: "29.0"
+  ELIXIR_VERSION: "1.20.1"
+
+jobs:
+  # ── Linux: full CI quality gate ─────────────────────────────────────
+  linux:
+    name: Linux · Elixir ${{ env.ELIXIR_VERSION }} · OTP ${{ env.OTP_VERSION }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Elixir
+        uses: erlef/setup-beam@v1
+        with:
+          otp-version: ${{ env.OTP_VERSION }}
+          elixir-version: ${{ env.ELIXIR_VERSION }}
+
+      - name: Cache build artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            _build
+            deps
+            priv/plts
+          key: ${{ runner.os }}-mix-${{ hashFiles('**/mix.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-mix-
+            ${{ runner.os }}-
+
+      - name: Install dependencies
+        run: mix deps.get
+
+      - name: Compile (warnings-as-errors)
+        run: mix compile --all-warnings --warnings-as-errors
+
+      - name: Check formatting
+        run: mix format --check-formatted
+
+      - name: Credo (strict)
+        run: mix credo --strict
+
+      - name: Audit dependencies for CVEs
+        run: mix deps.audit
+
+      - name: Check for unused dependencies
+        run: mix deps.unlock --check-unused
+
+      - name: xref (no orphan modules)
+        run: mix xref graph --label compile-connected --fail-above 0
+
+      - name: Dialyzer
+        run: mix ci.dialyzer
+        # Dialyzer is slow — give it a wider window
+        timeout-minutes: 15
+
+      - name: Run tests with coverage
+        run: mix coveralls.json
+
+      - name: Upload coverage to Codecov
+        if: always()
+        uses: codecov/codecov-action@v5
+        with:
+          files: ./cover/excoveralls.json
+          flags: linux
+          fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}
+
+      - name: Upload coverage artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-linux
+          path: cover/excoveralls.json
+          retention-days: 30
+
+  # ── macOS: smoke test (the CLI is cross-compiled via Burrito) ──────
+  macos:
+    name: macOS · Elixir ${{ env.ELIXIR_VERSION }}
+    runs-on: macos-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Elixir
+        uses: erlef/setup-beam@v1
+        with:
+          otp-version: ${{ env.OTP_VERSION }}
+          elixir-version: ${{ env.ELIXIR_VERSION }}
+
+      - name: Cache build artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            _build
+            deps
+            priv/plts
+          key: ${{ runner.os }}-mix-${{ hashFiles('**/mix.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-mix-
+            ${{ runner.os }}-
+
+      - name: Install dependencies
+        run: mix deps.get
+
+      - name: Build escript
+        run: mix escript.build
+
+      - name: Smoke test: --help works
+        run: ./ado --help
+
+      - name: Smoke test: whoami with no auth returns friendly error
+        run: |
+          rm -f ~/.ado_cli/config.json
+          ./ado whoami || true
+
+      - name: Smoke test: logout is idempotent
+        run: ./ado logout
+
+      - name: Run tests
+        run: mix test
+
+  # ── Summary job — gate merge on all green ───────────────────────────
+  ci-status:
+    name: CI Status
+    if: always()
+    needs: [linux, macos]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail if any matrix job failed
+        if: needs.linux.result != 'success' || needs.macos.result != 'success'
+        run: |
+          echo "Linux result: ${{ needs.linux.result }}"
+          echo "macOS result: ${{ needs.macos.result }}"
+          exit 1
