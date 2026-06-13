@@ -5,6 +5,7 @@ defmodule AdoCli.CLI.ProjectsTest do
   describe "list_projects/1" do
     test "halts 0 on success (JSON)", %{server: server} do
       body = ~s({"value":[{"id":"p1","name":"Project One"}],"count":1})
+
       expect_success_json(server, "/_apis/projects", body, fn ->
         Projects.list_projects(%{
           options: %{json: true, top: nil, skip: nil, state: nil}
@@ -14,6 +15,7 @@ defmodule AdoCli.CLI.ProjectsTest do
 
     test "halts 0 on success (table)", %{server: server} do
       body = ~s({"value":[{"id":"p1","name":"Project One"}],"count":1})
+
       expect_success_table(server, "/_apis/projects", body, fn ->
         Projects.list_projects(%{
           options: %{json: false, top: nil, skip: nil, state: nil}
@@ -31,6 +33,7 @@ defmodule AdoCli.CLI.ProjectsTest do
 
     test "builds query params from options", %{server: server} do
       body = ~s({"value":[],"count":0})
+
       expect_success_json(server, "/_apis/projects", body, fn ->
         Projects.list_projects(%{
           options: %{json: true, top: 10, skip: nil, state: "wellFormed"}
@@ -42,6 +45,7 @@ defmodule AdoCli.CLI.ProjectsTest do
   describe "show_project/1" do
     test "halts 0 on success (JSON)", %{server: server} do
       body = ~s({"id":"p1","name":"Project One","description":"A test project"})
+
       expect_success_json(server, "/_apis/projects/p1", body, fn ->
         Projects.show_project(%{
           options: %{json: true, capabilities: false},
@@ -54,9 +58,16 @@ defmodule AdoCli.CLI.ProjectsTest do
   describe "create_project/1" do
     test "halts 0 on success", %{server: server} do
       body = ~s({"id":"p2","name":"New Project","state":"wellFormed"})
+
       expect_post_success(server, "/_apis/projects", "", body, fn ->
         Projects.create_project(%{
-          options: %{json: true, description: "New", visibility: "private", process: nil, source_control: nil},
+          options: %{
+            json: true,
+            description: "New",
+            visibility: "private",
+            process: nil,
+            source_control: nil
+          },
           arguments: %{name: "New Project"}
         })
       end)
@@ -66,6 +77,7 @@ defmodule AdoCli.CLI.ProjectsTest do
   describe "update_project/1" do
     test "halts 0 on success", %{server: server} do
       body = ~s({"id":"p1","name":"Updated Name"})
+
       expect_patch_success(server, "/_apis/projects/p1", "", body, fn ->
         Projects.update_project(%{
           options: %{json: true, name: "Updated", description: nil, abort: false},
