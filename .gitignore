@@ -36,3 +36,5 @@ ado_cli-*.tar
 /burrito_out/
 burrito/
 ado.tgz
+# Git worktrees for parallel agent work
+.worktrees/
