@@ -90,7 +90,7 @@ defmodule AdoCli.TestServer do
     def init(opts), do: opts
 
     @impl true
-    def call(conn, opts) do
+    def call(conn, _opts) do
       # The TestServer GenServer registers itself in :persistent_term
       # during init. We look it up here. This works because Bandit
       # calls call/2 in the same process tree (a worker of the TestServer
