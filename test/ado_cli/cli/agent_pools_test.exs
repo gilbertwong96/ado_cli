@@ -35,10 +35,10 @@ defmodule AdoCli.CLI.AgentPoolsTest do
     test "halts 0 on success", %{server: server} do
       body = ~s({"value":[{"id":1,"name":"Default"}]})
 
-      expect_success_json(server, "/test/_apis/distributedtask/queues", body, fn ->
+      expect_success_json(server, "/testorg/_apis/distributedtask/queues", body, fn ->
         AgentPools.list_queues(%{
           options: %{json: true, pool: 1, top: nil},
-          arguments: %{project: "test"}
+          arguments: %{project: "testorg"}
         })
       end)
     end

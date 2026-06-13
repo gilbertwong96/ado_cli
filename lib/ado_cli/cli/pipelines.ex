@@ -519,7 +519,7 @@ defmodule AdoCli.CLI.Pipelines do
 
     body =
       if path = Map.get(parsed.options, :path),
-        do: put_in(body, ["configuration", "path"], path),
+        do: Map.put(body, :configuration, Map.put(body[:configuration] || %{}, :path, path)),
         else: body
 
     if body == %{}, do: halt_error("At least one of --name or --path is required.")
