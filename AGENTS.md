@@ -39,6 +39,28 @@ Codecov dashboard; configuration lives in the `coveralls:` section of
 The local `mix ci` command is the source of truth — if it passes locally
 it will pass on CI. Never skip a check before pushing.
 
+## Coverage reporting (Codecov)
+
+Coverage is reported to Codecov via the official bash uploader. To enable
+it on CI, the user must add a `CODECOV_TOKEN` secret to the repo:
+
+  1. Visit https://codecov.io/gh/gilbertwong96/ado_cli
+  2. Sign in with the same GitHub account
+  3. Go to Settings -> Upload Token
+  4. Copy the token
+  5. In the GitHub repo: Settings -> Secrets and variables -> Actions
+     -> New repository secret
+  6. Name: `CODECOV_TOKEN`, Value: <paste token>
+
+The CI step that posts to Codecov is conditional on the secret being
+set, so it's safe to leave the repo in this state until the user is
+ready. When the secret is present, the codecov.io dashboard will start
+showing coverage data within a few minutes of a CI run.
+
+Note: `mix coveralls.post` is NOT the right path here — it posts to
+coveralls.io, not codecov.io. For Codecov, the canonical path is
+`mix coveralls.json` + the codecov bash uploader.
+
 ## Additional Quality Commands
 
 ```bash

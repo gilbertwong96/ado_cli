@@ -86,15 +86,32 @@ jobs:
         # is enforced by the previous step.
         run: mix coveralls.json
 
-      - name: Upload coverage to Codecov
-        if: always()
-        uses: codecov/codecov-action@v5
-        with:
-          files: ./cover/excoveralls.json
-          flags: linux
-          # No token = Codecov uses its public GitHub App integration
-          # to pick up coverage from public repos without manual setup.
-          fail_ci_if_error: false
+      - name: Post coverage to Codecov
+        # Push the JSON to codecov.io using their bash uploader. This
+        # is the path recommended by excoveralls for Codecov (vs the
+        # GitHub Action, which now requires a token anyway).
+        #
+        # Requires CODECOV_TOKEN in repo Settings -> Secrets -> Actions.
+        # The repo token is at https://codecov.io/gh/gilbertwong96/ado_cli
+        # -> Settings -> Upload Token. The bash uploader reads it from
+        # the CODECOV_TOKEN env var.
+        #
+        # Skip the step if the secret is not set. We don't fail the
+        # build over missing coverage uploads — coverage is still
+        # available as an action artifact download.
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+        run: |
+          if [ -z "$CODECOV_TOKEN" ]; then
+            echo "::notice::CODECOV_TOKEN not set — skipping Codecov upload."
+            echo "Add it at https://codecov.io/gh/gilbertwong96/ado_cli"
+            echo "to enable the coverage badge."
+            exit 0
+          fi
+          curl -Os https://uploader.codecov.io/latest/linux/codecov
+          chmod +x codecov
+          ./codecov --token "$CODECOV_TOKEN" --file ./cover/excoveralls.json
+        continue-on-error: true
 
       - name: Upload coverage artifact
         if: always()
