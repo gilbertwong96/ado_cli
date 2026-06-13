@@ -122,15 +122,16 @@ jobs:
       - name: Build escript
         run: mix escript.build
 
-      - name: Smoke test: --help works
-        run: ./ado --help
+      - name: "Smoke test: --help works"
+        run: "./ado --help"
 
-      - name: Smoke test: whoami with no auth returns friendly error
+
+      - name: "Smoke test: whoami with no auth returns friendly error"
         run: |
-          rm -f ~/.ado_cli/config.json
+          rm -f "$HOME/.ado_cli/config.json"
           ./ado whoami || true
 
-      - name: Smoke test: logout is idempotent
+      - name: "Smoke test: logout is idempotent"
         run: ./ado logout
 
       - name: Run tests
