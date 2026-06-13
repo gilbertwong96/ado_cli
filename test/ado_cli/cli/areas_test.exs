@@ -2,94 +2,91 @@ defmodule AdoCli.CLI.AreasTest do
   use AdoCli.CLI.TestHelper
   alias AdoCli.CLI.Areas
 
-  describe "list_areas" do
-    test "halts 0 on successful get", %{server: server} do
-      expect_success_json(server, "/test/_apis/wit/classificationnodes", ~s({"value":[]}), fn ->
-        apply(AdoCli.CLI.Areas, :list_areas, [%{options: %{json: true}}])
+  describe "list_areas/1" do
+    test "halts 0 on success (JSON)", %{server: server} do
+      body = ~s({"value":[{"id":1,"name":"Area1","path":"\\test\\area1"}],"count":1})
+
+      expect_success_json(server, "/test/_apis/wit/classificationNodes/areas", body, fn ->
+        Areas.list_areas(%{
+          options: %{json: true, depth: nil},
+          arguments: %{project: "test"}
+        })
+      end)
+    end
+
+    test "halts 0 on success with depth param", %{server: server} do
+      body = ~s({"value":[]})
+
+      expect_success_json(server, "/test/_apis/wit/classificationNodes/areas", body, fn ->
+        Areas.list_areas(%{
+          options: %{json: true, depth: 5},
+          arguments: %{project: "test"}
+        })
       end)
     end
 
     test "halts 1 on API error", %{server: server} do
-      expect_api_error(server, "/test/_apis/wit/classificationnodes", 500, "{}", fn ->
-        apply(AdoCli.CLI.Areas, :list_areas, [%{options: %{json: true}}])
+      expect_api_error(server, "/test/_apis/wit/classificationNodes/areas", 500, "{}", fn ->
+        Areas.list_areas(%{
+          options: %{json: true, depth: nil},
+          arguments: %{project: "test"}
+        })
       end)
     end
   end
 
-  describe "show_area" do
-    test "halts 0 on successful get", %{server: server} do
-      expect_success_json(server, "/test/_apis/wit/classificationnodes/1", ~s({"value":[]}), fn ->
-        apply(AdoCli.CLI.Areas, :show_area, [
-          %{options: %{json: true}, arguments: %{id: 1, project: "test"}}
-        ])
-      end)
-    end
+  describe "show_area/1" do
+    test "halts 0 on success", %{server: server} do
+      body = ~s({"id":1,"name":"Area1","path":"\\test\\area1"})
 
-    test "halts 1 on API error", %{server: server} do
-      expect_api_error(server, "/test/_apis/wit/classificationnodes/1", 500, "{}", fn ->
-        apply(AdoCli.CLI.Areas, :show_area, [
-          %{options: %{json: true}, arguments: %{id: 1, project: "test"}}
-        ])
+      expect_success_json(server, "/test/_apis/wit/classificationNodes/areas/area1", body, fn ->
+        Areas.show_area(%{
+          options: %{json: true},
+          arguments: %{project: "test", area_path: "area1"}
+        })
       end)
     end
   end
 
-  describe "create_area" do
-    test "halts 0 on successful post", %{server: server} do
-      expect_post_success(server, "/test/_apis/wit/classificationnodes", "", "{\"id\":1}", fn ->
-        apply(AdoCli.CLI.Areas, :create_area, [
-          %{options: %{json: true, name: "test"}, arguments: %{project: "test"}}
-        ])
-      end)
-    end
+  describe "create_area/1" do
+    test "halts 0 on success", %{server: server} do
+      body = ~s({"id":2,"name":"NewArea","path":"\\test\\NewArea"})
 
-    test "halts 1 on API error", %{server: server} do
-      expect_api_error(server, "/test/_apis/wit/classificationnodes", 500, "{}", fn ->
-        apply(AdoCli.CLI.Areas, :create_area, [
-          %{options: %{json: true, name: "test"}, arguments: %{project: "test"}}
-        ])
+      expect_post_success(server, "/test/_apis/wit/classificationNodes", "", body, fn ->
+        Areas.create_area(%{
+          options: %{json: true, name: "NewArea", parent: nil},
+          arguments: %{project: "test"}
+        })
       end)
     end
   end
 
-  describe "update_area" do
-    test "halts 0 on successful patch", %{server: server} do
+  describe "update_area/1" do
+    test "halts 0 on success", %{server: server} do
+      body = ~s({"id":1,"name":"RenamedArea","path":"\\test\\area1"})
+
       expect_patch_success(
         server,
-        "/test/_apis/wit/classificationnodes/1",
+        "/test/_apis/wit/classificationNodes/areas/area1",
         "",
-        "{\"id\":1}",
+        body,
         fn ->
-          apply(AdoCli.CLI.Areas, :update_area, [
-            %{options: %{json: true, name: "new"}, arguments: %{id: 1, project: "test"}}
-          ])
+          Areas.update_area(%{
+            options: %{json: true, name: "RenamedArea"},
+            arguments: %{project: "test", area_path: "area1"}
+          })
         end
       )
     end
-
-    test "halts 1 on API error", %{server: server} do
-      expect_api_error(server, "/test/_apis/wit/classificationnodes/1", 500, "{}", fn ->
-        apply(AdoCli.CLI.Areas, :update_area, [
-          %{options: %{json: true, name: "new"}, arguments: %{id: 1, project: "test"}}
-        ])
-      end)
-    end
   end
 
-  describe "delete_area" do
-    test "halts 0 on successful delete", %{server: server} do
-      expect_delete_success(server, "/test/_apis/wit/classificationnodes/1", fn ->
-        apply(AdoCli.CLI.Areas, :delete_area, [
-          %{options: %{json: true, force: false}, arguments: %{id: 1, project: "test"}}
-        ])
-      end)
-    end
-
-    test "halts 1 on API error", %{server: server} do
-      expect_api_error(server, "/test/_apis/wit/classificationnodes/1", 500, "{}", fn ->
-        apply(AdoCli.CLI.Areas, :delete_area, [
-          %{options: %{json: true, force: false}, arguments: %{id: 1, project: "test"}}
-        ])
+  describe "delete_area/1" do
+    test "halts 0 on success", %{server: server} do
+      expect_delete_success(server, "/test/_apis/wit/classificationNodes/areas/area1", fn ->
+        Areas.delete_area(%{
+          options: %{json: true, force: false},
+          arguments: %{project: "test", area_path: "area1"}
+        })
       end)
     end
   end

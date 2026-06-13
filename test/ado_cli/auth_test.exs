@@ -46,7 +46,9 @@ defmodule AdoCli.AuthTest do
   end
 
   describe "login_browser/1 (org auto-detect path)" do
-    test "skipped — login_browser requires TCP listener mocking, covered by integration test", %{server: _server} do
+    test "skipped — login_browser requires TCP listener mocking, covered by integration test", %{
+      server: _server
+    } do
       # The full browser OAuth flow requires mocking the TCP listener.
       # We test the lower-level parts (list_accounts, exchange, etc.)
       # separately. The browser flow itself is exercised in the manual
@@ -63,7 +65,8 @@ defmodule AdoCli.AuthTest do
       # We mock step 1 to return a valid device code, then step 2 to
       # return an error so the flow exits quickly.
 
-      dc_response = ~s({"device_code":"dc-abc","user_code":"UC123","verification_url":"https://login.microsoftonline.com/common/oauth2/device","interval":5,"expires_in":900})
+      dc_response =
+        ~s({"device_code":"dc-abc","user_code":"UC123","verification_url":"https://login.microsoftonline.com/common/oauth2/device","interval":5,"expires_in":900})
 
       TestServer.expect(server, "POST", "/organizations/oauth2/devicecode", fn conn ->
         Plug.Conn.resp(conn, 200, dc_response)
@@ -72,7 +75,11 @@ defmodule AdoCli.AuthTest do
       # The next request will be the token poll - return authorization_declined
       # to make the flow exit quickly.
       TestServer.expect(server, "POST", "/organizations/oauth2/token", fn conn ->
-        Plug.Conn.resp(conn, 400, ~s({"error":"authorization_declined","error_description":"denied"}))
+        Plug.Conn.resp(
+          conn,
+          400,
+          ~s({"error":"authorization_declined","error_description":"denied"})
+        )
       end)
 
       # The flow will return an error since user denied.
