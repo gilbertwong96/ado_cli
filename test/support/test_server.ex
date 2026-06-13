@@ -90,8 +90,12 @@ defmodule AdoCli.TestServer do
     def init(opts), do: opts
 
     @impl true
-    def call(conn, _opts) do
-      server = Process.whereis(AdoCli.TestServer)
+    def call(conn, opts) do
+      # The TestServer GenServer registers itself in :persistent_term
+      # during init. We look it up here. This works because Bandit
+      # calls call/2 in the same process tree (a worker of the TestServer
+      # supervisor), so the persistent_term is set by the time we get here.
+      server = :persistent_term.get({__MODULE__.Server, :pid}, nil)
 
       if server do
         handle_request(server, conn)
@@ -119,6 +123,10 @@ defmodule AdoCli.TestServer do
 
   @impl true
   def init(_opts) do
+    # Register ourselves so the Plug (running in the Bandit process tree)
+    # can find us. We clean this up in terminate/2.
+    :persistent_term.put({__MODULE__.Plug.Server, :pid}, self())
+
     # Start Bandit. Port 0 means "OS-assigned free port". We use
     # ThousandIsland's `listener_info/1` to read the bound port back
     # after Bandit is up.
@@ -127,6 +135,7 @@ defmodule AdoCli.TestServer do
         {:ok, %__MODULE__{bandit_pid: bandit_pid, port: port}}
 
       {:error, reason} ->
+        :persistent_term.erase({__MODULE__.Plug.Server, :pid})
         {:stop, reason}
     end
   end
@@ -180,6 +189,8 @@ defmodule AdoCli.TestServer do
 
   @impl true
   def terminate(_reason, state) do
+    :persistent_term.erase({__MODULE__.Plug.Server, :pid})
+
     if state.bandit_pid && Process.alive?(state.bandit_pid) do
       Process.exit(state.bandit_pid, :shutdown)
     end
