@@ -67,7 +67,15 @@ defmodule AdoCli.CLIIntegrationTest do
         Plug.Conn.resp(conn, 200, body)
       end)
 
-      CLI.run(["workitems", "list", "testorg", "--wiql", "SELECT [System.Id] FROM WorkItems", "--json"])
+      CLI.run([
+        "workitems",
+        "list",
+        "testorg",
+        "--wiql",
+        "SELECT [System.Id] FROM WorkItems",
+        "--json"
+      ])
+
       assert_receive {:cli_mate_shell, :halt, 0}, 500
     end
   end
