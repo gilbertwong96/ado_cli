@@ -3,6 +3,7 @@ name: CI
 on:
   push:
     branches: [main, "feature/*", "fix/*"]
+    tags: ["v*"]
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -176,3 +177,183 @@ jobs:
           echo "Linux result: ${{ needs.linux.result }}"
           echo "macOS result: ${{ needs.macos.result }}"
           exit 1
+
+  # ── Release build: cross-compile via Burrito, rename, upload artifacts ─
+  release:
+    name: "Release · Burrito · ${{ matrix.label }}"
+    # Only build releases on pushes to main (not on PRs) and on tag pushes.
+    # Use workflow_dispatch to trigger manually for ad-hoc builds.
+    if: |
+      github.event_name == 'push' &&
+      (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/'))
+    needs: [ci-status]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      # Don't cancel other platforms if one fails — we want all
+      # binaries even if e.g. macOS signing fails.
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: linux
+            cpu: x86_64
+            ext: ""
+            label: "Linux x86_64"
+            artifact: ado-linux-x86_64
+          - os: ubuntu-latest
+            target: linux_arm
+            cpu: aarch64
+            ext: ""
+            label: "Linux ARM64"
+            artifact: ado-linux-aarch64
+          - os: macos-latest
+            target: macos
+            cpu: aarch64
+            ext: ""
+            label: "macOS Apple Silicon"
+            artifact: ado-macos-aarch64
+          - os: macos-latest
+            target: macos_x86
+            cpu: x86_64
+            ext: ""
+            label: "macOS Intel"
+            artifact: ado-macos-x86_64
+          - os: windows-latest
+            target: windows
+            cpu: x86_64
+            ext: ".exe"
+            label: "Windows x86_64"
+            artifact: ado-windows-x86_64
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Elixir
+        uses: erlef/setup-beam@v1
+        with:
+          otp-version: ${{ env.OTP_VERSION }}
+          elixir-version: ${{ env.ELIXIR_VERSION }}
+
+      - name: Cache build artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            _build
+            deps
+            priv/plts
+          key: release-${{ runner.os }}-${{ hashFiles('**/mix.lock') }}
+          restore-keys: |
+            release-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: mix deps.get
+
+      - name: Build Burrito release
+        env:
+          MIX_ENV: prod
+        # Burrito writes binaries to burrito_out/<target-key> by
+        # convention. We rename the output below to a stable,
+        # versioned name.
+        run: |
+          mkdir -p release_bin
+          mix release --overwrite --target ${{ matrix.target }}
+          ls -lh burrito_out/
+
+      - name: Get version
+        id: version
+        run: |
+          # Read the version from mix.exs so the release artifact name
+          # always matches the source of truth.
+          VERSION=$(grep -E '^\s*version:\s*"' mix.exs | head -1 | sed -E 's/.*"([^"]+)".*/\1/')
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Rename binary
+        # Normalize the binary name to:
+        #   ado-<version>-<os>-<arch><.exe?>
+        # e.g. ado-0.1.0-macos-aarch64
+        #      ado-0.1.0-linux-x86_64
+        #      ado-0.1.0-windows-x86_64.exe
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.version.outputs.version }}"
+          # Map matrix.target to a clean {os}-{arch} string
+          case "${{ matrix.target }}" in
+            linux)      SUFFIX="linux-x86_64" ;;
+            linux_arm)  SUFFIX="linux-aarch64" ;;
+            macos)      SUFFIX="macos-aarch64" ;;
+            macos_x86)  SUFFIX="macos-x86_64" ;;
+            windows)    SUFFIX="windows-x86_64" ;;
+            *)          echo "::error::Unknown target ${{ matrix.target }}"; exit 1 ;;
+          esac
+          OUT_NAME="ado-${VERSION}-${SUFFIX}${{ matrix.ext }}"
+          SRC="burrito_out/ado_${{ matrix.target }}${{ matrix.ext }}"
+          DEST="release_bin/${OUT_NAME}"
+          if [[ ! -f "${SRC}" ]]; then
+            echo "::error::Expected Burrito output not found: ${SRC}"
+            ls -lh burrito_out/
+            exit 1
+          fi
+          mv "${SRC}" "${DEST}"
+          chmod +x "${DEST}"
+          echo "Renamed ${SRC} -> ${DEST}"
+          ls -lh release_bin/
+
+      - name: Smoke test the binary
+        run: |
+          set -euo pipefail
+          # Glob is intentional here — there's exactly one file in
+          # the dir, but actionlint warns about unquoted globs.
+          BINARY=$(ls release_bin/ado-*)
+          echo "Testing $BINARY"
+          "$BINARY" --version || "$BINARY" --help | head -20
+
+      - name: Upload release binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: release_bin/ado-*
+          retention-days: 90
+          if-no-files-found: error
+
+  # ── Attach binaries to GitHub Release on tag push ──────────────────
+  release-attach:
+    name: Publish GitHub Release
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [release]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist/
+          merge-multiple: true
+
+      - name: Display downloaded artifacts
+        run: ls -lh dist/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: "AdoCli ${{ github.ref_name }}"
+          body: |
+            ## AdoCli ${{ github.ref_name }}
+
+            Pre-built binaries for all supported platforms.
+
+            | Platform | Architecture | Binary |
+            |----------|--------------|--------|
+            | Linux | x86_64 | `ado-*-linux-x86_64` |
+            | Linux | aarch64 | `ado-*-linux-aarch64` |
+            | macOS | Apple Silicon | `ado-*-macos-aarch64` |
+            | macOS | Intel | `ado-*-macos-x86_64` |
+            | Windows | x86_64 | `ado-*-windows-x86_64.exe` |
+
+            See [README.md](https://github.com/gilbertwong96/ado_cli) for
+            installation instructions.
+          draft: false
+          prerelease: false
+          files: |
+            dist/ado-*
