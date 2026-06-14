@@ -152,6 +152,17 @@ For a quick test on a Linux server without a desktop:
 7. **Full CI on every change**: Every code change must pass `mix ci` (all 8 stages) AND `mix test` before declaring the change complete. Never skip any stage.
 8. **Run the full quality pipeline before committing**: At minimum, run `mix quality && mix ci` to validate compile, format, credo, ex_dna, reach, tests, deps, xref, and dialyzer all pass.
 9. **90% test coverage on testable modules**: The following modules are excluded from coverage enforcement (tightly coupled to CliMate's halt_*): `AdoCli.Application`, `AdoCli.Auth`, `AdoCli.CLI.*`. All other modules must maintain ≥90% coverage. Run `MIX_ENV=test mix test --cover` to check.
+10. **Format before every commit**: Always run `mix format` on tracked files before `git commit`. This prevents CI from failing on `mix format --check-formatted` and avoids noisy "fix formatting" follow-up commits:
+
+    ```bash
+    # Pre-commit formatting (idempotent — safe to run on clean files)
+    mix format
+    git add -u  # re-stage any formatting changes
+    git commit ...
+    ```
+
+    If you only edited one file or area, you can scope the formatter:
+    `mix format path/to/file.ex path/to/other.ex`. Never commit unformatted code — item 2 (the CI check) will block the merge anyway, so it's strictly faster to format locally first.
 
 ## Dialyzer & Finch
 
