@@ -25,7 +25,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Set up Elixir
         uses: erlef/setup-beam@v1
@@ -34,7 +34,7 @@ jobs:
           elixir-version: ${{ env.ELIXIR_VERSION }}
 
       - name: Cache build artifacts
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             _build
@@ -111,7 +111,7 @@ jobs:
 
       - name: Upload coverage artifact
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: coverage-linux
           path: cover/excoveralls.json
@@ -123,7 +123,7 @@ jobs:
     runs-on: macos-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Set up Elixir
         uses: erlef/setup-beam@v1
@@ -132,7 +132,7 @@ jobs:
           elixir-version: ${{ env.ELIXIR_VERSION }}
 
       - name: Cache build artifacts
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             _build
@@ -240,7 +240,7 @@ jobs:
             imageos: win22
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Set up Elixir
         uses: erlef/setup-beam@v1
@@ -261,7 +261,7 @@ jobs:
         # BEAM. Install it via mlugg/setup-zig (the recommended
         # successor to goto-bus-stop/setup-zig, which is now
         # deprecated and hits GitHub's cache service unreliability).
-        uses: mlugg/setup-zig@v2
+        uses: mlugg/setup-zig@v2.2.1
         with:
           version: 0.16.0
 
@@ -273,9 +273,11 @@ jobs:
         run: sudo apt-get -y install xz-utils
 
       - name: Install xz (macOS)
-        # xz is rarely preinstalled on macOS runners.
+        # macOS runners may or may not ship with xz. We check
+        # first to avoid a noisy "already installed" warning
+        # from brew.
         if: runner.os == 'macOS'
-        run: brew install xz
+        run: command -v xz >/dev/null 2>&1 || brew install xz
 
       - name: Install 7zip (Windows)
         # Burrito requires 7z/7zz in PATH to package Windows
@@ -294,7 +296,7 @@ jobs:
           xz --version
 
       - name: Cache build artifacts
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             _build
@@ -390,7 +392,7 @@ jobs:
           "$BINARY" --version || "$BINARY" --help | head -20
 
       - name: Upload release binary
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.artifact }}
           path: release_bin/ado-*
@@ -406,7 +408,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: dist/
           merge-multiple: true
