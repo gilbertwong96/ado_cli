@@ -71,17 +71,16 @@ defmodule AdoCli.CI.WatcherTest do
   # <build_id>` against a real Azure DevOps org and confirms the
   # output looks right. This is documented in README.
   defp format_duration(ms) do
-    cond do
-      ms < 1000 ->
-        "<1s"
+    if ms < 1000 do
+      "<1s"
+    else
+      seconds = div(ms, 1000)
 
-      true ->
-        seconds = div(ms, 1000)
-        cond do
-          seconds < 60 -> "#{seconds}s"
-          seconds < 3600 -> "#{div(seconds, 60)}m#{rem(seconds, 60)}s"
-          true -> "#{div(seconds, 3600)}h#{div(rem(seconds, 3600), 60)}m"
-        end
+      cond do
+        seconds < 60 -> "#{seconds}s"
+        seconds < 3600 -> "#{div(seconds, 60)}m#{rem(seconds, 60)}s"
+        true -> "#{div(seconds, 3600)}h#{div(rem(seconds, 3600), 60)}m"
+      end
     end
   end
 
@@ -99,7 +98,7 @@ defmodule AdoCli.CI.WatcherTest do
     # network). Instead we verify the print semantics: the bytes
     # we send should be printed as-is (with CRLF normalized).
     send(parent, {:ok, body})
-    content = body |> String.replace("\r\n", "\n")
+    content = String.replace(body, "\r\n", "\n")
     assert is_binary(content)
     content
   end
