@@ -201,7 +201,7 @@ jobs:
             ext: ""
             label: "Linux x86_64"
             artifact: ado-linux-x86_64
-          - os: ubuntu-latest
+          - os: ubuntu-24.04-arm
             target: linux_arm
             cpu: aarch64
             ext: ""
@@ -219,12 +219,6 @@ jobs:
             ext: ""
             label: "macOS Intel"
             artifact: ado-macos-x86_64
-          - os: windows-latest
-            target: windows
-            cpu: x86_64
-            ext: ".exe"
-            label: "Windows x86_64"
-            artifact: ado-windows-x86_64
 
     steps:
       - uses: actions/checkout@v4
@@ -234,6 +228,39 @@ jobs:
         with:
           otp-version: ${{ env.OTP_VERSION }}
           elixir-version: ${{ env.ELIXIR_VERSION }}
+        env:
+          # On ubuntu-24.04-arm, ImageOS is reported as
+          # 'ubuntu24-arm64' which erlef/setup-beam doesn't recognize.
+          # Override to 'ubuntu24' (Erlang/Elixir prebuilt binaries
+          # are architecture-independent, so the ubuntu24 ones work
+          # fine on the arm64 runner).
+          ImageOS: ubuntu24
+
+      - name: Install Zig
+        # Burrito needs a specific zig version (0.16.0) to cross-compile
+        # BEAM. Install it via mlugg/setup-zig (the recommended
+        # successor to goto-bus-stop/setup-zig, which is now
+        # deprecated and hits GitHub's cache service unreliability).
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.16.0
+
+      - name: Install xz
+        # Burrito needs xz to extract zig's tarball and musl. xz-utils
+        # ships with the Linux build image but not always; install
+        # defensively.
+        if: runner.os == 'Linux'
+        run: sudo apt-get -y install xz-utils
+
+      - name: Install xz (macOS)
+        # xz is rarely preinstalled on macOS runners.
+        if: runner.os == 'macOS'
+        run: brew install xz
+
+      - name: Verify zig/xz
+        run: |
+          zig version
+          xz --version
 
       - name: Cache build artifacts
         uses: actions/cache@v4
@@ -242,6 +269,7 @@ jobs:
             _build
             deps
             priv/plts
+            ~/.cache/burrito_file_cache
           key: release-${{ runner.os }}-${{ hashFiles('**/mix.lock') }}
           restore-keys: |
             release-${{ runner.os }}-
@@ -252,12 +280,16 @@ jobs:
       - name: Build Burrito release
         env:
           MIX_ENV: prod
-        # Burrito writes binaries to burrito_out/<target-key> by
+          # Burrito accepts BURRITO_TARGET=<target-key> to build only
+          # that target from the targets list in mix.exs. This avoids
+          # cross-compiling for all 4 platforms on each runner.
+          BURRITO_TARGET: ${{ matrix.target }}
+        # Burrito writes the binary to burrito_out/ado_<target> by
         # convention. We rename the output below to a stable,
         # versioned name.
         run: |
           mkdir -p release_bin
-          mix release --overwrite --target ${{ matrix.target }}
+          mix release --overwrite
           ls -lh burrito_out/
 
       - name: Get version
@@ -273,7 +305,6 @@ jobs:
         #   ado-<version>-<os>-<arch><.exe?>
         # e.g. ado-0.1.0-macos-aarch64
         #      ado-0.1.0-linux-x86_64
-        #      ado-0.1.0-windows-x86_64.exe
         run: |
           set -euo pipefail
           VERSION="${{ steps.version.outputs.version }}"
@@ -283,7 +314,6 @@ jobs:
             linux_arm)  SUFFIX="linux-aarch64" ;;
             macos)      SUFFIX="macos-aarch64" ;;
             macos_x86)  SUFFIX="macos-x86_64" ;;
-            windows)    SUFFIX="windows-x86_64" ;;
             *)          echo "::error::Unknown target ${{ matrix.target }}"; exit 1 ;;
           esac
           OUT_NAME="ado-${VERSION}-${SUFFIX}${{ matrix.ext }}"
@@ -300,12 +330,16 @@ jobs:
           ls -lh release_bin/
 
       - name: Smoke test the binary
+        # All release jobs run on a native runner for the target
+        # platform (e.g. ubuntu-24.04-arm for the Linux ARM build),
+        # so the binary can always be executed here.
         run: |
           set -euo pipefail
           # Glob is intentional here — there's exactly one file in
           # the dir, but actionlint warns about unquoted globs.
           BINARY=$(ls release_bin/ado-*)
           echo "Testing $BINARY"
+          file "$BINARY"
           "$BINARY" --version || "$BINARY" --help | head -20
 
       - name: Upload release binary
@@ -349,7 +383,6 @@ jobs:
             | Linux | aarch64 | `ado-*-linux-aarch64` |
             | macOS | Apple Silicon | `ado-*-macos-aarch64` |
             | macOS | Intel | `ado-*-macos-x86_64` |
-            | Windows | x86_64 | `ado-*-windows-x86_64.exe` |
 
             See [README.md](https://github.com/gilbertwong96/ado_cli) for
             installation instructions.
