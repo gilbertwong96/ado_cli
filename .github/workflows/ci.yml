@@ -201,24 +201,43 @@ jobs:
             ext: ""
             label: "Linux x86_64"
             artifact: ado-linux-x86_64
+            # ubuntu-latest reports ImageOS='ubuntu24', so we set it
+            # explicitly to avoid surprises if it ever changes.
+            imageos: ubuntu24
           - os: ubuntu-24.04-arm
             target: linux_arm
             cpu: aarch64
             ext: ""
             label: "Linux ARM64"
             artifact: ado-linux-aarch64
+            # ubuntu-24.04-arm reports ImageOS='ubuntu24-arm64'
+            # which erlef/setup-beam doesn't recognize. Use 'ubuntu24'
+            # (Erlang/Elixir prebuilt binaries are arch-independent,
+            # so the ubuntu24 ones work on the arm64 runner).
+            imageos: ubuntu24
           - os: macos-latest
             target: macos
             cpu: aarch64
             ext: ""
             label: "macOS Apple Silicon"
             artifact: ado-macos-aarch64
+            # macos-latest currently reports ImageOS='macos15'.
+            imageos: macos15
           - os: macos-latest
             target: macos_x86
             cpu: x86_64
             ext: ""
             label: "macOS Intel"
             artifact: ado-macos-x86_64
+            imageos: macos15
+          - os: windows-2022
+            target: windows
+            cpu: x86_64
+            ext: ".exe"
+            label: "Windows x86_64"
+            artifact: ado-windows-x86_64
+            # windows-2022 reports ImageOS='win22'.
+            imageos: win22
 
     steps:
       - uses: actions/checkout@v4
@@ -229,12 +248,13 @@ jobs:
           otp-version: ${{ env.OTP_VERSION }}
           elixir-version: ${{ env.ELIXIR_VERSION }}
         env:
-          # On ubuntu-24.04-arm, ImageOS is reported as
-          # 'ubuntu24-arm64' which erlef/setup-beam doesn't recognize.
-          # Override to 'ubuntu24' (Erlang/Elixir prebuilt binaries
-          # are architecture-independent, so the ubuntu24 ones work
-          # fine on the arm64 runner).
-          ImageOS: ubuntu24
+          # Drive ImageOS from the matrix instead of a hardcoded
+          # value. setup-beam requires ImageOS to be one of:
+          # ubuntu22, ubuntu24, win19, win22, win25, macos13,
+          # macos14, macos15, macos26. The runner's default may
+          # be unrecognized on non-x86 runners (e.g. ubuntu-24.04-arm
+          # reports 'ubuntu24-arm64'), so we override per-matrix-entry.
+          ImageOS: ${{ matrix.imageos }}
 
       - name: Install Zig
         # Burrito needs a specific zig version (0.16.0) to cross-compile
@@ -256,6 +276,17 @@ jobs:
         # xz is rarely preinstalled on macOS runners.
         if: runner.os == 'macOS'
         run: brew install xz
+
+      - name: Install 7zip (Windows)
+        # Burrito requires 7z/7zz in PATH to package Windows
+        # releases. The 7zip Chocolatey package ships with xz
+        # support (7z handles both .7z and .xz archives), so
+        # installing 7zip is sufficient — no separate xz package
+        # needed. (The 'xz' choco package was removed from
+        # chocolatey.org at some point.)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: choco install -y 7zip
 
       - name: Verify zig/xz
         run: |
@@ -287,6 +318,10 @@ jobs:
         # Burrito writes the binary to burrito_out/ado_<target> by
         # convention. We rename the output below to a stable,
         # versioned name.
+        # Use bash explicitly so the `[[ ]]` / `mkdir -p` syntax
+        # works on Windows (the default PowerShell on windows-2022
+        # doesn't understand these).
+        shell: bash
         run: |
           mkdir -p release_bin
           mix release --overwrite
@@ -294,6 +329,8 @@ jobs:
 
       - name: Get version
         id: version
+        # bash shell: `$(...)` is bash syntax, not PowerShell.
+        shell: bash
         run: |
           # Read the version from mix.exs so the release artifact name
           # always matches the source of truth.
@@ -305,6 +342,10 @@ jobs:
         #   ado-<version>-<os>-<arch><.exe?>
         # e.g. ado-0.1.0-macos-aarch64
         #      ado-0.1.0-linux-x86_64
+        # Use bash explicitly so the `[[ ]]` / `case` / `mv` syntax
+        # works on Windows (PowerShell on windows-2022 doesn't
+        # understand these). The smoke test below also uses bash.
+        shell: bash
         run: |
           set -euo pipefail
           VERSION="${{ steps.version.outputs.version }}"
@@ -314,6 +355,7 @@ jobs:
             linux_arm)  SUFFIX="linux-aarch64" ;;
             macos)      SUFFIX="macos-aarch64" ;;
             macos_x86)  SUFFIX="macos-x86_64" ;;
+            windows)    SUFFIX="windows-x86_64" ;;
             *)          echo "::error::Unknown target ${{ matrix.target }}"; exit 1 ;;
           esac
           OUT_NAME="ado-${VERSION}-${SUFFIX}${{ matrix.ext }}"
@@ -321,25 +363,30 @@ jobs:
           DEST="release_bin/${OUT_NAME}"
           if [[ ! -f "${SRC}" ]]; then
             echo "::error::Expected Burrito output not found: ${SRC}"
-            ls -lh burrito_out/
+            ls -lh burrito_out
             exit 1
           fi
           mv "${SRC}" "${DEST}"
           chmod +x "${DEST}"
           echo "Renamed ${SRC} -> ${DEST}"
-          ls -lh release_bin/
+          ls -lh release_bin
 
       - name: Smoke test the binary
         # All release jobs run on a native runner for the target
         # platform (e.g. ubuntu-24.04-arm for the Linux ARM build),
         # so the binary can always be executed here.
+        # Use bash explicitly so the `[[ ]]` / `set -euo pipefail`
+        # syntax works on Windows (PowerShell doesn't understand
+        # these). On Windows the `file` command is provided by
+        # Git for Windows; the .exe is executable via bash.
+        shell: bash
         run: |
           set -euo pipefail
           # Glob is intentional here — there's exactly one file in
           # the dir, but actionlint warns about unquoted globs.
           BINARY=$(ls release_bin/ado-*)
           echo "Testing $BINARY"
-          file "$BINARY"
+          file "$BINARY" || true
           "$BINARY" --version || "$BINARY" --help | head -20
 
       - name: Upload release binary
@@ -383,6 +430,7 @@ jobs:
             | Linux | aarch64 | `ado-*-linux-aarch64` |
             | macOS | Apple Silicon | `ado-*-macos-aarch64` |
             | macOS | Intel | `ado-*-macos-x86_64` |
+            | Windows | x86_64 | `ado-*-windows-x86_64.exe` |
 
             See [README.md](https://github.com/gilbertwong96/ado_cli) for
             installation instructions.

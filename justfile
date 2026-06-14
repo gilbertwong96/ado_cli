@@ -71,12 +71,13 @@ release-clean:
 release-list:
     @ls -lh burrito_out/
 
-# Rename Burrito's ado_<target> binaries to the versioned, platform-
-# tagged naming convention used by the CI release workflow:
+# Rename Burrito's ado_<target>{,.exe} binaries to the versioned,
+# platform-tagged naming convention used by the CI release workflow:
 #   ado-<version>-linux-x86_64
 #   ado-<version>-linux-aarch64
 #   ado-<version>-macos-aarch64
 #   ado-<version>-macos-x86_64
+#   ado-<version>-windows-x86_64.exe
 # Original Burrito outputs are removed.
 release-rename:
     #!/usr/bin/env bash
@@ -94,6 +95,7 @@ release-rename:
         linux_arm) SUFFIX="linux-aarch64" ;;
         macos)     SUFFIX="macos-aarch64" ;;
         macos_x86) SUFFIX="macos-x86_64" ;;
+        windows)   SUFFIX="windows-x86_64" ;;
         *) echo "::warn::Unknown Burrito target: $key (no rename rule)"; continue ;;
       esac
       dest="burrito_out/ado-${VERSION}-${SUFFIX}${ext}"
