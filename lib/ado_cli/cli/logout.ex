@@ -5,6 +5,8 @@ defmodule AdoCli.CLI.Logout do
 
   import CliMate.CLI
 
+  alias AdoCli.CLI.Output
+
   @impl true
   def command do
     [
@@ -20,9 +22,14 @@ defmodule AdoCli.CLI.Logout do
   @doc """
   Removes stored credentials from `~/.ado_cli/config.json`.
   """
-  def run(_parsed) do
+  def run(parsed) do
     AdoCli.Auth.logout()
-    success("Logged out. Credentials removed from ~/.ado_cli/config.json\n")
-    halt_success("")
+
+    if Map.get(parsed.options || %{}, :json, false) do
+      Output.ok_message(parsed, "Logged out. Credentials removed from ~/.ado_cli/config.json")
+    else
+      success("Logged out. Credentials removed from ~/.ado_cli/config.json\n")
+      halt_success("")
+    end
   end
 end

@@ -5,6 +5,9 @@ defmodule AdoCli.CLI.Whoami do
 
   import CliMate.CLI
 
+  alias AdoCli.Auth
+  alias AdoCli.CLI.Output
+
   @impl true
   def command do
     [
@@ -21,25 +24,41 @@ defmodule AdoCli.CLI.Whoami do
   Shows the current authentication status: organization, auth method,
   config file path, and Azure CLI availability.
   """
-  def run(_parsed) do
-    status = AdoCli.Auth.status()
-    writeln("")
+  def run(parsed) do
+    status = Auth.status()
+    json? = Map.get(parsed.options || %{}, :json, false)
 
-    if status.configured or status.org do
-      print_authenticated(status)
+    if json? do
+      Output.ok(
+        parsed,
+        %{
+          configured: status.configured,
+          org: status.org,
+          server: status.server || "dev.azure.com",
+          method: status.method,
+          config_file: config_file_path(),
+          authenticated: status.configured or status.org != nil
+        }
+      )
     else
-      print_unauthenticated(status)
-    end
+      writeln("")
 
-    writeln("")
-    halt_success("")
+      if status.configured or status.org do
+        print_authenticated(status)
+      else
+        print_unauthenticated(status)
+      end
+
+      writeln("")
+      halt_success("")
+    end
   end
 
   defp print_authenticated(status) do
     writeln("  Organization: #{status.org || "(not set)"}")
     writeln("  Server:       #{status.server || "dev.azure.com (cloud)"}")
     writeln("  Auth Method:  #{status.method || "none"}")
-    writeln("  Config File:  #{config_file_label(status)}")
+    writeln("  Config File:  #{config_file_path()}")
   end
 
   defp print_unauthenticated(status) do
@@ -52,6 +71,7 @@ defmodule AdoCli.CLI.Whoami do
     writeln("  Or set environment variables: ADO_ORG + ADO_PAT")
   end
 
-  defp config_file_label(status),
-    do: if(status.configured, do: "~/.ado_cli/config.json", else: "(none)")
+  defp config_file_path do
+    AdoCli.ConfigFile.config_path()
+  end
 end

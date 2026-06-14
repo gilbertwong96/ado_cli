@@ -1,6 +1,15 @@
 ---
 description: How to authenticate ado — PAT, browser OAuth, device code, MSA support
-version: "0.2.0"
+version: "0.3.0"
+commands:
+  - ado login --method pat --org ORG --pat TOKEN                   # PAT, no browser, CI-friendly
+  - ado login --org ORG                                          # browser OAuth (AAD + MSA)
+  - ado login --method device --org ORG                         # device code, no browser
+  - ado login                                                    # auto-detect org from token
+  - ado logout
+  - ado whoami
+  - export ADO_ORG=org ADO_PAT=token                             # env-var auth (session-level)
+  - export ADO_SERVER=https://dev.azure.com                      # self-hosted server URL
 ---
 
 # Authentication
