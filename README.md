@@ -218,6 +218,10 @@ ado workitems create MyProject --type Bug --title "Fix login" --tags "bug,critic
 ado pipelines list MyProject --top 10
 ado pipelines run MyProject 42 --branch main --variables "ENV=staging,DEBUG=true"
 
+# Watch a build in real-time (live status + streaming logs)
+ado ci watch MyProject 99
+ado ci watch MyProject --latest --definition 42 --branch main
+
 # Pipelines (Classic builds)
 ado pipelines-builds queue MyProject --definition 5 --branch main
 ado pipelines-builds cancel MyProject 99
@@ -464,6 +468,38 @@ Every commit must pass the full CI gate (`mix ci`):
 | 7 | `dialyzer` (with Finch false-positive filtering) |
 
 See `AGENTS.md` for the full quality gate specification.
+
+---
+
+## Watch a build in real-time
+
+`ado ci watch` streams live status and per-line log output
+for an Azure DevOps build — like `tail -f` for CI:
+
+```bash
+# Watch build #123 in MyProject
+ado ci watch MyProject 123
+
+# Watch the latest build on a specific pipeline + branch
+ado ci watch MyProject --latest --definition 42 --branch main
+
+# Tighter polling (default 2s)
+ado ci watch MyProject 123 --poll-interval 500
+```
+
+The watcher polls the Azure DevOps Build API every 2s (configurable)
+and prints:
+
+- Build status (running / succeeded / failed / canceled)
+- Job/step transitions from the timeline
+- New log lines as they're written by the running step
+
+The underlying streaming mechanism uses `?id=N` on the log endpoint,
+which returns log content up to line N. The watcher increments N
+each tick and only prints lines it hasn't seen before.
+
+The watch exits automatically when the build reaches a terminal
+state, or on Ctrl+C.
 
 ---
 

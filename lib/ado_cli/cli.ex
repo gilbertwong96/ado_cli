@@ -31,6 +31,7 @@ defmodule AdoCli.CLI do
   alias AdoCli.CLI.Banners
   alias AdoCli.CLI.BranchPolicies
   alias AdoCli.CLI.Builds
+  alias AdoCli.CLI.CI
   alias AdoCli.CLI.Connections
   alias AdoCli.CLI.Extensions
   alias AdoCli.CLI.Folders
@@ -83,6 +84,7 @@ defmodule AdoCli.CLI do
       login: AuthCommands,
       logout: Logout,
       whoami: Whoami,
+      ci: CI,
       "agent-pools": AgentPools,
       areas: Areas,
       connections: Connections,

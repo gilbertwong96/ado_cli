@@ -104,6 +104,10 @@ ado prs create MyProject MyRepo --title "Add feature" --source dev --target main
 # Trigger a pipeline with variables
 ado pipelines run MyProject 42 --branch main --variables "ENV=staging,DEBUG=true"
 
+# Watch a build in real-time (live status + streaming logs)
+ado ci watch MyProject 99
+ado ci watch MyProject --latest --definition 42 --branch main
+
 # Add a secret to a variable group
 ado pipelines vars create MyProject --name CI --variables "DB_PASS=hunter2" --secret DB_PASS
 

@@ -117,6 +117,16 @@ ado_cli workitems update 42 --title "Updated title" --assigned-to "Bob" --priori
 
 ## Pipelines
 
+### Watch a build in real-time
+
+```bash
+# Stream live status + per-line log output for a running build.
+# Like `tail -f` for CI. Exits when the build completes or on Ctrl+C.
+ado_ci watch MyProject 123
+ado_ci watch MyProject --latest --definition 42 --branch main
+ado_ci watch MyProject 123 --poll-interval 500
+```
+
 ### List pipelines
 ```bash
 ado_cli pipelines list MyProject
