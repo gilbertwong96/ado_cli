@@ -26,7 +26,8 @@ defmodule AdoCli.CLI.CI do
 
   import CliMate.CLI
 
-  alias AdoCli.{Client, CI.Watcher}
+  alias AdoCli.CI.Watcher
+  alias AdoCli.Client
 
   @impl true
   def command do
@@ -142,13 +143,15 @@ defmodule AdoCli.CLI.CI do
         if use_latest? do
           fetch_latest_build(project, org, parsed)
         else
-          {:error, "no build ID given; pass BUILD_ID as the second positional argument or use --latest"}
+          {:error,
+           "no build ID given; pass BUILD_ID as the second positional argument or use --latest"}
         end
     end
   end
 
   defp fetch_latest_build(project, org, parsed) do
     params = %{"$top" => 1}
+
     params =
       if def_id = Map.get(parsed.options, :definition),
         do: Map.put(params, "definitions", def_id),

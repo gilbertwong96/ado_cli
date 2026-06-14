@@ -26,7 +26,6 @@ defmodule AdoCli.CI.Watcher do
 
   alias AdoCli.Client
 
-
   @type build :: map()
   @type timeline_record :: map()
   @type log_progress :: %{optional(integer()) => non_neg_integer()}
@@ -44,7 +43,7 @@ defmodule AdoCli.CI.Watcher do
   @spec watch(integer(), String.t(), String.t() | nil, keyword()) ::
           :ok | {:error, term()}
   def watch(build_id, project, org, opts \\ []) do
-    poll_ms = Keyword.get(opts, :poll_ms, 2000) |> max(250)
+    poll_ms = max(Keyword.get(opts, :poll_ms, 2000), 250)
     print = Keyword.get(opts, :print_callback, &IO.write/2)
 
     state = %{
@@ -84,15 +83,13 @@ defmodule AdoCli.CI.Watcher do
         render_status(build, state.started_at, print)
         render_timeline_diff(state, print)
 
-        case terminal?(build) do
-          true ->
-            render_final(build, print)
-            :ok
-
-          false ->
-            state = stream_active_logs(state, print)
-            Process.sleep(poll_ms)
-            loop(state, poll_ms, print)
+        if terminal?(build) do
+          render_final(build, print)
+          :ok
+        else
+          state = stream_active_logs(state, print)
+          Process.sleep(poll_ms)
+          loop(state, poll_ms, print)
         end
 
       {:error, reason} ->
@@ -156,6 +153,7 @@ defmodule AdoCli.CI.Watcher do
         Enum.each(new_records(state.last_timeline, records), fn rec ->
           print_record(rec, print)
         end)
+
         %{state | last_timeline: records}
 
       {:error, _} ->
@@ -169,19 +167,17 @@ defmodule AdoCli.CI.Watcher do
   end
 
   defp print_record(rec, print) do
-    icon =
-      case rec["state"] do
-        "completed" -> "  ✔"
-        "inProgress" -> "  *"
-        "failed" -> "  ✗"
-        "skipped" -> "  —"
-        _ -> "  ·"
-      end
-
+    icon = record_icon(rec["state"])
     name = rec["name"] || rec["type"] || "?"
     type = rec["type"] || "record"
     print.("  #{icon} [#{type}] #{name}\n")
   end
+
+  defp record_icon("completed"), do: "  ✔"
+  defp record_icon("inProgress"), do: "  *"
+  defp record_icon("failed"), do: "  ✗"
+  defp record_icon("skipped"), do: "  —"
+  defp record_icon(_), do: "  ·"
 
   # ── log streaming ───────────────────────────────────────────────────
 
@@ -252,6 +248,7 @@ defmodule AdoCli.CI.Watcher do
 
   defp format_duration(ms) do
     seconds = div(ms, 1000)
+
     cond do
       seconds < 60 -> "#{seconds}s"
       seconds < 3600 -> "#{div(seconds, 60)}m#{rem(seconds, 60)}s"
