@@ -395,7 +395,6 @@ ado_cli/
 ├── test/
 ├── .credo.exs                        # Credo configuration (strict mode)
 ├── AGENTS.md                         # CI quality gate principles
-├── SIGNING.md                        # macOS code signing + notarization guide
 └── mix.exs                           # Project definition & aliases
 ```
 
