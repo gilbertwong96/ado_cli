@@ -1,6 +1,22 @@
 ---
 description: Using ado in CI/CD — authentication, pipeline triggers, PR automation, package publishing
-version: "0.2.0"
+version: "0.3.0"
+commands:
+  - ado projects list
+  - ado pipelines list PROJECT
+  - ado pipelines run PROJECT ID --branch BRANCH --variables KEY=VALUE
+  - ado pipelines-builds queue PROJECT --definition ID --branch BRANCH
+  - ado pipelines-builds cancel PROJECT BUILD_ID
+  - ado pipelines-builds show PROJECT BUILD_ID
+  - ado pipelines vars create PROJECT --name N --variables K=V --secret K
+  - ado prs create PROJECT REPO --title TEXT --source BRANCH --target BRANCH
+  - ado prs complete PROJECT REPO ID --merge-strategy squash --delete-source
+  - ado prs approve PROJECT REPO ID
+  - ado workitems create PROJECT --type Bug --title TEXT
+  - ado workitems update ID --state Resolved
+  - ado imports create PROJECT REPO --url URL --user U --password P
+  - ado ci watch PROJECT BUILD_ID                              # stream live build logs
+  - export ADO_ORG=org ADO_PAT=token                          # PAT in env (CI pattern)
 ---
 
 # CI/CD Usage

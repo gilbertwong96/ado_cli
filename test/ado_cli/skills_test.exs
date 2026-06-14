@@ -20,12 +20,12 @@ defmodule AdoCli.SkillsTest do
   end
 
   describe "list_skills_info/0" do
-    test "returns sorted info with description and version" do
+    test "returns sorted info with description, version, and command_count" do
       info = Skills.list_skills_info()
       assert is_list(info)
       assert length(info) == length(Skills.list_skills())
       [first | _] = info
-      assert Enum.sort(Map.keys(first)) == [:description, :name, :version]
+      assert Enum.sort(Map.keys(first)) == [:command_count, :description, :name, :version]
       assert info == Enum.sort_by(info, & &1.name)
     end
 
@@ -35,7 +35,64 @@ defmodule AdoCli.SkillsTest do
         assert skill.name != ""
       end)
     end
+
+    test "each skill's command_count matches its commands list length" do
+      Enum.each(Skills.list_skills_info(), fn skill ->
+        {:ok, info} = Skills.describe(skill.name)
+        assert skill.command_count == length(info.commands)
+      end)
+    end
   end
+
+  describe "describe/1" do
+    test "returns frontmatter + command index for a known skill" do
+      assert {:ok, info} = Skills.describe("ado_cli")
+      assert info.name == "ado_cli"
+      assert is_binary(info.description)
+      assert info.description != ""
+      assert is_binary(info.version)
+      assert is_list(info.commands)
+      assert info.commands != []
+      # Spot-check: a known command pattern should be in the index
+      assert Enum.any?(info.commands, &String.contains?(&1, "ado prs create"))
+    end
+
+    test "returns error for unknown skill" do
+      assert {:error, msg} = Skills.describe("nope")
+      assert msg =~ "unknown skill"
+    end
+  end
+
+  describe "search/1" do
+    test "finds skills by name (case-insensitive)" do
+      [hit | _] = Skills.search("ado_cli")
+      assert hit.skill == "ado_cli"
+      assert hit.match_type == "name"
+    end
+
+    test "finds skills by command pattern" do
+      # "create PR" should match a command in ado_cli
+      [hit | _] = Skills.search("create PR")
+      assert hit.match_type in ["command", "description"]
+    end
+
+    test "returns empty list for non-matching query" do
+      assert Skills.search("zzz_no_such_thing_zzz") == []
+    end
+
+    test "results are sorted by match priority then skill name" do
+      results = Skills.search("auth")
+      # Earlier results should have higher-priority match types
+      # (name > command > description)
+      priorities = Enum.map(results, &match_priority/1)
+      assert priorities == Enum.sort(priorities)
+    end
+  end
+
+  defp match_priority("name"), do: 0
+  defp match_priority("command"), do: 1
+  defp match_priority("description"), do: 2
+  defp match_priority(_), do: 3
 
   describe "read_skill/1" do
     test "returns skill content for a valid skill" do

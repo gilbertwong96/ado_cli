@@ -1,6 +1,64 @@
 ---
 description: Main ado skill — setup, authentication, and complete command reference for all 24 service areas
-version: "0.2.0"
+version: "0.3.0"
+commands:
+  - ado login --org ORG
+  - ado login --method pat --org ORG --pat TOKEN
+  - ado logout
+  - ado whoami
+  - ado projects list
+  - ado projects show PROJECT
+  - ado projects create --name N --description D
+  - ado projects update PROJECT --description D
+  - ado projects delete PROJECT
+  - ado repos list PROJECT
+  - ado repos show PROJECT REPO
+  - ado repos create PROJECT --name N
+  - ado repos delete PROJECT REPO
+  - ado repos branches PROJECT REPO
+  - ado branch-policies list PROJECT REPO
+  - ado branch-policies show PROJECT REPO POLICY_ID
+  - ado workitems list PROJECT
+  - ado workitems show PROJECT ID
+  - ado workitems create PROJECT --type T --title T --tags t1,t2
+  - ado workitems update ID --state S
+  - ado workitems query PROJECT --wiql "SELECT ..."
+  - ado pipelines list PROJECT
+  - ado pipelines show PROJECT ID
+  - ado pipelines run PROJECT ID --branch B --variables K=V
+  - ado pipelines vars create PROJECT --name N --variables K=V --secret K
+  - ado pipelines-builds queue PROJECT --definition D --branch B
+  - ado pipelines-builds cancel PROJECT BUILD_ID
+  - ado pipelines-artifacts list PROJECT BUILD_ID
+  - ado prs list PROJECT REPO
+  - ado prs show PROJECT REPO ID
+  - ado prs create PROJECT REPO --title T --source S --target T
+  - ado prs complete PROJECT REPO ID --merge-strategy squash
+  - ado prs approve PROJECT REPO ID
+  - ado prs comments list PROJECT REPO PR_ID
+  - ado releases list PROJECT
+  - ado releases show PROJECT ID
+  - ado iterations list PROJECT
+  - ado areas list PROJECT
+  - ado wikis list PROJECT
+  - ado teams list PROJECT
+  - ado teams show PROJECT TEAM
+  - ado users list
+  - ado users show USER
+  - ado extensions list
+  - ado extensions install EXTENSION
+  - ado agent-pools list
+  - ado agent-pools show POOL_ID
+  - ado connections list PROJECT
+  - ado security groups list PROJECT SCOPE
+  - ado banners set --message TEXT --type warning
+  - ado banners delete
+  - ado packages list PROJECT FEED
+  - ado ci watch PROJECT BUILD_ID                            # stream live build logs
+  - ado skills list                                            # list available skills
+  - ado skills describe NAME                                   # skill frontmatter + command index
+  - ado skills read NAME                                       # full skill content
+  - ado skills search "QUERY"                                  # find skill by topic
 ---
 
 # ado

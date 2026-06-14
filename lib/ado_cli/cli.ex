@@ -45,6 +45,7 @@ defmodule AdoCli.CLI do
   alias AdoCli.CLI.Releases
   alias AdoCli.CLI.Repos
   alias AdoCli.CLI.RunArtifacts
+  alias AdoCli.CLI.Schema
   alias AdoCli.CLI.Security
   alias AdoCli.CLI.Skills
   alias AdoCli.CLI.Teams
@@ -85,6 +86,7 @@ defmodule AdoCli.CLI do
       logout: Logout,
       whoami: Whoami,
       ci: CI,
+      schema: Schema,
       "agent-pools": AgentPools,
       areas: Areas,
       connections: Connections,

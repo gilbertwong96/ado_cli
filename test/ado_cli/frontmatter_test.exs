@@ -68,5 +68,44 @@ defmodule AdoCli.FrontmatterTest do
       assert fm["description"] =~ "Main ado skill"
       assert fm["version"] == "0.2.0"
     end
+
+    test "parses commands list (YAML block list syntax)" do
+      content = """
+      ---
+      description: x
+      version: "0.1.0"
+      commands:
+        - ado projects list
+        - ado prs create PROJECT REPO --title TEXT
+        - ado pipelines run PROJECT ID --branch main
+      ---
+      body
+      """
+
+      cmds = Frontmatter.parse_commands(content)
+      assert length(cmds) == 3
+      assert Enum.at(cmds, 0) == "ado projects list"
+      assert Enum.at(cmds, 1) == "ado prs create PROJECT REPO --title TEXT"
+      assert Enum.at(cmds, 2) == "ado pipelines run PROJECT ID --branch main"
+    end
+
+    test "parse_commands preserves trailing # comments on each item" do
+      content = """
+      ---
+      commands:
+        - ado projects list ORG          # ORG here is the org name
+        - ado prs create                # opens a PR
+      ---
+      """
+
+      [c1, c2] = Frontmatter.parse_commands(content)
+      assert c1 =~ "ORG here is the org name"
+      assert c2 =~ "opens a PR"
+    end
+
+    test "parse_commands returns empty list when no commands field" do
+      content = "---\ndescription: x\n---\n"
+      assert Frontmatter.parse_commands(content) == []
+    end
   end
 end
