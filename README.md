@@ -90,17 +90,19 @@ ado prs create MyProject MyRepo --title "Add feature" --source dev --target main
 
 ---
 
-## For LLM Agents (pi, Claude Code, Copilot, Cursor)
+## For LLM Agents (pi, Claude Code, Copilot, Cursor, Codex)
 
 Run `ado schema --json` to discover the full command tree, or install the
 embedded skills so your agent loads them natively:
 
 ```bash
 # Install skills to your agent's skill directory
-ado skills install                          # pi + claude + cursor
+ado skills install                          # pi + claude + cursor + codex
 ado skills install --target pi              # ~/.pi/agent/skills/
 ado skills install --target claude          # ~/.claude/skills/
 ado skills install --target cursor          # ~/.cursor/skills/
+ado skills install --target codex           # ~/.codex/skills/
+ado skills install --target copilot --repo .# ./.github/ado-cli/  (per-repo)
 
 # Verify the install
 ls ~/.pi/agent/skills/                       # you should see ado_cli/, ado_auth/, ado_ci/
