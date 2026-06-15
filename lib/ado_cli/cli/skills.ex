@@ -29,6 +29,7 @@ defmodule AdoCli.CLI.Skills do
 
   import CliMate.CLI
 
+  alias AdoCli.CLI.Output
   alias AdoCli.Skills
 
   @impl true
@@ -91,7 +92,7 @@ defmodule AdoCli.CLI.Skills do
           name: "ado skills install",
           doc:
             "Install the embedded skills to an LLM agent's skill directory " <>
-              "(pi, Claude Code, Cursor, or a custom path). " <>
+              "(pi, Claude Code, Cursor, GitHub Copilot, or a custom path). " <>
               "Lets agents discover ado as a native skill on startup, " <>
               "instead of shelling out to `ado skills read`.",
           options: [
@@ -101,8 +102,16 @@ defmodule AdoCli.CLI.Skills do
               doc:
                 "Where to install: 'pi' (~/.pi/agent/skills/), " <>
                   "'claude' (~/.claude/skills/), 'cursor' (~/.cursor/skills/), " <>
+                  "'codex' (~/.codex/skills/), " <>
+                  "'copilot' (requires --repo, writes to <repo>/.github/ado-cli/), " <>
                   "or a custom absolute path. " <>
-                  "Default: 'all' (installs to every known target)."
+                  "Default: 'all' (installs to every known per-user target)."
+            ],
+            repo: [
+              type: :string,
+              doc:
+                "Path to a local git repository. Required when --target=copilot; " <>
+                  "default: current working directory. Ignored for other targets."
             ],
             skill: [
               type: :string,
@@ -255,58 +264,118 @@ defmodule AdoCli.CLI.Skills do
   """
   def install_skills(parsed) do
     target_spec = Map.get(parsed.options, :target, "all")
+    repo_spec = Map.get(parsed.options, :repo)
     skill_filter = Map.get(parsed.options, :skill)
     force? = Map.get(parsed.options, :force, false)
     json? = Map.get(parsed.options, :json, false)
 
-    target_dirs = resolve_target_dirs(target_spec)
-    skills_to_install = filter_skills(skill_filter)
+    case resolve_target_dirs(target_spec, repo_spec, System.user_home!()) do
+      {:error, reason} ->
+        message = "could not resolve --target=#{target_spec}: #{reason}"
 
-    results =
-      Enum.flat_map(target_dirs, fn {target_name, target_dir} ->
-        Enum.map(skills_to_install, fn skill ->
-          install_one_skill(target_name, target_dir, skill, force?)
-        end)
-      end)
+        if json? do
+          Output.error(parsed, "validation_error", message)
+        else
+          raise_validation_error(message)
+        end
 
-    if json? do
-      payload = build_install_payload(target_dirs, results)
-      writeln(JSON.encode!(%{ok: true, result: payload}))
-      halt_success("")
-    else
-      print_install_results(target_dirs, results)
-      halt_success("")
+      {:ok, target_dirs} ->
+        skills_to_install = filter_skills(skill_filter)
+
+        results =
+          Enum.flat_map(target_dirs, fn {target_name, target_dir} ->
+            Enum.map(skills_to_install, fn skill ->
+              install_one_skill(target_name, target_dir, skill, force?)
+            end)
+          end)
+
+        if json? do
+          payload = build_install_payload(target_dirs, results)
+          writeln(JSON.encode!(%{ok: true, result: payload}))
+          halt_success("")
+        else
+          print_install_results(target_dirs, results)
+          halt_success("")
+        end
     end
+  end
+
+  defp raise_validation_error(message) do
+    writeln("xx  #{message}")
+    halt_error("")
   end
 
   defp filter_skills(nil), do: Skills.list_skills()
   defp filter_skills(name), do: [name]
 
+  # Per-user agent skill directories. Adding a new agent is a one-line
+  # change here + a help-doc update + a test.
+  @per_user_targets %{
+    "pi" => ".pi/agent/skills",
+    "claude" => ".claude/skills",
+    "cursor" => ".cursor/skills",
+    "codex" => ".codex/skills"
+  }
+
   # Resolve the target spec into a list of {name, expanded_path} pairs.
-  # "all" expands to the three known LLM agent skill directories.
-  defp resolve_target_dirs("all") do
-    home = Path.expand("~")
+  # Returns {:ok, [{name, path}...]} on success, {:error, reason} on bad input.
+  #
+  # `home` is the user home directory (from System.user_home!/0, which
+  # reads USERPROFILE on Windows and $HOME on Unix). It's a parameter
+  # (not a hardcoded call) so tests can exercise this code without
+  # touching the real filesystem.
+  #
+  #   "all"     -> all per-user targets (pi, claude, cursor, codex)
+  #   <name>    -> one per-user target (must be a key in @per_user_targets)
+  #   "copilot" -> <repo>/.github/ado-cli (requires --repo, defaults to cwd)
+  #   "/path"   -> custom absolute path
+  def resolve_target_dirs("all", _repo, home) do
+    targets =
+      Enum.map(@per_user_targets, fn {name, subdir} -> {name, Path.join(home, subdir)} end)
 
-    [
-      {"pi", Path.join(home, ".pi/agent/skills")},
-      {"claude", Path.join(home, ".claude/skills")},
-      {"cursor", Path.join(home, ".cursor/skills")}
-    ]
+    {:ok, targets}
   end
 
-  defp resolve_target_dirs(name) when name in ~w(pi claude cursor) do
-    subdir =
-      case name do
-        "pi" -> ".pi/agent/skills"
-        "claude" -> ".claude/skills"
-        "cursor" -> ".cursor/skills"
-      end
-
-    [{name, Path.join(Path.expand("~"), subdir)}]
+  def resolve_target_dirs(name, _repo, home) when is_map_key(@per_user_targets, name) do
+    subdir = Map.fetch!(@per_user_targets, name)
+    {:ok, [{name, Path.join(home, subdir)}]}
   end
 
-  defp resolve_target_dirs(path) do
-    [{"custom", Path.expand(path)}]
+  def resolve_target_dirs("copilot", repo, _home) do
+    repo_path = resolve_copilot_repo(repo)
+
+    case repo_path do
+      {:ok, path} ->
+        # One subdir per skill, all under <repo>/.github/ado-cli/
+        # (matches the per-skill pattern of pi/claude/cursor).
+        target = Path.join([path, ".github", "ado-cli"])
+        {:ok, [{"copilot", target}]}
+
+      {:error, _} = err ->
+        err
+    end
+  end
+
+  def resolve_target_dirs(path, _repo, _home) do
+    {:ok, [{"custom", Path.expand(path)}]}
+  end
+
+  # GitHub Copilot is per-repository. The repo path defaults to cwd
+  # so users can `cd` into the repo and run `ado skills install
+  # --target copilot` without a flag.
+  defp resolve_copilot_repo(nil) do
+    cwd = File.cwd!()
+    {:ok, cwd}
+  end
+
+  defp resolve_copilot_repo(repo) do
+    expanded = Path.expand(repo)
+
+    if File.dir?(expanded) do
+      {:ok, expanded}
+    else
+      {:error, "--repo=#{repo} does not exist or is not a directory"}
+    end
   end
 
   # Try to install one skill into one target. Returns a result tuple.
