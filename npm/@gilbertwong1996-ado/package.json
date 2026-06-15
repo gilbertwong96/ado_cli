@@ -1,5 +1,5 @@
 {
-  "name": @gilbertwong1996/ado",
+  "name": "@gilbertwong1996/ado",
   "version": "0.1.0",
   "description": "AI-native Azure DevOps CLI — structured JSON output, embedded skills for LLM agents, single-file cross-platform binary.",
   "license": "Apache-2.0",
@@ -32,10 +32,10 @@
     "node": ">=18"
   },
   "optionalDependencies": {
-    @gilbertwong1996/ado-darwin-arm64": "0.1.0",
-    @gilbertwong1996/ado-darwin-x64": "0.1.0",
-    @gilbertwong1996/ado-linux-arm64": "0.1.0",
-    @gilbertwong1996/ado-linux-x64": "0.1.0",
-    @gilbertwong1996/ado-win32-x64": "0.1.0"
+    "@gilbertwong1996/ado-darwin-arm64": "0.1.0",
+    "@gilbertwong1996/ado-darwin-x64": "0.1.0",
+    "@gilbertwong1996/ado-linux-arm64": "0.1.0",
+    "@gilbertwong1996/ado-linux-x64": "0.1.0",
+    "@gilbertwong1996/ado-win32-x64": "0.1.0"
   }
 }

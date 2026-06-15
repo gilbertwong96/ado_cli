@@ -52,9 +52,22 @@ TMP_DIR="$(mktemp -d)"
 
 trap "rm -rf '$TMP_DIR'" EXIT
 
+# ── step 0: validate all package.json files are valid JSON ────────
+# Catches the kind of bug we hit before (unquoted @scope/name) early
+# instead of failing partway through with a cryptic jq error.
+echo "==> Validating package.json files..."
+for pkg_json in "$NPM_DIR"/@gilbertwong1996-ado/package.json "$NPM_DIR"/@gilbertwong1996-ado-*/package.json; do
+    if ! jq -e . "$pkg_json" > /dev/null 2>&1; then
+        echo "ERROR: $pkg_json is not valid JSON" >&2
+        jq -e . "$pkg_json" 2>&1 | head -2 >&2
+        exit 1
+    fi
+done
+echo "    all $(ls "$NPM_DIR"/@gilbertwong1996-ado*/package.json | wc -l | tr -d ' ') files valid"
+
 # ── step 1: download binaries from GitHub Release ───────────────────
 if [[ -n "$SKIP_DOWNLOAD" ]]; then
-    echo "==> Skipping download (--skip-download)"
+    echo "==> Skipping download (--skip-download); using binaries already in place"
 else
     echo "==> Downloading ado v${VERSION} binaries from GitHub Release..."
     gh release download "v${VERSION}" \
@@ -64,6 +77,9 @@ else
 fi
 
 # ── step 2: copy binaries into platform packages ─────────────────────
+# Default behavior: overwrite any existing binary in the target dir
+# (so a previous run's binary doesn't linger). With --skip-download,
+# the binary is already in place from a previous run — just verify it.
 PLATFORM_MAP=(
     "darwin-arm64:ado-${VERSION}-macos-aarch64"
     "darwin-x64:ado-${VERSION}-macos-x86_64"
@@ -77,23 +93,37 @@ for entry in "${PLATFORM_MAP[@]}"; do
     artifact_name="${entry##*:}"
 
     pkg_dir="$NPM_DIR/@gilbertwong1996-ado-${platform_arch}"
-    src="$TMP_DIR/${artifact_name}"
-
-    if [[ ! -f "$src" ]]; then
-        echo "ERROR: $src not found" >&2
-        echo "       Make sure the release v${VERSION} has all 5 binaries." >&2
-        exit 1
+    if [[ "$platform_arch" == "win32-x64" ]]; then
+        dest="$pkg_dir/bin/ado.exe"
+    else
+        dest="$pkg_dir/bin/ado"
     fi
 
     mkdir -p "$pkg_dir/bin"
-    if [[ "$platform_arch" == "win32-x64" ]]; then
-        cp "$src" "$pkg_dir/bin/ado.exe"
-    else
-        cp "$src" "$pkg_dir/bin/ado"
-        chmod +x "$pkg_dir/bin/ado"
-    fi
 
-    echo "    copied $artifact_name → npm/@gilbertwong1996-ado-${platform_arch}/bin/"
+    if [[ -n "$SKIP_DOWNLOAD" ]]; then
+        # No source from the release. The binary should already be in
+        # place from a previous run; just verify it exists.
+        if [[ ! -f "$dest" ]]; then
+            echo "ERROR: $dest not found" >&2
+            echo "       --skip-download was set but the binary is not in place." >&2
+            echo "       Run without --skip-download first, or run" >&2
+            echo "       'gh release download v${VERSION} --pattern \"ado-${VERSION}-*\"' manually." >&2
+            exit 1
+        fi
+        echo "    kept $artifact_name → $dest (--skip-download)"
+    else
+        # Copy from the downloaded release artifact to the package bin.
+        src="$TMP_DIR/${artifact_name}"
+        if [[ ! -f "$src" ]]; then
+            echo "ERROR: $src not found" >&2
+            echo "       Make sure the release v${VERSION} has all 5 binaries." >&2
+            exit 1
+        fi
+        cp "$src" "$dest"
+        chmod +x "$dest"
+        echo "    copied $artifact_name → $dest"
+    fi
 done
 
 # ── step 3: update version in all package.json files ────────────────

@@ -1,7 +1,7 @@
 {
-  "name": "@gilbertwong1996/ado-darwin-x64",
+  "name": "@gilbertwong1996/ado-win32-x64",
   "version": "0.1.0",
-  "description": "ado binary for macOS Intel (x86_64)",
+  "description": "ado binary for Windows x86_64",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
@@ -10,20 +10,20 @@
   "keywords": [
     "azure-devops",
     "cli",
-    "darwin",
+    "win32",
     "x64",
-    "intel"
+    "windows"
   ],
   "os": [
-    "darwin"
+    "win32"
   ],
   "cpu": [
     "x64"
   ],
   "bin": {
-    "ado": "bin/ado"
+    "ado": "bin/ado.exe"
   },
   "files": [
-    "bin/ado"
+    "bin/ado.exe"
   ]
 }
