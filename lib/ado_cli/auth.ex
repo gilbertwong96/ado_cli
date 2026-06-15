@@ -27,7 +27,10 @@ defmodule AdoCli.Auth do
   """
 
   alias AdoCli.ConfigFile
+  alias AdoCli.Client
   alias CliMate.CLI
+
+  @user_id_cache_key {__MODULE__, :user_id}
 
   # Azure DevOps resource ID. Correct value for the OAuth `resource` field.
   @ado_resource "499b84ac-1321-427f-aa17-267ca6975798"
@@ -56,6 +59,44 @@ defmodule AdoCli.Auth do
       {:ok, org, basic_auth_headers(pat)}
     else
       try_config_file()
+    end
+  end
+
+  @doc """
+  Returns the authenticated user's GUID, or `{:error, message}`.
+
+  Fetches `/_apis/connectionData` (which is server-side cached
+  and very fast) on the first call and stores the result in the
+  process dictionary. Subsequent calls in the same CLI
+  invocation use the cached value.
+
+  Used by `prs comments update --resolved-by-me` to set the
+  `resolvedBy` field on a thread when changing its status.
+  """
+  def current_user_id do
+    case Process.get(@user_id_cache_key) do
+      nil -> fetch_and_cache_user_id()
+      id -> {:ok, id}
+    end
+  end
+
+  defp fetch_and_cache_user_id do
+    case Client.get_raw("/_apis/connectionData") do
+      {:ok, body} ->
+        case JSON.decode(body) do
+          {:ok, %{"authenticatedUser" => %{"id" => id}}} when is_binary(id) and id != "" ->
+            Process.put(@user_id_cache_key, id)
+            {:ok, id}
+
+          {:ok, _} ->
+            {:error, "Connection data did not include an authenticated user ID"}
+
+          _ ->
+            {:error, "Could not parse connection data response"}
+        end
+
+      {:error, reason} ->
+        {:error, "Could not fetch connection data: #{inspect(reason)}"}
     end
   end
 
