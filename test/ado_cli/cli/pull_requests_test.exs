@@ -560,4 +560,677 @@ defmodule AdoCli.CLI.PullRequestsTest do
       100 -> acc |> Enum.reverse() |> Enum.join("")
     end
   end
+
+  # ── add_comment (prs comments add) ───────────────────────────────
+
+  describe "add_comment (prs comments add)" do
+    test "halts 0 on successful general thread creation", %{server: server} do
+      response =
+        JSON.encode!(%{
+          "id" => 42,
+          "comments" => [
+            %{"id" => 100, "content" => "LGTM!"}
+          ]
+        })
+
+      expect_post_success(
+        server,
+        "/testorg/_apis/git/repositories/test/pullrequests/1/threads",
+        JSON.encode!(%{
+          "comments" => [
+            %{
+              "content" => "LGTM!",
+              "parentCommentId" => 0,
+              "commentType" => "text"
+            }
+          ],
+          "status" => "active"
+        }),
+        response,
+        fn ->
+          apply(AdoCli.CLI.PullRequests, :add_comment, [
+            %{
+              options: %{
+                content: "LGTM!",
+                file_path: nil,
+                line: nil,
+                thread_id: nil,
+                comment_id: nil,
+                status: "active",
+                json: false
+              },
+              arguments: %{project: "testorg", repo_id: "test", pr_id: 1}
+            }
+          ])
+        end
+      )
+    end
+
+    test "halts 0 on successful inline thread creation with file context", %{server: server} do
+      response = JSON.encode!(%{"id" => 43, "comments" => [%{"id" => 101}]})
+
+      expect_post_success(
+        server,
+        "/testorg/_apis/git/repositories/test/pullrequests/1/threads",
+        JSON.encode!(%{
+          "comments" => [
+            %{
+              "content" => "Use a guard clause here",
+              "parentCommentId" => 0,
+              "commentType" => "text"
+            }
+          ],
+          "status" => "active",
+          "threadContext" => %{
+            "filePath" => "src/foo.ex",
+            "leftFileStart" => %{"line" => 42, "offset" => 1},
+            "leftFileEnd" => %{"line" => 42, "offset" => 2}
+          }
+        }),
+        response,
+        fn ->
+          apply(AdoCli.CLI.PullRequests, :add_comment, [
+            %{
+              options: %{
+                content: "Use a guard clause here",
+                file_path: "src/foo.ex",
+                line: 42,
+                thread_id: nil,
+                comment_id: nil,
+                status: "active",
+                json: false
+              },
+              arguments: %{project: "testorg", repo_id: "test", pr_id: 1}
+            }
+          ])
+        end
+      )
+    end
+
+    test "halts 0 on successful reply to existing thread", %{server: server} do
+      response = JSON.encode!(%{"id" => 102, "content" => "Fixed in abc123"})
+
+      expect_post_success(
+        server,
+        "/testorg/_apis/git/repositories/test/pullrequests/1/threads/5/comments",
+        JSON.encode!(%{
+          "content" => "Fixed in abc123",
+          "parentCommentId" => 0,
+          "commentType" => "text"
+        }),
+        response,
+        fn ->
+          apply(AdoCli.CLI.PullRequests, :add_comment, [
+            %{
+              options: %{
+                content: "Fixed in abc123",
+                file_path: nil,
+                line: nil,
+                thread_id: 5,
+                comment_id: 0,
+                status: "active",
+                json: false
+              },
+              arguments: %{project: "testorg", repo_id: "test", pr_id: 1}
+            }
+          ])
+        end
+      )
+    end
+
+    test "halts 1 with a clear error on invalid --status", %{server: server} do
+      # No expectation registered: the function must halt BEFORE
+      # the HTTP call. If the function ever hits the network,
+      # the test fails with "no expectation matched".
+      capture_io(fn ->
+        apply(AdoCli.CLI.PullRequests, :add_comment, [
+          %{
+            options: %{
+              content: "x",
+              file_path: nil,
+              line: nil,
+              thread_id: nil,
+              comment_id: nil,
+              status: "bogus",
+              json: false
+            },
+            arguments: %{project: "testorg", repo_id: "test", pr_id: 1}
+          }
+        ])
+      end)
+
+      assert_receive {:cli_mate_shell, :halt, 1}, 500
+      assert_receive {:cli_mate_shell, :error, msg}, 500
+      assert msg =~ "Invalid --status 'bogus'"
+      assert msg =~ "active, fixed, wontFix, closed, byDesign"
+    end
+
+    test "reads --content @<file> from a file", %{server: server} do
+      file_content = "Line one.\nLine two.\nLine three.\n"
+      file_path = Path.join(System.tmp_dir!(), "ado_comment_#{System.unique_integer([:positive])}.md")
+      File.write!(file_path, file_content)
+      on_exit(fn -> File.rm_rf(file_path) end)
+
+      response = JSON.encode!(%{"id" => 7, "comments" => [%{"id" => 70}]})
+
+      expect_post_success(
+        server,
+        "/testorg/_apis/git/repositories/test/pullrequests/1/threads",
+        JSON.encode!(%{
+          "comments" => [
+            %{
+              "content" => "Line one.\nLine two.\nLine three.",
+              "parentCommentId" => 0,
+              "commentType" => "text"
+            }
+          ],
+          "status" => "active"
+        }),
+        response,
+        fn ->
+          apply(AdoCli.CLI.PullRequests, :add_comment, [
+            %{
+              options: %{
+                content: "@" <> file_path,
+                file_path: nil,
+                line: nil,
+                thread_id: nil,
+                comment_id: nil,
+                status: "active",
+                json: false
+              },
+              arguments: %{project: "testorg", repo_id: "test", pr_id: 1}
+            }
+          ])
+        end
+      )
+    end
+
+    test "reads --content - from stdin", %{server: server} do
+      response = JSON.encode!(%{"id" => 8, "comments" => [%{"id" => 80}]})
+
+      expect_post_success(
+        server,
+        "/testorg/_apis/git/repositories/test/pullrequests/1/threads",
+        JSON.encode!(%{
+          "comments" => [
+            %{
+              "content" => "first\nsecond",
+              "parentCommentId" => 0,
+              "commentType" => "text"
+            }
+          ],
+          "status" => "active"
+        }),
+        response,
+        fn ->
+          capture_io("first\nsecond\n", fn ->
+            apply(AdoCli.CLI.PullRequests, :add_comment, [
+              %{
+                options: %{
+                  content: "-",
+                  file_path: nil,
+                  line: nil,
+                  thread_id: nil,
+                  comment_id: nil,
+                  status: "active",
+                  json: false
+                },
+                arguments: %{project: "testorg", repo_id: "test", pr_id: 1}
+              }
+            ])
+          end)
+        end
+      )
+    end
+
+    test "halts 1 with a clear error when --content @<missing-file> cannot be read",
+         %{server: server} do
+      missing = "/tmp/ado-missing-#{System.unique_integer([:positive])}.md"
+
+      capture_io(fn ->
+        apply(AdoCli.CLI.PullRequests, :add_comment, [
+          %{
+            options: %{
+              content: "@" <> missing,
+              file_path: nil,
+              line: nil,
+              thread_id: nil,
+              comment_id: nil,
+              status: "active",
+              json: false
+            },
+            arguments: %{project: "testorg", repo_id: "test", pr_id: 1}
+          }
+        ])
+      end)
+
+      assert_receive {:cli_mate_shell, :halt, 1}, 500
+      assert_receive {:cli_mate_shell, :error, msg}, 500
+      assert msg =~ "Cannot read comment file"
+      assert msg =~ missing
+    end
+
+    test "emits a JSON envelope with --json", %{server: server} do
+      response = JSON.encode!(%{"id" => 42, "comments" => [%{"id" => 100}]})
+
+      TestServer.expect(
+        server,
+        "POST",
+        api("/testorg/_apis/git/repositories/test/pullrequests/1/threads"),
+        fn conn -> Plug.Conn.resp(conn, 200, response) end
+      )
+
+      output =
+        capture_io(fn ->
+          apply(AdoCli.CLI.PullRequests, :add_comment, [
+            %{
+              options: %{
+                content: "hi",
+                file_path: nil,
+                line: nil,
+                thread_id: nil,
+                comment_id: nil,
+                status: "active",
+                json: true
+              },
+              arguments: %{project: "testorg", repo_id: "test", pr_id: 1}
+            }
+          ])
+        end)
+
+      assert_receive {:cli_mate_shell, :halt, 0}, 500
+      assert {:ok, decoded} = JSON.decode(String.trim(output))
+      assert decoded["ok"] == true
+      assert decoded["thread_id"] == 42
+      assert decoded["comment_id"] == 100
+    end
+  end
+
+  # ── list_comments --all (prs comments list) ─────────────────────
+
+  describe "list_comments (prs comments list)" do
+    test "halts 0 on success (default view: thread headers only)", %{server: server} do
+      threads =
+        JSON.encode!(%{
+          "value" => [
+            %{
+              "id" => 1,
+              "status" => "active",
+              "comments" => [
+                %{"id" => 10, "author" => %{"displayName" => "alice"}, "content" => "LGTM!"}
+              ]
+            }
+          ]
+        })
+
+      expect_success_json(
+        server,
+        "/testorg/_apis/git/repositories/test/pullRequests/1/threads",
+        threads,
+        fn ->
+          apply(AdoCli.CLI.PullRequests, :list_comments, [
+            %{
+              options: %{json: true, all: false},
+              arguments: %{project: "testorg", repo_id: "test", pr_id: 1}
+            }
+          ])
+        end
+      )
+    end
+
+    test "--all shows file path for inline threads", %{server: server} do
+      threads =
+        JSON.encode!(%{
+          "value" => [
+            %{
+              "id" => 1,
+              "status" => "active",
+              "threadContext" => %{"filePath" => "src/foo.ex"},
+              "comments" => [
+                %{"id" => 10, "author" => %{"displayName" => "alice"}, "content" => "fix me"}
+              ]
+            }
+          ]
+        })
+
+      TestServer.expect(
+        server,
+        "GET",
+        api("/testorg/_apis/git/repositories/test/pullRequests/1/threads"),
+        fn conn -> Plug.Conn.resp(conn, 200, threads) end
+      )
+
+      apply(AdoCli.CLI.PullRequests, :list_comments, [
+        %{
+          options: %{json: false, all: true},
+          arguments: %{project: "testorg", repo_id: "test", pr_id: 1}
+        }
+      ])
+
+      assert_receive {:cli_mate_shell, :halt, 0}, 500
+      output = drain_shell_output()
+      assert output =~ "Thread 1 [active] on src/foo.ex"
+      assert output =~ "fix me"
+    end
+
+    test "--all shows full multi-line content (not truncated)", %{server: server} do
+      long_content = String.duplicate("a", 200)
+
+      threads =
+        JSON.encode!(%{
+          "value" => [
+            %{
+              "id" => 1,
+              "status" => "active",
+              "comments" => [
+                %{"id" => 10, "author" => %{"displayName" => "alice"}, "content" => long_content}
+              ]
+            }
+          ]
+        })
+
+      TestServer.expect(
+        server,
+        "GET",
+        api("/testorg/_apis/git/repositories/test/pullRequests/1/threads"),
+        fn conn -> Plug.Conn.resp(conn, 200, threads) end
+      )
+
+      apply(AdoCli.CLI.PullRequests, :list_comments, [
+        %{
+          options: %{json: false, all: true},
+          arguments: %{project: "testorg", repo_id: "test", pr_id: 1}
+        }
+      ])
+
+      assert_receive {:cli_mate_shell, :halt, 0}, 500
+      output = drain_shell_output()
+      # The 80-char-truncated view would only contain 80 'a's.
+      assert String.contains?(output, long_content)
+    end
+
+    test "--all shows reply markers for parented comments", %{server: server} do
+      threads =
+        JSON.encode!(%{
+          "value" => [
+            %{
+              "id" => 1,
+              "status" => "active",
+              "comments" => [
+                %{
+                  "id" => 10,
+                  "author" => %{"displayName" => "alice"},
+                  "content" => "parent",
+                  "parentCommentId" => 0
+                },
+                %{
+                  "id" => 11,
+                  "author" => %{"displayName" => "bob"},
+                  "content" => "reply",
+                  "parentCommentId" => 10
+                }
+              ]
+            }
+          ]
+        })
+
+      TestServer.expect(
+        server,
+        "GET",
+        api("/testorg/_apis/git/repositories/test/pullRequests/1/threads"),
+        fn conn -> Plug.Conn.resp(conn, 200, threads) end
+      )
+
+      apply(AdoCli.CLI.PullRequests, :list_comments, [
+        %{
+          options: %{json: false, all: true},
+          arguments: %{project: "testorg", repo_id: "test", pr_id: 1}
+        }
+      ])
+
+      assert_receive {:cli_mate_shell, :halt, 0}, 500
+      output = drain_shell_output()
+      assert output =~ "[10] alice:"
+      assert output =~ "[11] (reply to 10) bob:"
+    end
+  end
+
+  # ── update_comment (prs comments update) ─────────────────────────
+
+  describe "update_comment (prs comments update)" do
+    test "halts 1 when neither --content nor --status is given", %{server: server} do
+      capture_io(fn ->
+        apply(AdoCli.CLI.PullRequests, :update_comment, [
+          %{
+            options: %{content: nil, status: nil, json: false},
+            arguments: %{project: "testorg", repo_id: "test", pr_id: 1, thread_id: 5, comment_id: 10}
+          }
+        ])
+      end)
+
+      assert_receive {:cli_mate_shell, :halt, 1}, 500
+      assert_receive {:cli_mate_shell, :error, msg}, 500
+      assert msg =~ "Must pass --content and/or --status"
+    end
+
+    test "PATCHes the comment endpoint with --content (legacy path)", %{server: server} do
+      response = JSON.encode!(%{"id" => 10, "content" => "Updated text"})
+
+      expect_patch_success(
+        server,
+        "/testorg/_apis/git/repositories/test/pullRequests/1/threads/5/comments/10",
+        JSON.encode!(%{"content" => "Updated text"}),
+        response,
+        fn ->
+          apply(AdoCli.CLI.PullRequests, :update_comment, [
+            %{
+              options: %{content: "Updated text", status: nil, json: false},
+              arguments: %{project: "testorg", repo_id: "test", pr_id: 1, thread_id: 5, comment_id: 10}
+            }
+          ])
+        end
+      )
+    end
+
+    test "PATCHes the thread endpoint with --status (no comment call)", %{server: server} do
+      response = JSON.encode!(%{"id" => 5, "status" => "fixed"})
+
+      expect_patch_success(
+        server,
+        "/testorg/_apis/git/repositories/test/pullRequests/1/threads/5",
+        JSON.encode!(%{"status" => "fixed"}),
+        response,
+        fn ->
+          apply(AdoCli.CLI.PullRequests, :update_comment, [
+            %{
+              options: %{content: nil, status: "fixed", json: false},
+              arguments: %{project: "testorg", repo_id: "test", pr_id: 1, thread_id: 5, comment_id: 10}
+            }
+          ])
+        end
+      )
+    end
+
+    test "PATCHes BOTH endpoints with --content and --status", %{server: server} do
+      thread_response = JSON.encode!(%{"id" => 5, "status" => "fixed"})
+      comment_response = JSON.encode!(%{"id" => 10, "content" => "Updated"})
+
+      TestServer.expect(
+        server,
+        "PATCH",
+        api("/testorg/_apis/git/repositories/test/pullRequests/1/threads/5"),
+        fn conn -> Plug.Conn.resp(conn, 200, thread_response) end
+      )
+
+      TestServer.expect(
+        server,
+        "PATCH",
+        api("/testorg/_apis/git/repositories/test/pullRequests/1/threads/5/comments/10"),
+        fn conn -> Plug.Conn.resp(conn, 200, comment_response) end
+      )
+
+      apply(AdoCli.CLI.PullRequests, :update_comment, [
+        %{
+          options: %{content: "Updated", status: "fixed", json: false},
+          arguments: %{project: "testorg", repo_id: "test", pr_id: 1, thread_id: 5, comment_id: 10}
+        }
+      ])
+
+      assert_receive {:cli_mate_shell, :halt, 0}, 500
+    end
+
+    test "halts 1 with a clear error on invalid --status", %{server: server} do
+      capture_io(fn ->
+        apply(AdoCli.CLI.PullRequests, :update_comment, [
+          %{
+            options: %{content: nil, status: "bogus", json: false},
+            arguments: %{project: "testorg", repo_id: "test", pr_id: 1, thread_id: 5, comment_id: 10}
+          }
+        ])
+      end)
+
+      assert_receive {:cli_mate_shell, :halt, 1}, 500
+      assert_receive {:cli_mate_shell, :error, msg}, 500
+      assert msg =~ "Invalid --status 'bogus'"
+      assert msg =~ "active, fixed, wontFix, closed, byDesign"
+    end
+
+    test "reads --content @<file> from a file", %{server: server} do
+      file_content = "Line one.\nLine two.\nLine three.\n"
+      file_path = Path.join(System.tmp_dir!(), "ado_update_#{System.unique_integer([:positive])}.md")
+      File.write!(file_path, file_content)
+      on_exit(fn -> File.rm_rf(file_path) end)
+
+      response = JSON.encode!(%{"id" => 10, "content" => "Line one.\nLine two.\nLine three."})
+
+      expect_patch_success(
+        server,
+        "/testorg/_apis/git/repositories/test/pullRequests/1/threads/5/comments/10",
+        JSON.encode!(%{"content" => "Line one.\nLine two.\nLine three."}),
+        response,
+        fn ->
+          apply(AdoCli.CLI.PullRequests, :update_comment, [
+            %{
+              options: %{content: "@" <> file_path, status: nil, json: false},
+              arguments: %{project: "testorg", repo_id: "test", pr_id: 1, thread_id: 5, comment_id: 10}
+            }
+          ])
+        end
+      )
+    end
+
+    test "reads --content - from stdin", %{server: server} do
+      response = JSON.encode!(%{"id" => 10, "content" => "first\nsecond"})
+
+      TestServer.expect(
+        server,
+        "PATCH",
+        api("/testorg/_apis/git/repositories/test/pullRequests/1/threads/5/comments/10"),
+        fn conn -> Plug.Conn.resp(conn, 200, response) end
+      )
+
+      capture_io("first\nsecond\n", fn ->
+        apply(AdoCli.CLI.PullRequests, :update_comment, [
+          %{
+            options: %{content: "-", status: nil, json: false},
+            arguments: %{project: "testorg", repo_id: "test", pr_id: 1, thread_id: 5, comment_id: 10}
+          }
+        ])
+      end)
+
+      assert_receive {:cli_mate_shell, :halt, 0}, 500
+    end
+
+    test "--dry-run with --content prints the would-be PATCH and halts 0 (no API call)",
+         %{server: server} do
+      output =
+        capture_io(fn ->
+          apply(AdoCli.CLI.PullRequests, :update_comment, [
+            %{
+              options: %{content: "new text", status: nil, dry_run: true, json: false},
+              arguments: %{project: "testorg", repo_id: "test", pr_id: 1, thread_id: 5, comment_id: 10}
+            }
+          ])
+        end)
+
+      assert_receive {:cli_mate_shell, :halt, 0}, 500
+
+      assert {:ok, decoded} = JSON.decode(String.trim(output))
+      assert decoded["ok"] == true
+      assert decoded["dry_run"] == true
+      assert length(decoded["actions"]) == 1
+
+      [action] = decoded["actions"]
+      assert action["method"] == "PATCH"
+
+      assert action["path"] ==
+               "/testorg/_apis/git/repositories/test/pullRequests/1/threads/5/comments/10"
+
+      assert action["body"] == %{"content" => "new text"}
+    end
+
+    test "--dry-run with --status prints the would-be thread PATCH", %{server: server} do
+      output =
+        capture_io(fn ->
+          apply(AdoCli.CLI.PullRequests, :update_comment, [
+            %{
+              options: %{content: nil, status: "fixed", dry_run: true, json: false},
+              arguments: %{project: "testorg", repo_id: "test", pr_id: 1, thread_id: 5, comment_id: 10}
+            }
+          ])
+        end)
+
+      assert_receive {:cli_mate_shell, :halt, 0}, 500
+
+      assert {:ok, decoded} = JSON.decode(String.trim(output))
+      assert length(decoded["actions"]) == 1
+
+      [action] = decoded["actions"]
+      assert action["path"] == "/testorg/_apis/git/repositories/test/pullRequests/1/threads/5"
+      assert action["body"] == %{"status" => "fixed"}
+    end
+
+    test "--resolved-by-me adds resolvedBy to the thread PATCH body", %{server: server} do
+      :erlang.put({AdoCli.Auth, :user_id}, nil)
+      capture_key = {:__test_capture__, :thread_body}
+      :persistent_term.put(capture_key, nil)
+
+      TestServer.expect(
+        server,
+        "GET",
+        api("/_apis/connectionData"),
+        fn conn ->
+          Plug.Conn.resp(conn, 200, ~s({"authenticatedUser":{"id":"user-guid-123"}}))
+        end
+      )
+
+      TestServer.expect(
+        server,
+        "PATCH",
+        api("/testorg/_apis/git/repositories/test/pullRequests/1/threads/5"),
+        fn conn ->
+          {:ok, raw_body, conn} = Plug.Conn.read_body(conn)
+          :persistent_term.put(capture_key, JSON.decode!(raw_body))
+          Plug.Conn.resp(conn, 200, ~s({"id":5,"status":"fixed"}))
+        end
+      )
+
+      apply(AdoCli.CLI.PullRequests, :update_comment, [
+        %{
+          options: %{
+            content: nil,
+            status: "fixed",
+            resolved_by_me: true,
+            json: false
+          },
+          arguments: %{project: "testorg", repo_id: "test", pr_id: 1, thread_id: 5, comment_id: 10}
+        }
+      ])
+
+      assert_receive {:cli_mate_shell, :halt, 0}, 500
+      body = :persistent_term.get(capture_key)
+      assert body == %{"status" => "fixed", "resolvedBy" => %{"id" => "user-guid-123"}}
+    end
+  end
 end
