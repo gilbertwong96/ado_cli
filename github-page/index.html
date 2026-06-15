@@ -7,6 +7,7 @@
   <meta name="description" content="A self-contained, cross-platform Azure DevOps CLI in Elixir. Designed for both humans and LLM agents: structured JSON output, embedded skills, self-discoverable command tree.">
   <link rel="stylesheet" href="style.css">
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>">
+  <script src="assets/shell.js" defer></script>
 </head>
 <body>
   <header>
@@ -36,7 +37,8 @@
       <div class="install-row">
         <div class="install-cmd">
           <span class="label">macOS / Linux</span>
-          <pre><code>brew install ado</code></pre>
+          <pre><code>curl -L -o ado https://github.com/gilbertwong96/ado_cli/releases/latest/download/ado-$(uname | tr A-Z a-z)-$(uname -m)
+chmod +x ado &amp;&amp; sudo mv ado /usr/local/bin/</code></pre>
         </div>
         <div class="install-cmd">
           <span class="label">npm (all platforms)</span>
@@ -45,7 +47,7 @@
         <div class="install-cmd">
           <span class="label">from source</span>
           <pre><code>git clone https://github.com/gilbertwong96/ado_cli
-cd ado_cli && mix deps.get && mix escript.build
+cd ado_cli &amp;&amp; mix deps.get &amp;&amp; mix escript.build
 cp ado /usr/local/bin/</code></pre>
         </div>
       </div>
@@ -143,7 +145,7 @@ cp ado /usr/local/bin/</code></pre>
 
       <h3>Try it: structured output in one command</h3>
       <div class="code-block">
-<pre><code>$ <strong>ado projects list --json</strong>
+<pre><code><span class="prompt">$</span> <strong>ado projects list --json</strong>
 {
   "ok": true,
   "count": 3,
@@ -157,7 +159,7 @@ cp ado /usr/local/bin/</code></pre>
 
       <h3>Errors that agents can match on</h3>
       <div class="code-block">
-<pre><code>$ <strong>ado projects show nonexistent --json</strong>
+<pre><code><span class="prompt">$</span> <strong>ado projects show nonexistent --json</strong>
 {
   "ok": false,
   "error": {
@@ -188,7 +190,7 @@ cp ado /usr/local/bin/</code></pre>
       </p>
 
       <div class="code-block">
-<pre><code>$ <strong>ado skills install</strong>
+<pre><code><span class="prompt">$</span> <strong>ado skills install</strong>
 
   Installing 3 skills to 4 target(s):
     - pi:     ~/.pi/agent/skills
@@ -223,7 +225,7 @@ ado_cli/  ado_auth/  ado_ci/</code></pre>
       <h3>Or — discover dynamically</h3>
       <p>Agents that don't install skills can still discover the full surface in one call:</p>
       <div class="code-block">
-<pre><code>$ <strong>ado schema --json</strong> | jq '.schema.subcommands | length'
+<pre><code><span class="prompt">$</span> <strong>ado schema --json</strong> | jq '.schema.subcommands | length'
 28
 
 $ <strong>ado schema ci watch --json</strong> | jq '.schema.options[].name'
@@ -240,17 +242,16 @@ $ <strong>ado schema ci watch --json</strong> | jq '.schema.options[].name'
       <h2>Install</h2>
       <div class="grid install-grid">
         <div class="card">
-          <h3>🍺 Homebrew <span class="soon">(coming soon)</span></h3>
-          <pre><code>brew install ado</code></pre>
+          <h3>📥 GitHub Releases <span class="recommended">(recommended)</span></h3>
+          <p>Download the binary for your platform from the
+          <a href="https://github.com/gilbertwong96/ado_cli/releases/latest">latest release</a>.</p>
+          <pre><code>curl -L -o ado https://github.com/gilbertwong96/ado_cli/releases/latest/download/ado-0.1.0-macos-aarch64
+chmod +x ado
+sudo mv ado /usr/local/bin/</code></pre>
         </div>
         <div class="card">
           <h3>📦 npm</h3>
           <pre><code>npm install -g @gilbertwong1996/ado</code></pre>
-        </div>
-        <div class="card">
-          <h3>📥 GitHub Releases</h3>
-          <p>Download the binary for your platform from the
-          <a href="https://github.com/gilbertwong96/ado_cli/releases/latest">latest release</a>.</p>
         </div>
         <div class="card">
           <h3>🔨 From source</h3>
@@ -261,6 +262,7 @@ mix escript.build
 cp ado /usr/local/bin/</code></pre>
         </div>
       </div>
+      <p class="platform-note">Available for macOS (arm64 + x86_64), Linux (x86_64 + aarch64), and Windows (x86_64). One self-contained binary, no runtime dependencies.</p>
     </div>
   </section>
 
