@@ -8,10 +8,26 @@ defmodule AdoCli.CLI.PullRequests do
     ado_cli prs create PROJECT REPO        --title TITLE --source BRANCH --target BRANCH [--description DESC]
     ado_cli prs complete PROJECT REPO PR_ID [--delete-source]
     ado_cli prs abandon PROJECT REPO PR_ID
+    ado_cli prs comments list PROJECT REPO PR_ID [--all]
+    ado_cli prs comments add PROJECT REPO PR_ID --content TEXT|@FILE|-
+        [--file-path PATH --line N] [--thread-id TID] [--status STATUS] [--json]
+    ado_cli prs comments update PROJECT REPO PR_ID THREAD_ID COMMENT_ID
+        [--content TEXT|@FILE|-] [--status STATUS] [--resolved-by-me] [--dry-run] [--json]
 
   `prs diff` lists changed files by default (path, change type, +/- counts),
   or shows the full unified diff for a specific path with --file, or emits
   a single concatenated unified diff with --unified.
+  `prs comments add` creates a new thread by default; pass `--thread-id` to reply.
+  `--content` accepts `@path/to/file.md` (read from file) or `-` (read from stdin)
+  for multi-line comments. `--status` sets the new thread's status
+  (active, fixed, wontFix, closed, byDesign; default active).
+  `prs comments list --all` expands the listing to show full comment content
+  and the file path for inline threads.
+  `prs comments update` edits a comment (via `--content`) and/or changes a
+  thread's status (via `--status`). At least one of the two must be set.
+  `--resolved-by-me` auto-attributes the status change to the
+  authenticated user. `--dry-run` prints the would-be request(s) without
+  making any network calls.
   """
 
   @behaviour CliMate.CLI.Command
@@ -189,11 +205,21 @@ defmodule AdoCli.CLI.PullRequests do
                 repo_id: [type: :string, doc: "Repository name or ID"],
                 pr_id: [type: :integer, doc: "Pull request ID"]
               ],
+              options: [
+                all: [
+                  type: :boolean,
+                  default: false,
+                  doc: "Show full comment content and file context (not just thread headers)"
+                ]
+              ],
               execute: &list_comments/1
             ],
             update: [
               name: "ado prs comments update",
-              doc: "Update a review comment.",
+              doc:
+                "Update a comment or thread. Pass --content to edit a comment, " <>
+                  "--status to change a thread's resolution state, or both. " <>
+                  "--content supports @<file> and - (stdin) for multi-line input.",
               arguments: [
                 project: [type: :string, doc: "Project name or ID"],
                 repo_id: [type: :string, doc: "Repository name or ID"],
@@ -204,12 +230,83 @@ defmodule AdoCli.CLI.PullRequests do
               options: [
                 content: [
                   type: :string,
-                  doc: "New comment content",
-                  required: true,
+                  doc:
+                    "New comment content. Supports @<file> to read from a file " <>
+                      "or - to read from stdin. Omit to update status only.",
                   doc_arg: "TEXT"
-                ]
+                ],
+                status: [
+                  type: :string,
+                  doc: "New thread status: active, fixed, wontFix, closed, byDesign. Omit to update content only.",
+                  doc_arg: "STATUS"
+                ],
+                resolved_by_me: [
+                  type: :boolean,
+                  default: false,
+                  doc:
+                    "When --status is set, also set the thread's resolvedBy " <>
+                      "field to the currently-authenticated user's GUID. " <>
+                      "Makes an extra GET to /_apis/connectionData to look up your ID."
+                ],
+                dry_run: [
+                  type: :boolean,
+                  default: false,
+                  doc:
+                    "Print the API request(s) that would be made (method, path, body) " <>
+                      "as JSON, then exit. Makes no network calls."
+                ],
+                json: [type: :boolean, default: false, doc: "Output as JSON envelope"]
               ],
               execute: &update_comment/1
+            ],
+            add: [
+              name: "ado prs comments add",
+              doc:
+                "Add a review comment to a pull request. " <>
+                  "By default creates a new thread; pass --thread-id to reply to an existing one.",
+              arguments: [
+                project: [type: :string, doc: "Project name or ID"],
+                repo_id: [type: :string, doc: "Repository name or ID"],
+                pr_id: [type: :integer, doc: "Pull request ID"]
+              ],
+              options: [
+                content: [
+                  type: :string,
+                  required: true,
+                  doc: "Comment text (markdown allowed)",
+                  doc_arg: "TEXT"
+                ],
+                file_path: [
+                  type: :string,
+                  doc: "File path for an inline comment (e.g. 'src/foo.ex')",
+                  doc_arg: "PATH"
+                ],
+                line: [
+                  type: :integer,
+                  doc: "Line number for an inline comment (requires --file-path)",
+                  doc_arg: "N"
+                ],
+                thread_id: [
+                  type: :integer,
+                  doc: "Reply to an existing thread (the comment is added to this thread)",
+                  doc_arg: "THREAD_ID"
+                ],
+                comment_id: [
+                  type: :integer,
+                  doc:
+                    "Parent comment to reply to (requires --thread-id). " <>
+                      "Use 0 to start a new comment in the thread.",
+                  doc_arg: "COMMENT_ID"
+                ],
+                status: [
+                  type: :string,
+                  default: "active",
+                  doc: "Thread status when creating: active, fixed, wontFix, closed, byDesign",
+                  doc_arg: "STATUS"
+                ],
+                json: [type: :boolean, default: false, doc: "Output as JSON envelope"]
+              ],
+              execute: &add_comment/1
             ]
           ]
         ]
@@ -219,6 +316,8 @@ defmodule AdoCli.CLI.PullRequests do
 
   @impl true
   def execute(parsed), do: if(parsed.execute, do: parsed.execute.())
+
+  @valid_statuses ~w(active fixed wontFix closed byDesign)
 
   # ── Read ──────────────────────────────────────────────────────────────
 
@@ -410,6 +509,26 @@ defmodule AdoCli.CLI.PullRequests do
     end
   end
 
+  @doc """
+  Show the diff for a pull request.
+
+  Three modes:
+
+    * Default: list of changed files (path, change type, +/- counts)
+    * `--file PATH`: full unified diff for one path
+    * `--unified`: a single concatenated unified diff stream
+
+  Uses `GET /pullRequests/{prId}/iterations` to find the latest
+  iteration (or the one specified by `--iteration`), then
+  `GET /iterations/{i}/changes` to get the list of changes, then
+  `GET /iterations/{i}/changes/{changeId}` for full diff content
+  (only used in `--file` and `--unified` modes).
+
+  The `--file` lookup is an exact match on the change's
+  `item.path` field (the path returned by the API, which includes
+  a leading `/`). The match strips the leading `/` from both
+  sides so users can pass either form.
+  """
   def diff_pr(parsed) do
     json? = Map.get(parsed.options, :json, false) == true
     file = Map.get(parsed.options, :file)
@@ -798,12 +917,18 @@ defmodule AdoCli.CLI.PullRequests do
 
   def list_comments(parsed) do
     path = comments_path(parsed)
+    all? = Map.get(parsed.options, :all, false)
 
     case Client.list(path) do
       {:ok, threads} ->
         Helpers.json_or_format(threads, parsed, fn threads ->
           writeln("")
-          Enum.each(threads, &print_thread/1)
+
+          if all? do
+            Enum.each(threads, &print_thread_full/1)
+          else
+            Enum.each(threads, &print_thread/1)
+          end
         end)
 
       {:error, reason} ->
@@ -840,20 +965,492 @@ defmodule AdoCli.CLI.PullRequests do
     writeln("    [#{cid}] #{author}: #{String.slice(content, 0, 80)}")
   end
 
-  def update_comment(parsed) do
-    path = comment_path(parsed)
-    body = %{"content" => parsed.options.content}
+  # Expanded view used by `prs comments list --all`. Shows the
+  # file path (for inline threads) and the full multi-line
+  # comment content with each line indented.
+  defp print_thread_full(thread) do
+    id = thread["id"]
+    status = thread["status"] || "unknown"
+    file_path = get_in(thread, ["threadContext", "filePath"])
 
-    case Client.patch(path, body) do
-      {:ok, _} ->
-        success("Comment #{parsed.arguments.comment_id} updated.\n\n")
+    if file_path do
+      writeln("  Thread #{id} [#{status}] on #{file_path}")
+    else
+      writeln("  Thread #{id} [#{status}]")
+    end
+
+    case thread["comments"] do
+      nil -> :ok
+      comments -> Enum.each(comments, &print_comment_full/1)
+    end
+
+    writeln("")
+  end
+
+  defp print_comment_full(comment) do
+    author = (comment["author"] && comment["author"]["displayName"]) || "unknown"
+    content = comment["content"] || ""
+    cid = comment["id"]
+    parent_id = comment["parentCommentId"]
+
+    if parent_id && parent_id > 0 do
+      writeln("    [#{cid}] (reply to #{parent_id}) #{author}:")
+    else
+      writeln("    [#{cid}] #{author}:")
+    end
+
+    # Indent each line of the comment body. Empty lines stay empty
+    # (no extra indent) so the block reads naturally.
+    content
+    |> String.split("\n")
+    |> Enum.each(fn
+      "" -> writeln("")
+      line -> writeln("      #{line}")
+    end)
+  end
+
+  def update_comment(parsed) do
+    raw_content = Map.get(parsed.options, :content)
+    raw_status = Map.get(parsed.options, :status)
+    wants_content? = raw_content_present?(parsed)
+    wants_status? = is_binary(raw_status) and raw_status != ""
+    dry_run? = Map.get(parsed.options, :dry_run, false) == true
+    json? = json?(parsed)
+
+    cond do
+      not wants_content? and not wants_status? ->
+        halt_error(
+          "Must pass --content and/or --status. Pass --content to edit a comment, " <>
+            "--status to change a thread's resolution state, or both."
+        )
+
+      true ->
+        # Validate / resolve inputs first so we can fail fast
+        # before making any network call.
+        case resolve_content(raw_content || "") do
+          {:ok, content} ->
+            case validate_status(raw_status || "") do
+              {:ok, status} ->
+                do_update(parsed, content, status, wants_content?, wants_status?, json?, dry_run?)
+
+              {:error, message} ->
+                halt_error(message)
+            end
+
+          {:error, message} ->
+            halt_error(message)
+        end
+    end
+  end
+
+  # True iff the user passed --content on the command line.
+  # We can't infer this from the resolved content (which may be
+  # an empty string after stripping newlines), so we look at the
+  # raw value.
+  defp raw_content_present?(parsed) do
+    case Map.get(parsed.options, :content) do
+      nil -> false
+      "" -> false
+      _ -> true
+    end
+  end
+
+  defp json?(parsed), do: Map.get(parsed.options, :json, false) == true
+
+  defp do_update(parsed, content, status, wants_content?, wants_status?, json?, dry_run?) do
+    # Pre-fetch the user ID upfront (cached on subsequent
+    # calls) so a network failure shows up as a clear error
+    # BEFORE any other API call is made — including the
+    # dry-run path, which would otherwise silently produce a
+    # body without `resolvedBy` when the lookup fails.
+    with :ok <- ensure_user_resolved(parsed) do
+      # --dry-run short-circuits everything: build the would-be
+      # request(s) and print them, then exit cleanly. No network
+      # calls.
+      if dry_run? do
+        print_dry_run(parsed, content, status, wants_content?, wants_status?, json?)
+      else
+        do_real_update(parsed, content, status, wants_content?, wants_status?, json?)
+      end
+    end
+  end
+
+  # Print the PATCH request(s) that would be made, as a JSON
+  # envelope, then exit. Honors --json (or always emits JSON
+  # for the dry-run envelope, since it's a machine-readable
+  # preview either way).
+  defp print_dry_run(parsed, content, status, wants_content?, wants_status?, json?) do
+    actions = build_dry_run_actions(parsed, content, status, wants_content?, wants_status?)
+
+    payload = %{ok: true, dry_run: true, actions: actions}
+
+    # Dry-run output is always JSON: it's a machine-readable
+    # preview meant to be piped to jq / inspected by LLMs.
+    # The --json flag is accepted but redundant.
+    _ = json?
+    IO.puts(JSON.encode!(payload))
+    halt(0)
+  end
+
+  defp build_dry_run_actions(parsed, content, status, wants_content?, wants_status?) do
+    thread_path = thread_path(parsed)
+    comment_path = comment_path(parsed)
+
+    cond do
+      wants_content? and wants_status? ->
+        [
+          %{method: "PATCH", path: thread_path, body: build_thread_body(parsed, status)},
+          %{method: "PATCH", path: comment_path, body: %{"content" => content}}
+        ]
+
+      wants_content? ->
+        [%{method: "PATCH", path: comment_path, body: %{"content" => content}}]
+
+      wants_status? ->
+        [%{method: "PATCH", path: thread_path, body: build_thread_body(parsed, status)}]
+    end
+  end
+
+  defp do_real_update(parsed, content, status, wants_content?, wants_status?, json?) do
+    # The user ID has been pre-fetched (or wasn't needed) by
+    # `ensure_user_resolved/1` in `do_update/7`, so it's safe
+    # to call `build_thread_body/2` here without an extra
+    # network call.
+    cond do
+      wants_content? and wants_status? ->
+        # PATCH both endpoints. Status first (cheap), then content.
+        # If either fails we surface the first error and stop.
+        with {:ok, thread} <- Client.patch(thread_path(parsed), build_thread_body(parsed, status)),
+             {:ok, comment} <- Client.patch(comment_path(parsed), %{"content" => content}) do
+          render_update_result(parsed, thread, comment, "Comment and thread status updated.", json?)
+        else
+          {:error, _reason} = err ->
+            Helpers.handle_api_result(err, parsed, nil)
+        end
+
+      wants_content? ->
+        case Client.patch(comment_path(parsed), %{"content" => content}) do
+          {:ok, comment} ->
+            render_update_result(parsed, nil, comment, "Comment updated.", json?)
+
+          {:error, reason} ->
+            Helpers.handle_api_result({:error, reason}, parsed, nil)
+        end
+
+      wants_status? ->
+        case Client.patch(thread_path(parsed), build_thread_body(parsed, status)) do
+          {:ok, thread} ->
+            render_update_result(parsed, thread, nil, "Thread status updated.", json?)
+
+          {:error, reason} ->
+            Helpers.handle_api_result({:error, reason}, parsed, nil)
+        end
+    end
+  end
+
+  # Returns :ok on success, or halts with an error if the user
+  # lookup fails. Returns `:error` to short-circuit the caller
+  # (see `with` in `do_update/7`).
+  defp ensure_user_resolved(parsed) do
+    if Map.get(parsed.options, :resolved_by_me, false) == true do
+      case AdoCli.Auth.current_user_id() do
+        {:ok, _} -> :ok
+        {:error, reason} -> halt_error("Cannot resolve thread as current user: #{reason}")
+      end
+    else
+      :ok
+    end
+  end
+
+  # Build the thread body for both dry-run and real updates.
+  # If --resolved-by-me is set, also include the authenticated
+  # user's GUID as resolvedBy.id. The user ID is cached on
+  # the first lookup (see AdoCli.Auth.current_user_id/0).
+  defp build_thread_body(parsed, status) do
+    if Map.get(parsed.options, :resolved_by_me, false) == true do
+      case AdoCli.Auth.current_user_id() do
+        {:ok, user_id} -> %{"status" => status, "resolvedBy" => %{"id" => user_id}}
+        _ -> %{"status" => status}
+      end
+    else
+      %{"status" => status}
+    end
+  end
+
+  # Format the update result either as plain text (for humans) or
+  # as a JSON envelope (for LLM agents).
+  #
+  # `thread` is the PATCH /threads/{tid} response, or nil if
+  # the caller only updated the comment. `comment` is the
+  # PATCH /threads/{tid}/comments/{cid} response, or nil if
+  # the caller only updated the thread status.
+  defp render_update_result(parsed, thread, comment, fallback_msg, json?) do
+    thread_id = if thread, do: thread["id"], else: parsed.arguments.thread_id
+    comment_id = if comment, do: comment["id"], else: parsed.arguments.comment_id
+    new_status = if thread, do: thread["status"], else: nil
+
+    if json? do
+      IO.puts(
+        JSON.encode!(%{
+          ok: true,
+          thread_id: thread_id,
+          comment_id: comment_id,
+          status: new_status,
+          message: fallback_msg
+        })
+      )
+    else
+      writeln(fallback_msg)
+
+      if new_status do
+        writeln("  thread_id: #{thread_id}")
+        writeln("  status:    #{new_status}")
+      end
+
+      if comment do
+        writeln("  comment_id: #{comment_id}")
+      end
+    end
+
+    halt(0)
+  end
+
+  @doc """
+  Add a review comment to a pull request.
+
+  Three modes:
+    * New general thread: just --content (no file context)
+    * New inline thread: --content + --file-path + --line
+    * Reply to existing thread: --content + --thread-id
+
+  See https://learn.microsoft.com/en-us/rest/azure/devops/git/pull-request-threads
+  """
+  def add_comment(parsed) do
+    case resolve_content(Map.get(parsed.options, :content, "")) do
+      {:ok, content} ->
+        add_comment_with_content(parsed, content)
+
+      {:error, message} ->
+        halt_error(message)
+    end
+  end
+
+  defp add_comment_with_content(parsed, content) do
+    raw_status = Map.get(parsed.options, :status, "active")
+
+    case validate_status(raw_status) do
+      {:ok, status} ->
+        json? = Map.get(parsed.options, :json, false)
+        file_path = Map.get(parsed.options, :file_path)
+        line = Map.get(parsed.options, :line)
+        thread_id = Map.get(parsed.options, :thread_id)
+        parent_comment_id = Map.get(parsed.options, :comment_id, 0) || 0
+
+        cond do
+          thread_id ->
+            # Reply mode: POST a new comment to an existing thread
+            do_reply_to_thread(parsed, thread_id, content, parent_comment_id, json?)
+
+          file_path && line ->
+            # New inline thread: POST a new thread with file/line context
+            do_new_inline_thread(parsed, content, file_path, line, status, json?)
+
+          true ->
+            # New general thread: POST a new thread with no file context
+            do_new_general_thread(parsed, content, status, json?)
+        end
+
+      {:error, message} ->
+        halt_error(message)
+    end
+  end
+
+  @doc """
+  Resolve the --content argument.
+
+    resolve_content("hello")            => {:ok, "hello"}
+    resolve_content("@/path/file.md")  => {:ok, "file contents"} | {:error, "..."}
+    resolve_content("-")                => {:ok, "stdin contents"} | {:error, "..."}
+
+  Leading and trailing newlines are stripped from file/stdin
+  content so the API doesn't see a trailing blank line.
+
+  Returns `{:error, message}` if a referenced file can't be
+  read, or if `--content @` is passed without a path. The
+  caller should `halt_error/1` and bail out in that case.
+  """
+  def resolve_content(""), do: {:ok, ""}
+
+  def resolve_content(content) when content == "-",
+    do: {:ok, read_stdin_content()}
+
+  # `--content @<path>` reads from a file. A bare `@` (no path)
+  # is also treated as a read-from-file — the path would be "",
+  # which is always missing, so the call will fail with a clear
+  # error. This strict interpretation keeps the contract simple
+  # (anything starting with `@` is a file reference).
+  def resolve_content("@"), do: read_file_content("")
+  def resolve_content("@" <> path), do: read_file_content(path)
+  def resolve_content(content), do: {:ok, content}
+
+  defp read_stdin_content do
+    case IO.read(:stdio, :all) do
+      {:error, _} -> ""
+      content when is_binary(content) -> strip_trailing_newlines(content)
+    end
+  end
+
+  defp read_file_content(path) do
+    case File.read(path) do
+      {:ok, content} -> {:ok, strip_trailing_newlines(content)}
+      {:error, reason} ->
+        {:error, "Cannot read comment file '#{path}': #{:file.format_error(reason)}"}
+    end
+  end
+
+  defp strip_trailing_newlines(content) do
+    String.replace(content, ~r/\n+\z/, "")
+  end
+
+  @doc """
+  Validate the --status argument.
+
+    validate_status("")           => {:ok, "active"}
+    validate_status("active")     => {:ok, "active"}
+    validate_status("bogus")      => {:error, "Invalid --status 'bogus'. ..."}
+
+  Returns a tagged tuple rather than halting on error so the
+  caller can decide how to react. (In tests, `halt_error/1`
+  doesn't actually halt — it just sends a message — so we
+  can't use it as a no-return guard without leaking the
+  message tuple into the rest of the function.)
+  """
+  def validate_status(""), do: {:ok, "active"}
+  def validate_status(status) when status in @valid_statuses, do: {:ok, status}
+
+  def validate_status(status) do
+    {:error,
+     "Invalid --status '#{status}'. Must be one of: #{Enum.join(@valid_statuses, ", ")}."}
+  end
+
+  defp do_reply_to_thread(parsed, thread_id, content, parent_comment_id, json?) do
+    project = URI.encode(parsed.arguments.project)
+    repo_id = URI.encode(parsed.arguments.repo_id)
+    pr_id = parsed.arguments.pr_id
+
+    path =
+      "/#{project}/_apis/git/repositories/#{repo_id}/pullrequests/#{pr_id}/threads/#{thread_id}/comments"
+
+    body = %{
+      "content" => content,
+      "parentCommentId" => parent_comment_id,
+      "commentType" => "text"
+    }
+
+    case Client.post(path, body) do
+      {:ok, result} ->
+        render_add_result(result, "Reply added to thread #{thread_id}.", json?)
 
       {:error, reason} ->
         Helpers.handle_api_result({:error, reason}, parsed, nil)
     end
-
-    halt_success("Done.")
   end
+
+  defp do_new_inline_thread(parsed, content, file_path, line, status, json?) do
+    project = URI.encode(parsed.arguments.project)
+    repo_id = URI.encode(parsed.arguments.repo_id)
+    pr_id = parsed.arguments.pr_id
+
+    path = "/#{project}/_apis/git/repositories/#{repo_id}/pullrequests/#{pr_id}/threads"
+
+    body = %{
+      "comments" => [
+        %{
+          "content" => content,
+          "parentCommentId" => 0,
+          "commentType" => "text"
+        }
+      ],
+      "status" => status,
+      "threadContext" => %{
+        "filePath" => file_path,
+        "leftFileStart" => %{"line" => line, "offset" => 1},
+        "leftFileEnd" => %{"line" => line, "offset" => 2}
+      }
+    }
+
+    case Client.post(path, body) do
+      {:ok, result} ->
+        render_add_result(result, "Comment added to #{file_path}:#{line}.", json?)
+
+      {:error, reason} ->
+        Helpers.handle_api_result({:error, reason}, parsed, nil)
+    end
+  end
+
+  defp do_new_general_thread(parsed, content, status, json?) do
+    project = URI.encode(parsed.arguments.project)
+    repo_id = URI.encode(parsed.arguments.repo_id)
+    pr_id = parsed.arguments.pr_id
+
+    path = "/#{project}/_apis/git/repositories/#{repo_id}/pullrequests/#{pr_id}/threads"
+
+    body = %{
+      "comments" => [
+        %{
+          "content" => content,
+          "parentCommentId" => 0,
+          "commentType" => "text"
+        }
+      ],
+      "status" => status
+    }
+
+    case Client.post(path, body) do
+      {:ok, result} ->
+        render_add_result(result, "Comment added.", json?)
+
+      {:error, reason} ->
+        Helpers.handle_api_result({:error, reason}, parsed, nil)
+    end
+  end
+
+  # Format the API result either as plain text (for humans) or as
+  # a JSON envelope (for LLM agents).
+  defp render_add_result(result, fallback_msg, json?) do
+    case result do
+      thread when is_map(thread) ->
+        thread_id = thread["id"]
+        comment_id = first_comment_id(thread)
+
+        if json? do
+          # Use IO.puts + halt(0) directly (not writeln + halt_success)
+          # to keep the JSON envelope free of ANSI color codes and
+          # extra :info messages. Same pattern as AdoCli.CLI.Output.ok/4.
+          IO.puts(
+            JSON.encode!(%{
+              ok: true,
+              thread_id: thread_id,
+              comment_id: comment_id,
+              message: fallback_msg
+            })
+          )
+        else
+          writeln(fallback_msg)
+          writeln("  thread_id:  #{thread_id}")
+          writeln("  comment_id: #{comment_id}")
+        end
+
+        halt(0)
+
+      _ ->
+        writeln(fallback_msg)
+        halt(0)
+    end
+  end
+
+  defp first_comment_id(%{"comments" => [%{"id" => id} | _]}), do: id
+  defp first_comment_id(_), do: nil
 
   defp comment_path(parsed) do
     project = URI.encode(parsed.arguments.project)
@@ -863,5 +1460,17 @@ defmodule AdoCli.CLI.PullRequests do
     comment_id = parsed.arguments.comment_id
 
     "/#{project}/_apis/git/repositories/#{repo_id}/pullRequests/#{pr_id}/threads/#{thread_id}/comments/#{comment_id}"
+  end
+
+  # Thread-level endpoint (no comment_id). Used to update the
+  # thread's status (`active` / `fixed` / `wontFix` / `closed` /
+  # `byDesign`).
+  defp thread_path(parsed) do
+    project = URI.encode(parsed.arguments.project)
+    repo_id = URI.encode(parsed.arguments.repo_id)
+    pr_id = parsed.arguments.pr_id
+    thread_id = parsed.arguments.thread_id
+
+    "/#{project}/_apis/git/repositories/#{repo_id}/pullRequests/#{pr_id}/threads/#{thread_id}"
   end
 end
