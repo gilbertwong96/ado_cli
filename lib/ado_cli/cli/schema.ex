@@ -67,7 +67,7 @@ defmodule AdoCli.CLI.Schema do
     target = get_in(parsed.arguments, [:name])
 
     tree = build_tree(target)
-    version = current_version()
+    version = AdoCli.Version.current()
 
     if json? do
       payload = Map.put(tree, "version", version)
@@ -79,35 +79,6 @@ defmodule AdoCli.CLI.Schema do
     end
 
     halt(0)
-  end
-
-  # Get the version. Works in both dev (via Mix.Project) and escript/Burrito
-  # (via Application.spec/0). Falls back to "unknown" if neither works.
-  defp current_version do
-    cond do
-      mix_project?() ->
-        mix_project_version()
-
-      Application.spec(:ado_cli, :vsn) != :undefined ->
-        to_string(Application.spec(:ado_cli, :vsn))
-
-      true ->
-        "unknown"
-    end
-  end
-
-  # Mix.Project is only available in dev/test environments where the
-  # Mix task is loaded. In escript/Burrito builds, Code.ensure_loaded?
-  # returns false and we fall through to Application.spec/1.
-  defp mix_project? do
-    Code.ensure_loaded?(Mix.Project) and function_exported?(Mix.Project, :config, 0)
-  end
-
-  defp mix_project_version do
-    case Mix.Project.config()[:version] do
-      nil -> "unknown"
-      version -> to_string(version)
-    end
   end
 
   # ── tree building ────────────────────────────────────────────────────

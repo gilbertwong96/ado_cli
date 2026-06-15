@@ -50,6 +50,7 @@ defmodule AdoCli.CLI do
   alias AdoCli.CLI.Skills
   alias AdoCli.CLI.Teams
   alias AdoCli.CLI.Users
+  alias AdoCli.CLI.Version
   alias AdoCli.CLI.Whoami
   alias AdoCli.CLI.Wikis
   alias AdoCli.CLI.WorkItems
@@ -85,6 +86,7 @@ defmodule AdoCli.CLI do
       login: AuthCommands,
       logout: Logout,
       whoami: Whoami,
+      version: Version,
       ci: CI,
       schema: Schema,
       "agent-pools": AgentPools,
@@ -140,6 +142,18 @@ defmodule AdoCli.CLI do
   calling the resolved sub-command's execute closure.
   """
   def run(args) do
+    # Short-circuit `--version` before CliMate sees it. Otherwise it
+    # would dump the full help text. This is the standard CLI
+    # convention (git, npm, cargo all do this).
+    #
+    # Use System.halt/1 instead of CliMate's halt/1 because the
+    # latter requires a configured shell, which the test harness
+    # doesn't have set up. System.halt/1 works in all contexts.
+    if "--version" in args do
+      IO.puts("ado #{AdoCli.Version.current()}")
+      System.halt(0)
+    end
+
     parsed = parse_or_halt!(args, @command)
 
     # Apply global options to runtime env for auth resolution
