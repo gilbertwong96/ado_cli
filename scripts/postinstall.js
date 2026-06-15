@@ -1,19 +1,28 @@
 #!/usr/bin/env node
-// ado npm postinstall — auto-installs shell completion.
+// ado npm postinstall — auto-installs (and uninstalls) shell completion.
 //
-// Runs after `npm install -g @gilbertwong1996/ado`. Detects the
-// user's shell, generates the right completion script, and
-// installs it to the standard auto-load location for that shell
-// (e.g. ~/.config/fish/completions/ado.fish, ~/.zsh/completions/_ado,
-// ~/.local/share/bash-completion/completions/ado). For shells that
-// need an explicit fpath/source line in the user's shell config
-// (zsh, powershell), appends the line to the config file.
+// Two modes, selected by argv or env:
+//   * Default:  install completion after `npm install -g`
+//   * --uninstall:  remove completion when triggered by
+//                   `npm uninstall -g @gilbertwong1996/ado`
 //
-// Honors the ADO_NO_COMPLETION env var to opt out:
+// Install mode: detects the user's shell, generates the right
+// completion script, and installs it to the standard auto-load
+// location for that shell (e.g. ~/.config/fish/completions/ado.fish,
+// ~/.zsh/completions/_ado, ~/.local/share/bash-completion/completions/ado).
+// For shells that need an explicit fpath/source line in the user's
+// shell config (zsh, powershell), appends the line to the config file.
+//
+// Uninstall mode: reverses the install — deletes the completion
+// file and removes the appended lines from the user's shell config
+// (using the same marker line that the install wrote). Idempotent
+// and safe to run even if the install was never done.
+//
+// Honors the ADO_NO_COMPLETION env var to opt out of install:
 //   ADO_NO_COMPLETION=1 npm install -g @gilbertwong1996/ado
 //
-// Idempotent: re-running just refreshes the completion script.
-// Skips re-appending the config line if it's already there.
+// Idempotent: re-running the install just refreshes the completion
+// script. Skips re-appending the config line if it's already there.
 //
 // Note: stdout from the postinstall is shown by npm to the user
 // (unless --silent). We use stdout for the success messages and
@@ -251,9 +260,198 @@ function appendLines(filePath, lines) {
   return { added: true, path: filePath };
 }
 
+// Remove a block of lines that was previously appended by
+// `appendLines/2`. Idempotent: returns `{ skipped: ... }` if the
+// file doesn't exist, the marker isn't found, or there's nothing
+// to remove.
+//
+// We look for the marker line and then drop the next (blockSize - 1)
+// lines as well, plus the trailing blank line if present. This
+// preserves the original spacing in the user's config file.
+//
+// Args:
+//   filePath  — path to the user's shell config (e.g. ~/.zshrc)
+//   marker    — the first line of the block to remove
+//   blockSize — total number of lines in the block (including the
+//               marker). E.g. zsh's block is 3 lines:
+//               [marker, 'fpath=...', 'autoload -U compinit ...']
+function removeConfigBlock(filePath, marker, blockSize) {
+  if (!fs.existsSync(filePath)) {
+    return { skipped: true, reason: 'no config file' };
+  }
+
+  const original = fs.readFileSync(filePath, 'utf8');
+  const lines = original.split('\n');
+  const markerIdx = lines.findIndex((l) => l === marker);
+
+  if (markerIdx === -1) {
+    return { skipped: true, reason: 'not configured' };
+  }
+
+  // Walk backwards from the marker to absorb the leading blank
+  // line that `appendLines/2` always inserts before the block
+  // (so the block reads as a separate paragraph in the file).
+  let startIdx = markerIdx;
+  if (startIdx > 0 && lines[startIdx - 1] === '') {
+    startIdx -= 1;
+  }
+
+  // Walk forwards to absorb the trailing blank line (the
+  // `appendLines/2` join ends with '\n', which produces a blank
+  // line after the block when split on '\n').
+  let endIdx = markerIdx + blockSize; // exclusive
+  if (endIdx < lines.length && lines[endIdx] === '') {
+    endIdx += 1;
+  }
+
+  // Splice out [startIdx, endIdx).
+  const newLines = lines.slice(0, startIdx).concat(lines.slice(endIdx));
+
+  // If we removed the last non-blank line of the file, the
+  // trailing newline would also be gone and the file would end
+  // with a stray blank line. Strip a single trailing blank line
+  // if the result ends with one.
+  while (newLines.length > 0 && newLines[newLines.length - 1] === '') {
+    newLines.pop();
+  }
+  newLines.push(''); // Re-add the final newline terminator
+
+  fs.writeFileSync(filePath, newLines.join('\n'), 'utf8');
+  return { removed: true, path: filePath };
+}
+
+// Same, but for the powershell case where the install wrote only
+// a single line (`. '<ps1Path>'`) without a marker comment. The
+// path is what the line sources, so we reconstruct the expected
+// line and remove it if present.
+function removeShellSourceLine(filePath, sourceLine) {
+  if (!fs.existsSync(filePath)) {
+    return { skipped: true, reason: 'no config file' };
+  }
+
+  const original = fs.readFileSync(filePath, 'utf8');
+  const lines = original.split('\n');
+  const lineIdx = lines.findIndex((l) => l === sourceLine);
+
+  if (lineIdx === -1) {
+    return { skipped: true, reason: 'not configured' };
+  }
+
+  // Same blank-line handling as removeConfigBlock, but for a single
+  // line.
+  let startIdx = lineIdx;
+  if (startIdx > 0 && lines[startIdx - 1] === '') {
+    startIdx -= 1;
+  }
+  let endIdx = lineIdx + 1;
+  if (endIdx < lines.length && lines[endIdx] === '') {
+    endIdx += 1;
+  }
+
+  const newLines = lines.slice(0, startIdx).concat(lines.slice(endIdx));
+  while (newLines.length > 0 && newLines[newLines.length - 1] === '') {
+    newLines.pop();
+  }
+  newLines.push('');
+
+  fs.writeFileSync(filePath, newLines.join('\n'), 'utf8');
+  return { removed: true, path: filePath };
+}
+
+// ── Mode dispatch ────────────────────────────────────────────────────
+
+// npm doesn't pass --uninstall to the script directly, so we also
+// honor the npm_lifecycle_event env var. Either signal flips the
+// script into uninstall mode.
+function isUninstallMode() {
+  return (
+    process.argv.includes('--uninstall') ||
+    process.env.npm_lifecycle_event === 'uninstall'
+  );
+}
+
+function uninstall() {
+  const shell = detectShell();
+  const cfg = SHELL_CONFIG[shell];
+
+  if (!cfg) {
+    console.log(
+      `ado: detected shell '${shell}' — no completion to remove.`
+    );
+    return;
+  }
+
+  console.log(`ado: detected shell '${shell}' (uninstalling completion)`);
+
+  // 1. Delete the completion script file (if any).
+  //    We don't fail if it's missing — the user may have
+  //    manually deleted it, or ADO_NO_COMPLETION=1 was set at
+  //    install time so nothing was ever written.
+  try {
+    if (fs.existsSync(cfg.installPath)) {
+      fs.unlinkSync(cfg.installPath);
+      console.log(`ado: removed ${cfg.installPath}`);
+    } else {
+      console.log(
+        `ado: no completion file at ${cfg.installPath} (already gone?)`
+      );
+    }
+  } catch (err) {
+    console.error(
+      `ado: failed to remove ${cfg.installPath}: ${err.message}`
+    );
+  }
+
+  // 2. Remove the appended lines from the user's shell config.
+  //    We handle both formats:
+  //      (a) the zsh multi-line block written by `appendLines/2`
+  //          with the marker comment as its first line
+  //      (b) the powershell single-line source line (`. '<ps1Path>'`)
+  //          written by `appendLine/2` — which the older install
+  //          path produced without a marker
+  if (cfg.needsConfigEdit && cfg.configPath) {
+    if (shell === 'zsh') {
+      const result = removeConfigBlock(
+        cfg.configPath,
+        cfg.configMarker,
+        cfg.configLines.length
+      );
+      if (result.removed) {
+        console.log(`ado: removed completion block from ${result.path}`);
+      } else {
+        console.log(
+          `ado: ${cfg.configPath} has no completion block (${result.reason})`
+        );
+      }
+    } else if (shell === 'powershell') {
+      // The .ps1 file is gone (step 1), so we just need to drop
+      // the `. '<ps1Path>'` line from $PROFILE. We compute the
+      // same path string the install would have written.
+      const ps1Path = cfg.installPath;
+      const sourceLine = `. '${ps1Path.replace(/'/g, "''")}'`;
+      const result = removeShellSourceLine(cfg.configPath, sourceLine);
+      if (result.removed) {
+        console.log(`ado: removed . line from ${result.path}`);
+      } else {
+        console.log(
+          `ado: ${cfg.configPath} has no . line (${result.reason})`
+        );
+      }
+    }
+  }
+
+  console.log('');
+  console.log('ado: shell completion removed!');
+  console.log('     Restart your shell to clear the loaded completion.');
+}
+
 // ── Main ─────────────────────────────────────────────────────────────
 
 function main() {
+  if (isUninstallMode()) {
+    return uninstall();
+  }
+
   // Opt-out
   if (process.env.ADO_NO_COMPLETION === '1') {
     console.log(
@@ -309,7 +507,8 @@ function main() {
       );
     } else if (configResult.skipped) {
       console.log(
-        `ado: shell config already has completion loader (${configResult.reason})`
+        'ado: shell config already has completion loader ' +
+          `(${configResult.reason})`
       );
     }
   }
