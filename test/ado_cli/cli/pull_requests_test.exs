@@ -184,6 +184,7 @@ defmodule AdoCli.CLI.PullRequestsTest do
   describe "diff_pr (prs diff)" do
     test "halts 0 on success (default view: file list)", %{server: server} do
       iterations_body = ~s({"value":[{"id":1,"number":1}]})
+
       changes_body =
         JSON.encode!(%{
           "value" => [
@@ -232,6 +233,7 @@ defmodule AdoCli.CLI.PullRequestsTest do
 
     test "halts 0 with --json (file list as JSON envelope)", %{server: server} do
       iterations_body = ~s({"value":[{"id":2}]})
+
       changes_body =
         JSON.encode!(%{
           "value" => [
@@ -275,20 +277,23 @@ defmodule AdoCli.CLI.PullRequestsTest do
       assert decoded["count"] == 1
       assert decoded["total_additions"] == 3
       assert decoded["total_deletions"] == 1
-      assert length(decoded["changes"]) == 1
+      assert match?([_], decoded["changes"])
       assert hd(decoded["changes"])["path"] == "/README.md"
       assert hd(decoded["changes"])["change_type"] == "edit"
     end
 
     test "fetches the full diff with --file", %{server: server} do
       iterations_body = ~s({"value":[{"id":1}]})
+
       changes_body =
         JSON.encode!(%{
           "value" => [
             %{"changeId" => 101, "changeType" => 2, "item" => %{"path" => "/src/foo.ex"}}
           ]
         })
-      diff_content = "@@ -1,3 +1,5 @@\\n defmodule Foo do\\n+  @moduledoc\\n+  New doc\\n   def hello\\n end\\n"
+
+      diff_content =
+        "@@ -1,3 +1,5 @@\\n defmodule Foo do\\n+  @moduledoc\\n+  New doc\\n   def hello\\n end\\n"
 
       TestServer.expect(
         server,
@@ -328,6 +333,7 @@ defmodule AdoCli.CLI.PullRequestsTest do
 
     test "strips leading slash when matching --file", %{server: server} do
       iterations_body = ~s({"value":[{"id":1}]})
+
       changes_body =
         JSON.encode!(%{
           "value" => [
@@ -372,6 +378,7 @@ defmodule AdoCli.CLI.PullRequestsTest do
 
     test "halts 1 with a clear error when --file matches no change", %{server: server} do
       iterations_body = ~s({"value":[{"id":1}]})
+
       changes_body =
         JSON.encode!(%{
           "value" => [
@@ -453,6 +460,7 @@ defmodule AdoCli.CLI.PullRequestsTest do
 
     test "--unified emits all file diffs concatenated", %{server: server} do
       iterations_body = ~s({"value":[{"id":1}]})
+
       changes_body =
         JSON.encode!(%{
           "value" => [
@@ -557,7 +565,7 @@ defmodule AdoCli.CLI.PullRequestsTest do
       {:cli_mate_shell, :error, _} -> drain_shell_output(acc)
       {:cli_mate_shell, :warn, _} -> drain_shell_output(acc)
     after
-      100 -> acc |> Enum.reverse() |> Enum.join("")
+      100 -> acc |> Enum.reverse() |> Enum.join()
     end
   end
 
@@ -707,7 +715,10 @@ defmodule AdoCli.CLI.PullRequestsTest do
 
     test "reads --content @<file> from a file", %{server: server} do
       file_content = "Line one.\nLine two.\nLine three.\n"
-      file_path = Path.join(System.tmp_dir!(), "ado_comment_#{System.unique_integer([:positive])}.md")
+
+      file_path =
+        Path.join(System.tmp_dir!(), "ado_comment_#{System.unique_integer([:positive])}.md")
+
       File.write!(file_path, file_content)
       on_exit(fn -> File.rm_rf(file_path) end)
 
@@ -1004,7 +1015,13 @@ defmodule AdoCli.CLI.PullRequestsTest do
         apply(AdoCli.CLI.PullRequests, :update_comment, [
           %{
             options: %{content: nil, status: nil, json: false},
-            arguments: %{project: "testorg", repo_id: "test", pr_id: 1, thread_id: 5, comment_id: 10}
+            arguments: %{
+              project: "testorg",
+              repo_id: "test",
+              pr_id: 1,
+              thread_id: 5,
+              comment_id: 10
+            }
           }
         ])
       end)
@@ -1026,7 +1043,13 @@ defmodule AdoCli.CLI.PullRequestsTest do
           apply(AdoCli.CLI.PullRequests, :update_comment, [
             %{
               options: %{content: "Updated text", status: nil, json: false},
-              arguments: %{project: "testorg", repo_id: "test", pr_id: 1, thread_id: 5, comment_id: 10}
+              arguments: %{
+                project: "testorg",
+                repo_id: "test",
+                pr_id: 1,
+                thread_id: 5,
+                comment_id: 10
+              }
             }
           ])
         end
@@ -1045,7 +1068,13 @@ defmodule AdoCli.CLI.PullRequestsTest do
           apply(AdoCli.CLI.PullRequests, :update_comment, [
             %{
               options: %{content: nil, status: "fixed", json: false},
-              arguments: %{project: "testorg", repo_id: "test", pr_id: 1, thread_id: 5, comment_id: 10}
+              arguments: %{
+                project: "testorg",
+                repo_id: "test",
+                pr_id: 1,
+                thread_id: 5,
+                comment_id: 10
+              }
             }
           ])
         end
@@ -1073,7 +1102,13 @@ defmodule AdoCli.CLI.PullRequestsTest do
       apply(AdoCli.CLI.PullRequests, :update_comment, [
         %{
           options: %{content: "Updated", status: "fixed", json: false},
-          arguments: %{project: "testorg", repo_id: "test", pr_id: 1, thread_id: 5, comment_id: 10}
+          arguments: %{
+            project: "testorg",
+            repo_id: "test",
+            pr_id: 1,
+            thread_id: 5,
+            comment_id: 10
+          }
         }
       ])
 
@@ -1085,7 +1120,13 @@ defmodule AdoCli.CLI.PullRequestsTest do
         apply(AdoCli.CLI.PullRequests, :update_comment, [
           %{
             options: %{content: nil, status: "bogus", json: false},
-            arguments: %{project: "testorg", repo_id: "test", pr_id: 1, thread_id: 5, comment_id: 10}
+            arguments: %{
+              project: "testorg",
+              repo_id: "test",
+              pr_id: 1,
+              thread_id: 5,
+              comment_id: 10
+            }
           }
         ])
       end)
@@ -1098,7 +1139,10 @@ defmodule AdoCli.CLI.PullRequestsTest do
 
     test "reads --content @<file> from a file", %{server: server} do
       file_content = "Line one.\nLine two.\nLine three.\n"
-      file_path = Path.join(System.tmp_dir!(), "ado_update_#{System.unique_integer([:positive])}.md")
+
+      file_path =
+        Path.join(System.tmp_dir!(), "ado_update_#{System.unique_integer([:positive])}.md")
+
       File.write!(file_path, file_content)
       on_exit(fn -> File.rm_rf(file_path) end)
 
@@ -1113,7 +1157,13 @@ defmodule AdoCli.CLI.PullRequestsTest do
           apply(AdoCli.CLI.PullRequests, :update_comment, [
             %{
               options: %{content: "@" <> file_path, status: nil, json: false},
-              arguments: %{project: "testorg", repo_id: "test", pr_id: 1, thread_id: 5, comment_id: 10}
+              arguments: %{
+                project: "testorg",
+                repo_id: "test",
+                pr_id: 1,
+                thread_id: 5,
+                comment_id: 10
+              }
             }
           ])
         end
@@ -1134,7 +1184,13 @@ defmodule AdoCli.CLI.PullRequestsTest do
         apply(AdoCli.CLI.PullRequests, :update_comment, [
           %{
             options: %{content: "-", status: nil, json: false},
-            arguments: %{project: "testorg", repo_id: "test", pr_id: 1, thread_id: 5, comment_id: 10}
+            arguments: %{
+              project: "testorg",
+              repo_id: "test",
+              pr_id: 1,
+              thread_id: 5,
+              comment_id: 10
+            }
           }
         ])
       end)
@@ -1149,7 +1205,13 @@ defmodule AdoCli.CLI.PullRequestsTest do
           apply(AdoCli.CLI.PullRequests, :update_comment, [
             %{
               options: %{content: "new text", status: nil, dry_run: true, json: false},
-              arguments: %{project: "testorg", repo_id: "test", pr_id: 1, thread_id: 5, comment_id: 10}
+              arguments: %{
+                project: "testorg",
+                repo_id: "test",
+                pr_id: 1,
+                thread_id: 5,
+                comment_id: 10
+              }
             }
           ])
         end)
@@ -1159,7 +1221,7 @@ defmodule AdoCli.CLI.PullRequestsTest do
       assert {:ok, decoded} = JSON.decode(String.trim(output))
       assert decoded["ok"] == true
       assert decoded["dry_run"] == true
-      assert length(decoded["actions"]) == 1
+      assert match?([_], decoded["actions"])
 
       [action] = decoded["actions"]
       assert action["method"] == "PATCH"
@@ -1176,7 +1238,13 @@ defmodule AdoCli.CLI.PullRequestsTest do
           apply(AdoCli.CLI.PullRequests, :update_comment, [
             %{
               options: %{content: nil, status: "fixed", dry_run: true, json: false},
-              arguments: %{project: "testorg", repo_id: "test", pr_id: 1, thread_id: 5, comment_id: 10}
+              arguments: %{
+                project: "testorg",
+                repo_id: "test",
+                pr_id: 1,
+                thread_id: 5,
+                comment_id: 10
+              }
             }
           ])
         end)
@@ -1184,7 +1252,7 @@ defmodule AdoCli.CLI.PullRequestsTest do
       assert_receive {:cli_mate_shell, :halt, 0}, 500
 
       assert {:ok, decoded} = JSON.decode(String.trim(output))
-      assert length(decoded["actions"]) == 1
+      assert match?([_], decoded["actions"])
 
       [action] = decoded["actions"]
       assert action["path"] == "/testorg/_apis/git/repositories/test/pullRequests/1/threads/5"
@@ -1224,7 +1292,13 @@ defmodule AdoCli.CLI.PullRequestsTest do
             resolved_by_me: true,
             json: false
           },
-          arguments: %{project: "testorg", repo_id: "test", pr_id: 1, thread_id: 5, comment_id: 10}
+          arguments: %{
+            project: "testorg",
+            repo_id: "test",
+            pr_id: 1,
+            thread_id: 5,
+            comment_id: 10
+          }
         }
       ])
 

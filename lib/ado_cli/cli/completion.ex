@@ -126,7 +126,10 @@ defmodule AdoCli.CLI.Completion do
     if shell_str in @supported_shells do
       :ok
     else
-      halt_error("Unknown shell '#{shell_str}'. Must be one of: #{Enum.join(@supported_shells, ", ")}.")
+      halt_error(
+        "Unknown shell '#{shell_str}'. Must be one of: #{Enum.join(@supported_shells, ", ")}."
+      )
+
       :halted
     end
   end
@@ -155,9 +158,10 @@ defmodule AdoCli.CLI.Completion do
   # atom keys. For our string-keyed access below, normalize
   # each node to have string keys (and recurse into nested maps
   # and lists).
+  defp normalize(nil), do: %{}
+
   defp normalize(tree) do
-    tree
-    |> Enum.into(%{}, fn {k, v} -> {to_string(k), normalize_value(v)} end)
+    Map.new(tree, fn {k, v} -> {to_string(k), normalize_value(v)} end)
   end
 
   defp normalize_value(v) when is_map(v) and not is_struct(v), do: normalize(v)
@@ -177,16 +181,21 @@ defmodule AdoCli.CLI.Completion do
   """
   @spec generate(String.t(), map()) :: String.t()
   def generate(shell, tree) do
-    tree = normalize(tree || %{})
-
-    case shell do
-      "bash" -> generate_bash(tree["subcommands"] || [])
-      "zsh" -> generate_zsh(tree["subcommands"] || [])
-      "fish" -> generate_fish(tree["subcommands"] || [])
-      "powershell" -> generate_powershell(tree["subcommands"] || [])
-      other -> raise ArgumentError, "Unknown shell: #{other}"
-    end
+    subs = tree |> normalize() |> Map.get("subcommands", [])
+    dispatch(shell, subs)
   end
+
+  # Shell-specific generator dispatch. Using multiple function
+  # clauses (instead of a 5-branch case) keeps the cyclomatic
+  # complexity of each function low, and the compiler can verify
+  # each generator is actually used.
+  defp dispatch("bash", subs), do: generate_bash(subs)
+  defp dispatch("zsh", subs), do: generate_zsh(subs)
+  defp dispatch("fish", subs), do: generate_fish(subs)
+  defp dispatch("powershell", subs), do: generate_powershell(subs)
+
+  defp dispatch(other, _subs),
+    do: raise(ArgumentError, "Unknown shell: #{other}")
 
   @doc """
   Normalizes and validates a shell name from user input.
@@ -251,7 +260,6 @@ defmodule AdoCli.CLI.Completion do
         local cur prev words cword
         _init_completion || return
 
-        # Build the current subcommand path (skip flags)
         local path=""
         local i
         for ((i = 1; i < cword; i++)); do
@@ -283,26 +291,24 @@ defmodule AdoCli.CLI.Completion do
     # parent passed to recursive call: no leading space, just the path
     children = children_of(sub)
 
-    cond do
-      children == [] ->
-        """
-            "#{case_path}")
-                COMPREPLY=()
-                ;;
+    if children == [] do
+      """
+          "#{case_path}")
+              COMPREPLY=()
+              ;;
 
-        """
+      """
+    else
+      child_names = Enum.map(children, &last_segment(&1["name"] || ""))
+      nested = Enum.map_join(children, "\n", &bash_case(&1, join_path(parent, name)))
 
-      true ->
-        child_names = Enum.map(children, &last_segment(&1["name"] || ""))
-        nested = Enum.map_join(children, "\n", &bash_case(&1, join_path(parent, name)))
+      """
+          "#{case_path}")
+              COMPREPLY=($(compgen -W "#{Enum.join(child_names, " ")}" -- "$cur"))
+              ;;
 
-        """
-            "#{case_path}")
-                COMPREPLY=($(compgen -W "#{Enum.join(child_names, " ")}" -- "$cur"))
-                ;;
-
-        #{nested}
-        """
+      #{nested}
+      """
     end
   end
 
@@ -364,28 +370,26 @@ defmodule AdoCli.CLI.Completion do
       children = children_of(sub)
       indent_str = String.duplicate("    ", depth)
 
-      cond do
-        children == [] ->
-          # Leaf: just dispatch to the leaf's _describe
-          doc = shell_escape(sub["doc"] || "")
+      if children == [] do
+        # Leaf: just dispatch to the leaf's _describe
+        doc = shell_escape(sub["doc"] || "")
 
-          """
-          #{indent_str}#{name})
-          #{indent_str}    commands=( '#{name}:#{doc}' )
-          #{indent_str}    _describe '#{name}' commands
-          #{indent_str}    ;;
-          """
+        """
+        #{indent_str}#{name})
+        #{indent_str}    commands=( '#{name}:#{doc}' )
+        #{indent_str}    _describe '#{name}' commands
+        #{indent_str}    ;;
+        """
+      else
+        child_dispatch = zsh_dispatch_block(children, depth + 1)
 
-        true ->
-          child_dispatch = zsh_dispatch_block(children, depth + 1)
-
-          """
-          #{indent_str}#{name})
-          #{indent_str}    case $words[2] in
-          #{indent(child_dispatch, 12)}
-          #{indent_str}    esac
-          #{indent_str}    ;;
-          """
+        """
+        #{indent_str}#{name})
+        #{indent_str}    case $words[2] in
+        #{indent(child_dispatch, 12)}
+        #{indent_str}    esac
+        #{indent_str}    ;;
+        """
       end
     end)
   end
@@ -426,20 +430,18 @@ defmodule AdoCli.CLI.Completion do
     full_parent = join_path(parent, name)
     children = children_of(sub)
 
-    cond do
-      children == [] ->
-        # Leaf node - this completes the path. No further candidates.
-        ""
+    if children == [] do
+      # Leaf node - this completes the path. No further candidates.
+      ""
+    else
+      child_names = Enum.map(children, &last_segment(&1["name"] || ""))
+      nested_blocks = Enum.map_join(children, "\n", &fish_block(&1, full_parent))
 
-      true ->
-        child_names = Enum.map(children, &last_segment(&1["name"] || ""))
-        nested_blocks = Enum.map_join(children, "\n", &fish_block(&1, full_parent))
-
-        """
-        complete -c ado -f -n "__fish_seen_subcommand_from #{full_parent}" \\
-            -a "#{Enum.join(child_names, " ")}"
-        #{nested_blocks}
-        """
+      """
+      complete -c ado -f -n "__fish_seen_subcommand_from #{full_parent}" \\
+          -a "#{Enum.join(child_names, " ")}"
+      #{nested_blocks}
+      """
     end
   end
 
@@ -483,8 +485,6 @@ defmodule AdoCli.CLI.Completion do
         $null = [System.Management.Automation.language.Parser]::ParseInput(
             $commandAst.ToString(), [ref]$tokens)
 
-        # Build the current subcommand path (skip flag-style words
-        # and the command name itself).
         $path = @()
         foreach ($token in $tokens) {
             if ($token.TokenFlags -band [TokenFlags]::CommandName) {
@@ -530,21 +530,22 @@ defmodule AdoCli.CLI.Completion do
   defp powershell_flatten(subcommands, parent_path, acc) do
     Enum.reduce(subcommands, acc, fn sub, acc ->
       name = last_segment(sub["name"] || "")
-      current_path = parent_path ++ [name]
+      # Prepend (O(1)) rather than append (O(n)) — but the path
+      # ends up reversed, so we reverse it again when building the
+      # entry. (`parent_path` itself is already in the correct
+      # order because the previous call reversed it.)
+      current_path = Enum.reverse([name | parent_path])
       children = children_of(sub)
 
-      acc =
+      extra =
         if children != [] do
           child_names = Enum.map(children, &last_segment(&1["name"] || ""))
-          # Add entry: when the user has typed `current_path`, here
-          # are the next-level candidates.
-          [%{path: current_path, candidates: child_names} | acc]
+          [%{path: current_path, candidates: child_names}]
         else
-          acc
+          []
         end
 
-      # Recurse into children, extending the parent path.
-      powershell_flatten(children, current_path, acc)
+      powershell_flatten(children, current_path, extra ++ acc)
     end)
   end
 
@@ -560,17 +561,20 @@ defmodule AdoCli.CLI.Completion do
 
   defp indent(text, spaces) do
     prefix = String.duplicate(" ", spaces)
+    sep = "\n"
 
     text
-    |> String.split("\n")
-    |> Enum.map(fn line -> if(line == "", do: line, else: prefix <> line) end)
-    |> Enum.join("\n")
+    |> String.split(sep)
+    |> Enum.map_join(sep, fn line -> if(line == "", do: line, else: prefix <> line) end)
   end
 
   # Escape a string for use in a single-quoted shell context.
+  # Single quotes inside are doubled ('' -> '''') and newlines are
+  # collapsed to spaces (shells don't support multi-line single-quoted
+  # strings without escaping).
   defp shell_escape(text) do
     text
-    |> String.replace("'", "'\\''")
+    |> String.replace("'", "''")
     |> String.replace("\n", " ")
   end
 end
