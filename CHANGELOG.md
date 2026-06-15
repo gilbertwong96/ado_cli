@@ -49,8 +49,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
       (method, path, body) and exits without making any network calls
     * `--json` emits a structured envelope
 
-> Note: unit tests for the comments subcommands above were lost
-> during a debug session and will be re-added in a follow-up commit.
 - **`ado prs comments add`** for adding/replying to PR review comments.
   Three modes:
     * General thread: `ado prs comments add PROJ REPO PR --content "LGTM!"`
