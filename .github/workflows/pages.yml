@@ -1,0 +1,59 @@
+name: Deploy GitHub Pages
+
+# Deploys github-page/ to GitHub Pages on every push to main.
+#
+# Workflow:
+#   1. On push to main, run on ubuntu-latest
+#   2. actions/checkout@v6 fetches the source
+#   3. actions/configure-pages@v5 sets up the Pages env (URL, build dir)
+#   4. actions/upload-pages-artifact@v3 bundles github-page/ as a Pages artifact
+#   5. actions/deploy-pages@v4 deploys the artifact to the Pages environment
+#
+# After the first successful run, the site is live at:
+#   https://<org>.github.io/<repo>/
+#
+# For custom domain, add a CNAME file in github-page/ (not done here).
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'github-page/**'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+# Required to allow deployment to the github-pages environment
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Avoid concurrent deploys (each push triggers a build + deploy)
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Pages
+        id: pages
+        uses: actions/configure-pages@v5
+
+      - name: Build Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          # github-page/ is the static-site source directory.
+          # No build step needed — files are served as-is.
+          path: github-page
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
