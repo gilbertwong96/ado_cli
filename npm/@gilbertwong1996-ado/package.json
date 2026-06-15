@@ -23,8 +23,12 @@
   "bin": {
     "ado": "bin/ado"
   },
+  "scripts": {
+    "postinstall": "node scripts/postinstall.js"
+  },
   "files": [
     "bin/ado",
+    "scripts/postinstall.js",
     "README.md",
     "LICENSE"
   ],
