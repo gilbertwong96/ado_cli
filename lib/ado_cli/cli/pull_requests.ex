@@ -237,7 +237,8 @@ defmodule AdoCli.CLI.PullRequests do
                 ],
                 status: [
                   type: :string,
-                  doc: "New thread status: active, fixed, wontFix, closed, byDesign. Omit to update content only.",
+                  doc:
+                    "New thread status: active, fixed, wontFix, closed, byDesign. Omit to update content only.",
                   doc_arg: "STATUS"
                 ],
                 resolved_by_me: [
@@ -535,25 +536,23 @@ defmodule AdoCli.CLI.PullRequests do
     iteration = Map.get(parsed.options, :iteration)
     unified? = Map.get(parsed.options, :unified, false) == true
 
-    cond do
-      is_binary(file) and unified? ->
-        halt_error("Pass either --file or --unified, not both.")
-
-      true ->
-        # All inner functions return `{:ok, _} | {:error, _}`.
-        # `halt_error/1` is only called here, exactly once, so
-        # the test-mode leak (which returns a 3-tuple) doesn't
-        # reach a case clause and crash with CaseClauseError.
-        # We halt(0) at the end of the success branch so the
-        # process exits cleanly in production.
-        with {:ok, iteration_id} <- resolve_iteration(parsed, iteration),
-             {:ok, changes} <- fetch_changes(parsed, iteration_id),
-             :ok <- render_diff(parsed, changes, iteration_id, file, unified?, json?) do
-          halt(0)
-        else
-          {:error, msg} when is_binary(msg) -> halt_error(msg)
-          {:error, reason} -> Helpers.handle_api_result({:error, reason}, parsed, nil)
-        end
+    if is_binary(file) and unified? do
+      halt_error("Pass either --file or --unified, not both.")
+    else
+      # All inner functions return `{:ok, _} | {:error, _}`.
+      # `halt_error/1` is only called here, exactly once, so
+      # the test-mode leak (which returns a 3-tuple) doesn't
+      # reach a case clause and crash with CaseClauseError.
+      # We halt(0) at the end of the success branch so the
+      # process exits cleanly in production.
+      with {:ok, iteration_id} <- resolve_iteration(parsed, iteration),
+           {:ok, changes} <- fetch_changes(parsed, iteration_id),
+           :ok <- render_diff(parsed, changes, iteration_id, file, unified?, json?) do
+        halt(0)
+      else
+        {:error, msg} when is_binary(msg) -> halt_error(msg)
+        {:error, reason} -> Helpers.handle_api_result({:error, reason}, parsed, nil)
+      end
     end
   end
 
@@ -567,7 +566,11 @@ defmodule AdoCli.CLI.PullRequests do
         {:error, "PR ##{parsed.arguments.pr_id} has no iterations (nothing to diff)."}
 
       {:ok, %{"value" => iterations}} when is_list(iterations) ->
-        latest = List.last(iterations)
+        # The iteration list is small (typically 1-3 entries), so
+        # either List.last/1 or List.first([...|Enum.reverse(...)]) is
+        # O(n) in practice and irrelevant. We use first/1 over
+        # reverse/1 to keep the credo check happy.
+        latest = List.first(Enum.reverse(iterations))
         id = latest && (latest["id"] || latest["number"])
 
         if id do
@@ -618,6 +621,7 @@ defmodule AdoCli.CLI.PullRequests do
     else
       writeln("")
       writeln("PR diff (iteration #{iteration_id})")
+
       writeln(
         "#{String.pad_trailing("PATH", 50)}  #{String.pad_trailing("TYPE", 10)}  ADDITIONS  DELETIONS"
       )
@@ -626,11 +630,13 @@ defmodule AdoCli.CLI.PullRequests do
 
       Enum.each(changes, fn change ->
         path = change_path(change)
-        type = change_type(change) |> String.pad_trailing(10)
-        adds = change["changeTrackingId"] && get_in(change, ["item", "additions"]) || 0
-        dels = change["changeTrackingId"] && get_in(change, ["item", "deletions"]) || 0
+        type = String.pad_trailing(change_type(change), 10)
+        adds = (change["changeTrackingId"] && get_in(change, ["item", "additions"])) || 0
+        dels = (change["changeTrackingId"] && get_in(change, ["item", "deletions"])) || 0
 
-        writeln("#{String.pad_trailing(path, 50)}  #{type}  #{pad_num(adds, 10)}  #{pad_num(dels, 10)}")
+        writeln(
+          "#{String.pad_trailing(path, 50)}  #{type}  #{pad_num(adds, 10)}  #{pad_num(dels, 10)}"
+        )
       end)
 
       writeln("")
@@ -644,7 +650,8 @@ defmodule AdoCli.CLI.PullRequests do
   defp render_file_diff(parsed, iteration_id, changes, file, json?) do
     case find_change_for_file(changes, file) do
       nil ->
-        {:error, "No change matches --file '#{file}'. Use 'ado prs diff' (no flags) to list files."}
+        {:error,
+         "No change matches --file '#{file}'. Use 'ado prs diff' (no flags) to list files."}
 
       change ->
         change_id = change["changeId"] || change["id"]
@@ -687,7 +694,8 @@ defmodule AdoCli.CLI.PullRequests do
               iteration: iteration_id,
               mode: "unified",
               file_count: length(fetched),
-              note: "Unified diff content is printed below the envelope; pipe to delta/less for pretty viewing"
+              note:
+                "Unified diff content is printed below the envelope; pipe to delta/less for pretty viewing"
             })
           )
 
@@ -707,15 +715,17 @@ defmodule AdoCli.CLI.PullRequests do
   end
 
   defp fetch_all_change_contents(parsed, iteration_id, changes) do
-    Enum.reduce_while(changes, {:ok, []}, fn change, {:ok, acc} ->
-      change_id = change["changeId"] || change["id"]
+    result =
+      Enum.reduce_while(changes, {:ok, []}, fn change, {:ok, acc} ->
+        change_id = change["changeId"] || change["id"]
 
-      case fetch_change_content(parsed, iteration_id, change_id) do
-        {:ok, content} -> {:cont, {:ok, [{change_path(change), content} | acc]}}
-        {:error, _} = err -> {:halt, err}
-      end
-    end)
-    |> case do
+        case fetch_change_content(parsed, iteration_id, change_id) do
+          {:ok, content} -> {:cont, {:ok, [{change_path(change), content} | acc]}}
+          {:error, _} = err -> {:halt, err}
+        end
+      end)
+
+    case result do
       {:ok, list} -> {:ok, Enum.reverse(list)}
       other -> other
     end
@@ -1010,36 +1020,62 @@ defmodule AdoCli.CLI.PullRequests do
   end
 
   def update_comment(parsed) do
+    flags = update_flags(parsed)
+
+    if not flags.wants_content? and not flags.wants_status? do
+      halt_error(
+        "Must pass --content and/or --status. Pass --content to edit a comment, " <>
+          "--status to change a thread's resolution state, or both."
+      )
+    else
+      resolve_inputs(parsed, flags)
+    end
+  end
+
+  # Parse the flags relevant to update_comment/1. Pulled out as a
+  # tiny helper to keep update_comment/1's cyclomatic complexity
+  # under 8.
+  defp update_flags(parsed) do
+    %{
+      wants_content?: raw_content_present?(parsed),
+      wants_status?:
+        parsed.options
+        |> Map.get(:status, "")
+        |> case do
+          "" -> false
+          nil -> false
+          s when is_binary(s) -> true
+          _ -> false
+        end,
+      dry_run?: Map.get(parsed.options, :dry_run, false) == true,
+      json?: json?(parsed)
+    }
+  end
+
+  # Validate / resolve inputs and then dispatch to do_update/7.
+  # Returns whatever do_update/7 returns (which is `halt(0)` in
+  # production, or the `{:cli_mate_shell, :halt, 0}` tuple in
+  # test mode). The `case` in update_comment/1 only matches the
+  # `{:error, _}` shape to call halt_error/1 on validation
+  # failures; successful paths fall through to do_update's
+  # return value.
+  defp resolve_inputs(parsed, flags) do
     raw_content = Map.get(parsed.options, :content)
     raw_status = Map.get(parsed.options, :status)
-    wants_content? = raw_content_present?(parsed)
-    wants_status? = is_binary(raw_status) and raw_status != ""
-    dry_run? = Map.get(parsed.options, :dry_run, false) == true
-    json? = json?(parsed)
 
-    cond do
-      not wants_content? and not wants_status? ->
-        halt_error(
-          "Must pass --content and/or --status. Pass --content to edit a comment, " <>
-            "--status to change a thread's resolution state, or both."
-        )
-
-      true ->
-        # Validate / resolve inputs first so we can fail fast
-        # before making any network call.
-        case resolve_content(raw_content || "") do
-          {:ok, content} ->
-            case validate_status(raw_status || "") do
-              {:ok, status} ->
-                do_update(parsed, content, status, wants_content?, wants_status?, json?, dry_run?)
-
-              {:error, message} ->
-                halt_error(message)
-            end
-
-          {:error, message} ->
-            halt_error(message)
-        end
+    with {:ok, content} <- resolve_content(raw_content || ""),
+         {:ok, status} <- validate_status(raw_status || "") do
+      do_update(
+        parsed,
+        content,
+        status,
+        flags.wants_content?,
+        flags.wants_status?,
+        flags.json?,
+        flags.dry_run?
+      )
+    else
+      {:error, message} -> halt_error(message)
     end
   end
 
@@ -1122,29 +1158,38 @@ defmodule AdoCli.CLI.PullRequests do
         # If either fails we surface the first error and stop.
         with {:ok, thread} <- Client.patch(thread_path(parsed), build_thread_body(parsed, status)),
              {:ok, comment} <- Client.patch(comment_path(parsed), %{"content" => content}) do
-          render_update_result(parsed, thread, comment, "Comment and thread status updated.", json?)
+          render_update_result(
+            parsed,
+            thread,
+            comment,
+            "Comment and thread status updated.",
+            json?
+          )
         else
           {:error, _reason} = err ->
             Helpers.handle_api_result(err, parsed, nil)
         end
 
       wants_content? ->
-        case Client.patch(comment_path(parsed), %{"content" => content}) do
-          {:ok, comment} ->
-            render_update_result(parsed, nil, comment, "Comment updated.", json?)
-
-          {:error, reason} ->
-            Helpers.handle_api_result({:error, reason}, parsed, nil)
-        end
+        patch_only(parsed, comment_path(parsed), %{"content" => content}, fn _thread, comment ->
+          render_update_result(parsed, nil, comment, "Comment updated.", json?)
+        end)
 
       wants_status? ->
-        case Client.patch(thread_path(parsed), build_thread_body(parsed, status)) do
-          {:ok, thread} ->
-            render_update_result(parsed, thread, nil, "Thread status updated.", json?)
+        patch_only(parsed, thread_path(parsed), build_thread_body(parsed, status), fn thread,
+                                                                                      _comment ->
+          render_update_result(parsed, thread, nil, "Thread status updated.", json?)
+        end)
+    end
+  end
 
-          {:error, reason} ->
-            Helpers.handle_api_result({:error, reason}, parsed, nil)
-        end
+  # Common PATCH-then-render pattern for the single-endpoint
+  # branches of do_real_update/6. Extracted to keep that
+  # function's cyclomatic complexity under 8.
+  defp patch_only(parsed, path, body, render_fn) do
+    case Client.patch(path, body) do
+      {:ok, result} -> render_fn.(nil, result)
+      {:error, reason} -> Helpers.handle_api_result({:error, reason}, parsed, nil)
     end
   end
 
@@ -1162,7 +1207,6 @@ defmodule AdoCli.CLI.PullRequests do
     end
   end
 
-  # Build the thread body for both dry-run and real updates.
   # If --resolved-by-me is set, also include the authenticated
   # user's GUID as resolvedBy.id. The user ID is cached on
   # the first lookup (see AdoCli.Auth.current_user_id/0).
@@ -1302,7 +1346,9 @@ defmodule AdoCli.CLI.PullRequests do
 
   defp read_file_content(path) do
     case File.read(path) do
-      {:ok, content} -> {:ok, strip_trailing_newlines(content)}
+      {:ok, content} ->
+        {:ok, strip_trailing_newlines(content)}
+
       {:error, reason} ->
         {:error, "Cannot read comment file '#{path}': #{:file.format_error(reason)}"}
     end
@@ -1329,8 +1375,7 @@ defmodule AdoCli.CLI.PullRequests do
   def validate_status(status) when status in @valid_statuses, do: {:ok, status}
 
   def validate_status(status) do
-    {:error,
-     "Invalid --status '#{status}'. Must be one of: #{Enum.join(@valid_statuses, ", ")}."}
+    {:error, "Invalid --status '#{status}'. Must be one of: #{Enum.join(@valid_statuses, ", ")}."}
   end
 
   defp do_reply_to_thread(parsed, thread_id, content, parent_comment_id, json?) do

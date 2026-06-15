@@ -253,7 +253,9 @@ defmodule AdoCli.CLI.CompletionCLITest do
     end
 
     test "writes to file when -w is given" do
-      path = Path.join(System.tmp_dir!(), "ado_complete_#{System.unique_integer([:positive])}.bash")
+      path =
+        Path.join(System.tmp_dir!(), "ado_complete_#{System.unique_integer([:positive])}.bash")
+
       on_exit(fn -> File.rm_rf(path) end)
 
       capture_io(fn ->

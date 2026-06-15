@@ -26,8 +26,8 @@ defmodule AdoCli.Auth do
   Override the OAuth client ID via `ADO_OAUTH_CLIENT_ID` env var.
   """
 
-  alias AdoCli.ConfigFile
   alias AdoCli.Client
+  alias AdoCli.ConfigFile
   alias CliMate.CLI
 
   @user_id_cache_key {__MODULE__, :user_id}
