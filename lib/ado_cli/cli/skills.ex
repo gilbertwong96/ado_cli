@@ -86,6 +86,36 @@ defmodule AdoCli.CLI.Skills do
             json: [type: :boolean, default: false, doc: "Output as JSON envelope"]
           ],
           execute: &search_skills/1
+        ],
+        install: [
+          name: "ado skills install",
+          doc:
+            "Install the embedded skills to an LLM agent's skill directory " <>
+              "(pi, Claude Code, Cursor, or a custom path). " <>
+              "Lets agents discover ado as a native skill on startup, " <>
+              "instead of shelling out to `ado skills read`.",
+          options: [
+            target: [
+              type: :string,
+              default: "all",
+              doc:
+                "Where to install: 'pi' (~/.pi/agent/skills/), " <>
+                  "'claude' (~/.claude/skills/), 'cursor' (~/.cursor/skills/), " <>
+                  "or a custom absolute path. " <>
+                  "Default: 'all' (installs to every known target)."
+            ],
+            skill: [
+              type: :string,
+              doc: "Install only this skill (default: all embedded skills)"
+            ],
+            force: [
+              type: :boolean,
+              default: false,
+              doc: "Overwrite existing files (default: skip them)"
+            ],
+            json: [type: :boolean, default: false, doc: "Output as JSON envelope"]
+          ],
+          execute: &install_skills/1
         ]
       ]
     ]
@@ -205,6 +235,173 @@ defmodule AdoCli.CLI.Skills do
       print_search_results(query, results)
       halt_success("")
     end
+  end
+
+  @doc """
+  Install the embedded skills to one or more LLM agent skill directories.
+
+  Targets:
+    - "pi"     -> ~/.pi/agent/skills/
+    - "claude" -> ~/.claude/skills/
+    - "cursor" -> ~/.cursor/skills/
+    - "/path"  -> any absolute path
+    - "all"    -> install to every known target (default)
+
+  Each skill lands as {target}/{skill_name}/SKILL.md. Any other files in
+  the skill directory (e.g. reference files) are also copied.
+
+  Returns a list of {target, skill, path, status} tuples where status
+  is one of: :installed, :skipped (file already exists), :error.
+  """
+  def install_skills(parsed) do
+    target_spec = Map.get(parsed.options, :target, "all")
+    skill_filter = Map.get(parsed.options, :skill)
+    force? = Map.get(parsed.options, :force, false)
+    json? = Map.get(parsed.options, :json, false)
+
+    target_dirs = resolve_target_dirs(target_spec)
+    skills_to_install = filter_skills(skill_filter)
+
+    results =
+      Enum.flat_map(target_dirs, fn {target_name, target_dir} ->
+        Enum.map(skills_to_install, fn skill ->
+          install_one_skill(target_name, target_dir, skill, force?)
+        end)
+      end)
+
+    if json? do
+      payload = build_install_payload(target_dirs, results)
+      writeln(JSON.encode!(%{ok: true, result: payload}))
+      halt_success("")
+    else
+      print_install_results(target_dirs, results)
+      halt_success("")
+    end
+  end
+
+  defp filter_skills(nil), do: Skills.list_skills()
+  defp filter_skills(name), do: [name]
+
+  # Resolve the target spec into a list of {name, expanded_path} pairs.
+  # "all" expands to the three known LLM agent skill directories.
+  defp resolve_target_dirs("all") do
+    home = Path.expand("~")
+
+    [
+      {"pi", Path.join(home, ".pi/agent/skills")},
+      {"claude", Path.join(home, ".claude/skills")},
+      {"cursor", Path.join(home, ".cursor/skills")}
+    ]
+  end
+
+  defp resolve_target_dirs(name) when name in ~w(pi claude cursor) do
+    subdir =
+      case name do
+        "pi" -> ".pi/agent/skills"
+        "claude" -> ".claude/skills"
+        "cursor" -> ".cursor/skills"
+      end
+
+    [{name, Path.join(Path.expand("~"), subdir)}]
+  end
+
+  defp resolve_target_dirs(path) do
+    [{"custom", Path.expand(path)}]
+  end
+
+  # Try to install one skill into one target. Returns a result tuple.
+  defp install_one_skill(target_name, target_dir, skill_name, force?) do
+    skill_dir = Path.join(target_dir, skill_name)
+    file_path = Path.join(skill_dir, "SKILL.md")
+
+    cond do
+      File.exists?(file_path) and not force? ->
+        {:skipped, target_name, skill_name, file_path,
+         "already exists (use --force to overwrite)"}
+
+      not File.dir?(skill_dir) ->
+        case File.mkdir_p(skill_dir) do
+          :ok -> write_skill_files(target_name, skill_dir, skill_name, file_path)
+          {:error, reason} -> {:error, target_name, skill_name, file_path, reason}
+        end
+
+      true ->
+        write_skill_files(target_name, skill_dir, skill_name, file_path)
+    end
+  end
+
+  defp write_skill_files(target_name, _skill_dir, skill_name, file_path) do
+    case Skills.read_skill(skill_name) do
+      {:ok, content} ->
+        case File.write(file_path, content) do
+          :ok -> {:installed, target_name, skill_name, file_path, "ok"}
+          {:error, reason} -> {:error, target_name, skill_name, file_path, reason}
+        end
+
+      {:error, reason} ->
+        {:error, target_name, skill_name, file_path, "skill not embedded: #{reason}"}
+    end
+  end
+
+  # Group results by status for the human-readable summary.
+  defp build_install_payload(target_dirs, results) do
+    %{
+      targets: Enum.map(target_dirs, fn {name, path} -> %{name: name, path: path} end),
+      installed: format_results(results, :installed),
+      skipped: format_results(results, :skipped),
+      errors: format_results(results, :error)
+    }
+  end
+
+  defp format_results(results, status) do
+    results
+    |> Enum.filter(fn {s, _, _, _, _} -> s == status end)
+    |> Enum.map(fn {_, target, skill, path, _msg} ->
+      %{target: target, skill: skill, path: path}
+    end)
+  end
+
+  defp print_install_results(target_dirs, results) do
+    writeln("")
+
+    writeln(
+      "  Installing #{length(Skills.list_skills())} skills to #{length(target_dirs)} target(s):"
+    )
+
+    Enum.each(target_dirs, fn {name, path} ->
+      writeln("    - #{name}: #{path}")
+    end)
+
+    writeln("")
+
+    summarize_install_results(results)
+    writeln("")
+  end
+
+  defp summarize_install_results(results) do
+    counts = Enum.frequencies_by(results, fn {s, _, _, _, _} -> s end)
+
+    installed = Map.get(counts, :installed, 0)
+    skipped = Map.get(counts, :skipped, 0)
+    errors = Map.get(counts, :error, 0)
+
+    writeln("  Installed: #{installed}")
+
+    writeln(
+      "  Skipped:   #{skipped}#{if skipped > 0, do: " (use --force to overwrite)", else: ""}"
+    )
+
+    writeln("  Errors:    #{errors}")
+
+    Enum.each(results, fn
+      {:error, target, skill, path, msg} ->
+        writeln("")
+        writeln("    xx  #{target}/#{skill}: #{msg}")
+        writeln("        #{path}")
+
+      _ ->
+        :ok
+    end)
   end
 
   # ── printing (human-readable) ────────────────────────────────────────

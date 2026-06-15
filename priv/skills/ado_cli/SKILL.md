@@ -1,6 +1,7 @@
 ---
+name: ado_cli
 description: Main ado skill — setup, authentication, and complete command reference for all 24 service areas
-version: "0.3.0"
+version: "0.4.0"
 commands:
   - ado login --org ORG
   - ado login --method pat --org ORG --pat TOKEN
@@ -185,6 +186,25 @@ ado --help
 ado projects --help
 ado projects create --help
 ```
+
+## Install Skills to Your Agent
+
+If you're an LLM agent (pi, Claude Code, Cursor, etc.) and want
+`ado` skills to be loaded natively on startup instead of shelling
+out to `ado skills read`, install them:
+
+```bash
+ado skills install                          # install to all known targets
+ado skills install --target pi              # ~/.pi/agent/skills/
+ado skills install --target claude          # ~/.claude/skills/
+ado skills install --target cursor          # ~/.cursor/skills/
+ado skills install --target /custom/path    # absolute path
+ado skills install --skill ado_ci           # install only this skill
+ado skills install --force                  # overwrite existing files
+```
+
+After install, the agent can list/read these skills as native
+skills, no shell call needed.
 
 ## Exit Codes
 

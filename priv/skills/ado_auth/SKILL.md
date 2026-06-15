@@ -1,6 +1,7 @@
 ---
+name: ado_auth
 description: How to authenticate ado — PAT, browser OAuth, device code, MSA support
-version: "0.3.0"
+version: "0.4.0"
 commands:
   - ado login --method pat --org ORG --pat TOKEN                   # PAT, no browser, CI-friendly
   - ado login --org ORG                                          # browser OAuth (AAD + MSA)
