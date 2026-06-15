@@ -7,9 +7,10 @@
   <meta name="description" content="A self-contained, cross-platform Azure DevOps CLI in Elixir. Designed for both humans and LLM agents: structured JSON output, embedded skills, self-discoverable command tree.">
   <link rel="stylesheet" href="style.css">
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>">
-  <script src="assets/shell.js" defer></script>
 </head>
 <body>
+  <div id="js-debug" style="display:none">JS: pending</div>
+
   <header>
     <div class="container">
       <div class="brand">
@@ -37,18 +38,17 @@
       <div class="install-row">
         <div class="install-cmd">
           <span class="label">macOS / Linux</span>
-          <pre><code>curl -L -o ado https://github.com/gilbertwong96/ado_cli/releases/latest/download/ado-$(uname | tr A-Z a-z)-$(uname -m)
+          <pre><code>curl -L -o ado https://github.com/gilbertwong96/ado_cli/releases/latest/download/ado-0.1.0-macos-aarch64
 chmod +x ado &amp;&amp; sudo mv ado /usr/local/bin/</code></pre>
         </div>
         <div class="install-cmd">
-          <span class="label">npm (all platforms)</span>
+          <span class="label">npm (recommended)</span>
           <pre><code>npm install -g @gilbertwong1996/ado</code></pre>
         </div>
         <div class="install-cmd">
           <span class="label">from source</span>
-          <pre><code>git clone https://github.com/gilbertwong96/ado_cli
-cd ado_cli &amp;&amp; mix deps.get &amp;&amp; mix escript.build
-cp ado /usr/local/bin/</code></pre>
+          <pre><code>git clone https://github.com/gilbertwong96/ado_cli &amp;&amp; cd ado_cli
+mix deps.get &amp;&amp; mix escript.build &amp;&amp; cp ado /usr/local/bin/</code></pre>
         </div>
       </div>
       <div class="badges">
@@ -137,7 +137,7 @@ cp ado /usr/local/bin/</code></pre>
           </tr>
           <tr>
             <td>Distribution</td>
-            <td><code>brew install ado</code></td>
+            <td><code>npm install -g ado</code> (or download binary)</td>
             <td>Single self-contained binary, no runtime deps</td>
           </tr>
         </tbody>
@@ -246,8 +246,8 @@ $ <strong>ado schema ci watch --json</strong> | jq '.schema.options[].name'
           <p>Download the binary for your platform from the
           <a href="https://github.com/gilbertwong96/ado_cli/releases/latest">latest release</a>.</p>
           <pre><code>curl -L -o ado https://github.com/gilbertwong96/ado_cli/releases/latest/download/ado-0.1.0-macos-aarch64
-chmod +x ado
-sudo mv ado /usr/local/bin/</code></pre>
+chmod +x ado &amp;&amp; sudo mv ado /usr/local/bin/</code></pre>
+          <p class="hint">Replace <code>ado-0.1.0-macos-aarch64</code> with the binary for your platform.</p>
         </div>
         <div class="card">
           <h3>📦 npm</h3>
@@ -329,5 +329,6 @@ ado skills install --target pi</code></pre>
       </div>
     </div>
   </footer>
+  <script src="assets/shell.js"></script>
 </body>
 </html>

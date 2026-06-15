@@ -137,35 +137,46 @@ nav a:hover {
 }
 
 .install-cmd {
-  background: #161b22;
-  border: 1px solid #30363d;
-  border-radius: 8px;
-  padding: 12px 16px;
-  width: 320px;
+  width: 400px;
   max-width: 100%;
   text-align: left;
-  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 .install-cmd .label {
-  display: block;
   font-size: 0.75em;
   text-transform: uppercase;
   letter-spacing: 0.1em;
   color: #8b949e;
-  margin-bottom: 6px;
+  padding-left: 4px;
 }
 
-.install-cmd pre {
+/* The shell-block inside an install-cmd is a nested terminal.
+   No outer card chrome needed — the install-cmd provides the
+   label, and the shell-block provides the terminal styling. */
+.install-cmd .shell-block {
   margin: 0;
-  padding: 0;
-  background: transparent;
-  color: #f0f6fc;
-  font-size: 0.85em;
-  white-space: pre-wrap;
-  word-break: break-all;
-  overflow-wrap: anywhere;
-  max-width: 100%;
+}
+
+.install-cmd .shell-content {
+  font-size: 0.75em;
+  padding: 12px 14px;
+  white-space: pre;
+  overflow-x: auto;
+  /* Subtle scrollbar for narrow code blocks that overflow */
+  scrollbar-width: thin;
+  scrollbar-color: #30363d #161b22;
+}
+
+.install-cmd .shell-content::-webkit-scrollbar {
+  height: 4px;
+}
+
+.install-cmd .shell-content::-webkit-scrollbar-thumb {
+  background: #30363d;
+  border-radius: 2px;
 }
 
 .badges {
@@ -275,6 +286,13 @@ section {
   border-radius: 10px;
   margin-left: 6px;
   vertical-align: middle;
+}
+
+.card .hint {
+  font-size: 0.8em !important;
+  color: #6e7681 !important;
+  font-style: italic;
+  margin-top: 8px !important;
 }
 
 /* ── compare table ────────────────────────────────────────── */
