@@ -1338,9 +1338,30 @@ defmodule AdoCli.CLI.PullRequests do
   def resolve_content(content), do: {:ok, content}
 
   defp read_stdin_content do
-    case IO.read(:stdio, :all) do
-      {:error, _} -> ""
-      content when is_binary(content) -> strip_trailing_newlines(content)
+    # `IO.read/2`'s typespec is `:eof | :line | non_neg_integer` for
+    # the second arg, so we pass a large integer instead of `:all`
+    # (the latter works at runtime but makes Dialyzer think the
+    # call will not succeed). 1 GB is the conventional "read
+    # everything" sentinel; on most systems this is more data than
+    # stdin will ever hold.
+    #
+    # The return type is `chardata | nodata` — i.e. binary, iolist,
+    # or `{:error, posix()}`. We handle all three shapes:
+    #   * binaries get stripped of trailing newlines
+    #   * iolists get flattened first
+    #   * errors return "" (so a closed stdin doesn't crash the
+    #     whole command)
+    case IO.read(:stdio, 1_000_000_000) do
+      {:error, _} ->
+        ""
+
+      content when is_binary(content) ->
+        strip_trailing_newlines(content)
+
+      content ->
+        content
+        |> IO.iodata_to_binary()
+        |> strip_trailing_newlines()
     end
   end
 
