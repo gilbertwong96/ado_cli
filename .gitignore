@@ -38,3 +38,4 @@ burrito/
 ado.tgz
 # Git worktrees for parallel agent work
 .worktrees/
+node_modules/
