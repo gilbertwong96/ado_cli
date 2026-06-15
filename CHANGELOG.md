@@ -7,6 +7,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`ado prs diff`** for viewing the diff of a pull request. Three modes:
+    * Default: list of changed files (path, change type, +/- counts)
+    * `--file PATH`: full unified diff for one path
+    * `--unified`: a single concatenated unified diff stream (pipe to
+      delta/less/vimdiff for pretty viewing)
+  Also supports `--iteration N` to inspect an earlier iteration
+  (default: latest) and `--json` for LLM-friendly structured output.
+- **`ado prs comments add`** for adding/replying to PR review comments.
+  Three modes:
+    * General thread: `ado prs comments add PROJ REPO PR --content "LGTM!"`
+    * Inline (file/line): `ado prs comments add PROJ REPO PR --content "use a guard clause" --file-path src/foo.ex --line 42`
+    * Reply to existing thread: `ado prs comments add PROJ REPO PR --content "fixed in abc123" --thread-id 5`
+  Supports `--json` for structured output (returns `{ok, thread_id, comment_id}`).
+  See https://learn.microsoft.com/en-us/rest/azure/devops/git/pull-request-threads
+- **`ado prs comments add --status`** to set the new thread's status.
+  Valid values: `active` (default), `fixed`, `wontFix`, `closed`, `byDesign`.
+  Invalid values produce a clear error listing the allowed set.
+- **`ado prs comments add --content @<file>`** to read comment text from a file
+  (useful for multi-line comments). Trailing newlines are stripped.
+- **`ado prs comments add --content -`** to read comment text from stdin
+  (also for multi-line). Example: `echo 'first line\nsecond' | ado prs comments add ... --content -`
+- **`ado prs comments list --all`** to expand the listing to show full comment
+  content (no 80-char truncation), file path for inline threads, and
+  reply markers (e.g. `[11] (reply to 10) bob:`). Default view still shows
+  thread headers with a preview of each comment.
+- **`ado prs comments update`** now supports both content and status
+  changes. At least one of `--content` or `--status` is required.
+    * `--content "new text"` edits the comment (legacy behavior)
+    * `--status fixed` changes the thread's resolution state
+      (active, fixed, wontFix, closed, byDesign)
+    * Pass both to update in one call
+    * `--content @<file>` reads from a file (multi-line friendly)
+    * `--content -` reads from stdin
+    * `--resolved-by-me` auto-sets the thread's `resolvedBy` field
+      to the authenticated user's GUID (fetches it from
+      `/_apis/connectionData`, cached for the command's lifetime)
+    * `--dry-run` prints the would-be PATCH request(s) as JSON
+      (method, path, body) and exits without making any network calls
+    * `--json` emits a structured envelope
+- **`ado version` subcommand and `--version` flag** for the next release.
+  - `ado version` — prints `ado 0.2.0` (plain text) or `{"ok": true, "version": "0.2.0"}` (with `--json`)
+  - `ado --version` — same output, exits immediately
+  - `ado -v` still means `--verbose` (no breaking change to existing behavior)
+  - Resolves the version from `Application.spec/2` (works in dev, escript, and Burrito binaries)
+- **New `AdoCli.Version` module** (lib/ado_cli/version.ex) — shared helper for resolving the current version across dev, escript, and Burrito build contexts. Replaces the duplicated `current_version/0` that was previously in `AdoCli.CLI.Schema`.
+- **Fixed bug**: `ado schema --json` returned an empty `"version": ""` field when run from the escript. The `AdoCli.Version` module now calls `Application.ensure_loaded/1` to load the bundled `.app` file, so `Application.spec/2` works correctly in escript/Burrito mode (where the app isn't auto-loaded).
+
 ### Breaking changes
 
 - **Skill names renamed**: `ado_cli` → `ado-cli`, `ado_auth` → `ado-auth`,

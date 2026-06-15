@@ -4,9 +4,14 @@ defmodule AdoCli.CLI.PullRequests do
 
     ado_cli prs list PROJECT REPO         [--status active|completed|abandoned] [--creator USER]
     ado_cli prs show PROJECT REPO PR_ID
+    ado_cli prs diff PROJECT REPO PR_ID   [--file PATH] [--iteration N] [--unified] [--json]
     ado_cli prs create PROJECT REPO        --title TITLE --source BRANCH --target BRANCH [--description DESC]
     ado_cli prs complete PROJECT REPO PR_ID [--delete-source]
     ado_cli prs abandon PROJECT REPO PR_ID
+
+  `prs diff` lists changed files by default (path, change type, +/- counts),
+  or shows the full unified diff for a specific path with --file, or emits
+  a single concatenated unified diff with --unified.
   """
 
   @behaviour CliMate.CLI.Command
@@ -138,6 +143,39 @@ defmodule AdoCli.CLI.PullRequests do
             pr_id: [type: :integer, doc: "Pull request ID"]
           ],
           execute: &abandon_pr/1
+        ],
+        diff: [
+          name: "ado prs diff",
+          doc:
+            "Show the diff for a pull request. " <>
+              "By default lists changed files (path, change type, +/- counts). " <>
+              "Pass --file to see the full unified diff for one path. " <>
+              "Pass --unified to emit a single unified diff stream (pipe to less/delta). " <>
+              "Pass --iteration to inspect an earlier iteration (default: latest).",
+          arguments: [
+            project: [type: :string, doc: "Project name or ID"],
+            repo_id: [type: :string, doc: "Repository name or ID"],
+            pr_id: [type: :integer, doc: "Pull request ID"]
+          ],
+          options: [
+            file: [
+              type: :string,
+              doc: "Show the full diff for a single path (relative to repo root)",
+              doc_arg: "PATH"
+            ],
+            iteration: [
+              type: :integer,
+              doc: "Iteration number to inspect (default: latest)",
+              doc_arg: "N"
+            ],
+            unified: [
+              type: :boolean,
+              default: false,
+              doc: "Output a single unified diff stream for all files"
+            ],
+            json: [type: :boolean, default: false, doc: "Output as JSON envelope"]
+          ],
+          execute: &diff_pr/1
         ],
         comments: [
           name: "ado prs comments",
@@ -370,6 +408,277 @@ defmodule AdoCli.CLI.PullRequests do
       error ->
         Helpers.handle_api_result(error, parsed, fn _ -> :ok end)
     end
+  end
+
+  def diff_pr(parsed) do
+    json? = Map.get(parsed.options, :json, false) == true
+    file = Map.get(parsed.options, :file)
+    iteration = Map.get(parsed.options, :iteration)
+    unified? = Map.get(parsed.options, :unified, false) == true
+
+    cond do
+      is_binary(file) and unified? ->
+        halt_error("Pass either --file or --unified, not both.")
+
+      true ->
+        # All inner functions return `{:ok, _} | {:error, _}`.
+        # `halt_error/1` is only called here, exactly once, so
+        # the test-mode leak (which returns a 3-tuple) doesn't
+        # reach a case clause and crash with CaseClauseError.
+        # We halt(0) at the end of the success branch so the
+        # process exits cleanly in production.
+        with {:ok, iteration_id} <- resolve_iteration(parsed, iteration),
+             {:ok, changes} <- fetch_changes(parsed, iteration_id),
+             :ok <- render_diff(parsed, changes, iteration_id, file, unified?, json?) do
+          halt(0)
+        else
+          {:error, msg} when is_binary(msg) -> halt_error(msg)
+          {:error, reason} -> Helpers.handle_api_result({:error, reason}, parsed, nil)
+        end
+    end
+  end
+
+  # Resolves the iteration ID. If the user passed --iteration N,
+  # use that. Otherwise, fetch the iteration list and take the
+  # last one (latest). If the PR has no iterations (rare but
+  # possible for empty PRs), return an `{:error, message}`.
+  defp resolve_iteration(parsed, nil) do
+    case Client.get(iterations_path(parsed)) do
+      {:ok, %{"value" => []}} ->
+        {:error, "PR ##{parsed.arguments.pr_id} has no iterations (nothing to diff)."}
+
+      {:ok, %{"value" => iterations}} when is_list(iterations) ->
+        latest = List.last(iterations)
+        id = latest && (latest["id"] || latest["number"])
+
+        if id do
+          {:ok, id}
+        else
+          {:error, "Could not determine latest iteration ID"}
+        end
+
+      {:error, _} = err ->
+        err
+    end
+  end
+
+  defp resolve_iteration(_parsed, n) when is_integer(n) and n > 0, do: {:ok, n}
+
+  defp fetch_changes(parsed, iteration_id) do
+    Client.list(changes_path(parsed, iteration_id))
+  end
+
+  defp render_diff(parsed, changes, iteration_id, file, unified?, json?) do
+    cond do
+      is_binary(file) ->
+        render_file_diff(parsed, iteration_id, changes, file, json?)
+
+      unified? ->
+        render_unified(parsed, iteration_id, changes, json?)
+
+      true ->
+        render_file_list(changes, iteration_id, json?)
+    end
+  end
+
+  # Default view: list of files with metadata.
+  defp render_file_list(changes, iteration_id, json?) do
+    summary = summarize_changes(changes)
+
+    if json? do
+      IO.puts(
+        JSON.encode!(%{
+          ok: true,
+          iteration: iteration_id,
+          count: length(changes),
+          total_additions: summary.additions,
+          total_deletions: summary.deletions,
+          changes: Enum.map(changes, &change_to_envelope/1)
+        })
+      )
+    else
+      writeln("")
+      writeln("PR diff (iteration #{iteration_id})")
+      writeln(
+        "#{String.pad_trailing("PATH", 50)}  #{String.pad_trailing("TYPE", 10)}  ADDITIONS  DELETIONS"
+      )
+
+      writeln(String.duplicate("─", 90))
+
+      Enum.each(changes, fn change ->
+        path = change_path(change)
+        type = change_type(change) |> String.pad_trailing(10)
+        adds = change["changeTrackingId"] && get_in(change, ["item", "additions"]) || 0
+        dels = change["changeTrackingId"] && get_in(change, ["item", "deletions"]) || 0
+
+        writeln("#{String.pad_trailing(path, 50)}  #{type}  #{pad_num(adds, 10)}  #{pad_num(dels, 10)}")
+      end)
+
+      writeln("")
+      writeln("#{length(changes)} file(s) changed, +#{summary.additions} -#{summary.deletions}")
+    end
+
+    :ok
+  end
+
+  # --file: fetch the full diff for one path.
+  defp render_file_diff(parsed, iteration_id, changes, file, json?) do
+    case find_change_for_file(changes, file) do
+      nil ->
+        {:error, "No change matches --file '#{file}'. Use 'ado prs diff' (no flags) to list files."}
+
+      change ->
+        change_id = change["changeId"] || change["id"]
+        path = change_path(change)
+
+        case fetch_change_content(parsed, iteration_id, change_id) do
+          {:ok, content} ->
+            if json? do
+              IO.puts(
+                JSON.encode!(%{
+                  ok: true,
+                  iteration: iteration_id,
+                  path: path,
+                  change_type: change_type(change),
+                  diff: content
+                })
+              )
+            else
+              IO.puts(content)
+            end
+
+            :ok
+
+          {:error, reason} ->
+            Helpers.handle_api_result({:error, reason}, parsed, nil)
+        end
+    end
+  end
+
+  # --unified: emit all file diffs concatenated.
+  defp render_unified(parsed, iteration_id, changes, json?) do
+    # Fetch each change's content in sequence. If any fails,
+    # surface the first error and stop.
+    case fetch_all_change_contents(parsed, iteration_id, changes) do
+      {:ok, fetched} ->
+        if json? do
+          IO.puts(
+            JSON.encode!(%{
+              ok: true,
+              iteration: iteration_id,
+              mode: "unified",
+              file_count: length(fetched),
+              note: "Unified diff content is printed below the envelope; pipe to delta/less for pretty viewing"
+            })
+          )
+
+          IO.puts("")
+        end
+
+        Enum.each(fetched, fn {_path, content} ->
+          IO.puts(content)
+          IO.puts("")
+        end)
+
+        :ok
+
+      {:error, reason} ->
+        Helpers.handle_api_result({:error, reason}, parsed, nil)
+    end
+  end
+
+  defp fetch_all_change_contents(parsed, iteration_id, changes) do
+    Enum.reduce_while(changes, {:ok, []}, fn change, {:ok, acc} ->
+      change_id = change["changeId"] || change["id"]
+
+      case fetch_change_content(parsed, iteration_id, change_id) do
+        {:ok, content} -> {:cont, {:ok, [{change_path(change), content} | acc]}}
+        {:error, _} = err -> {:halt, err}
+      end
+    end)
+    |> case do
+      {:ok, list} -> {:ok, Enum.reverse(list)}
+      other -> other
+    end
+  end
+
+  # ── diff helpers ────────────────────────────────────────────────
+
+  defp fetch_change_content(parsed, iteration_id, change_id) do
+    Client.get_raw(single_change_path(parsed, iteration_id, change_id))
+  end
+
+  defp find_change_for_file(changes, target) do
+    # Strip leading '/' from the target so users can pass either
+    # 'src/foo.ex' or '/src/foo.ex'. The API returns paths with
+    # a leading slash.
+    target = String.trim_leading(target, "/")
+
+    Enum.find(changes, fn change ->
+      String.trim_leading(change_path(change), "/") == target
+    end)
+  end
+
+  defp change_path(change) do
+    get_in(change, ["item", "path"]) || change["originalPath"] || change["path"] || "?"
+  end
+
+  defp change_type(change) do
+    case change["changeType"] do
+      1 -> "add"
+      2 -> "edit"
+      4 -> "delete"
+      8 -> "rename"
+      16 -> "directory"
+      _ -> "change"
+    end
+  end
+
+  defp change_to_envelope(change) do
+    %{
+      path: change_path(change),
+      change_type: change_type(change),
+      change_id: change["changeId"] || change["id"],
+      additions: get_in(change, ["item", "additions"]) || 0,
+      deletions: get_in(change, ["item", "deletions"]) || 0
+    }
+  end
+
+  defp summarize_changes(changes) do
+    Enum.reduce(changes, %{additions: 0, deletions: 0}, fn change, acc ->
+      %{
+        additions: acc.additions + (get_in(change, ["item", "additions"]) || 0),
+        deletions: acc.deletions + (get_in(change, ["item", "deletions"]) || 0)
+      }
+    end)
+  end
+
+  defp pad_num(n, width), do: n |> to_string() |> String.pad_leading(width)
+
+  # ── diff paths ──────────────────────────────────────────────────
+
+  defp iterations_path(parsed) do
+    project = URI.encode(parsed.arguments.project)
+    repo_id = URI.encode(parsed.arguments.repo_id)
+    pr_id = parsed.arguments.pr_id
+
+    "/#{project}/_apis/git/repositories/#{repo_id}/pullRequests/#{pr_id}/iterations"
+  end
+
+  defp changes_path(parsed, iteration_id) do
+    project = URI.encode(parsed.arguments.project)
+    repo_id = URI.encode(parsed.arguments.repo_id)
+    pr_id = parsed.arguments.pr_id
+
+    "/#{project}/_apis/git/repositories/#{repo_id}/pullRequests/#{pr_id}/iterations/#{iteration_id}/changes"
+  end
+
+  defp single_change_path(parsed, iteration_id, change_id) do
+    project = URI.encode(parsed.arguments.project)
+    repo_id = URI.encode(parsed.arguments.repo_id)
+    pr_id = parsed.arguments.pr_id
+
+    "/#{project}/_apis/git/repositories/#{repo_id}/pullRequests/#{pr_id}/iterations/#{iteration_id}/changes/#{change_id}"
   end
 
   # ── Helpers ───────────────────────────────────────────────────────────
