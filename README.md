@@ -106,7 +106,7 @@ ado skills install --target codex           # ~/.codex/skills/
 ado skills install --target copilot --repo .# ./.github/ado-cli/  (per-repo)
 
 # Verify the install
-ls ~/.pi/agent/skills/                       # you should see ado_cli/, ado_auth/, ado_ci/
+ls ~/.pi/agent/skills/                       # you should see ado-cli/, ado-auth/, ado-ci/
 ```
 
 Once installed, the agent can `ado skills list`, `ado skills read <name>`, and
@@ -242,11 +242,11 @@ When `--server` is set, `--org` becomes the collection name (e.g. `DefaultCollec
 ## Commands
 
 The CLI covers **24 service areas** of Azure DevOps. The canonical,
-up-to-date reference is the `ado_cli` skill:
+up-to-date reference is the `ado-cli` skill:
 
 ```bash
-ado skills read ado_cli
-# Or read on disk: cat priv/skills/ado_cli/SKILL.md
+ado skills read ado-cli
+# Or read on disk: cat priv/skills/ado-cli/SKILL.md
 ```
 
 Quick examples:
@@ -304,7 +304,7 @@ ado --json projects list | jq '.[].name'
 ```
 
 For the complete command reference including all options, flags, and JSON
-output schemas, see the embedded `ado_cli` skill (`ado skills read ado_cli`).
+output schemas, see the embedded `ado-cli` skill (`ado skills read ado-cli`).
 Every command also supports `--help` for inline reference:
 
 ```bash
@@ -444,9 +444,9 @@ ado_cli/
 │   └── mix/tasks/ci/
 │       └── dialyzer.ex              # CI dialyzer with Finch false-positive filter
 ├── priv/skills/                      # Embedded skill content (loaded at compile time)
-│   ├── ado_cli/                      # Main reference
-│   ├── ado_auth/                     # Auth details
-│   └── ado_ci/                       # CI/CD patterns
+│   ├── ado-cli/                      # Main reference
+│   ├── ado-auth/                     # Auth details
+│   └── ado-ci/                       # CI/CD patterns
 ├── config/
 │   └── config.exs                    # Application configuration
 ├── test/
@@ -458,13 +458,13 @@ ado_cli/
 ## Command Reference
 
 The CLI covers **24 service areas** of Azure DevOps. The canonical,
-up-to-date reference is the **`ado_cli` skill** embedded in the binary:
+up-to-date reference is the **`ado-cli` skill** embedded in the binary:
 
 ```bash
-ado skills read ado_cli
+ado skills read ado-cli
 ```
 
-Or see the on-disk source at `priv/skills/ado_cli/SKILL.md`. The skill
+Or see the on-disk source at `priv/skills/ado-cli/SKILL.md`. The skill
 includes the full command table, conventions, and quick-start examples.
 
 ---
@@ -473,7 +473,7 @@ includes the full command table, conventions, and quick-start examples.
 
 All commands use Azure DevOps REST API v7.1 (configurable via `ADO_API_VERSION`).
 The CLI covers **24 service areas** of Azure DevOps. See the embedded
-`ado_cli` skill (`ado skills read ado_cli`) for the full command reference
+`ado-cli` skill (`ado skills read ado-cli`) for the full command reference
 and per-endpoint coverage.
 
 | Service area | Endpoint | Status |
@@ -569,9 +569,9 @@ Three skills are embedded at compile time and exposed via:
 
 ```bash
 ado skills list                       # List all available skills
-ado skills read ado_cli               # Main reference: setup, auth, all 24 command groups
-ado skills read ado_auth              # Authentication details (PAT, browser, MSA, troubleshooting)
-ado skills read ado_ci                # CI/CD patterns: GitHub Actions, GitLab CI, secrets, scripts
+ado skills read ado-cli               # Main reference: setup, auth, all 24 command groups
+ado skills read ado-auth              # Authentication details (PAT, browser, MSA, troubleshooting)
+ado skills read ado-ci                # CI/CD patterns: GitHub Actions, GitLab CI, secrets, scripts
 ```
 
 Skills are also on disk in `priv/skills/{name}/SKILL.md` for repository-level
@@ -579,19 +579,19 @@ inspection or to copy into an agent's `~/.claude/skills/` directory.
 
 ### For AI agents: how to use these skills
 
-1. **Read `ado_cli` first** when you need to discover available commands. The
+1. **Read `ado-cli` first** when you need to discover available commands. The
    `Command Groups` table in that skill is the canonical reference — it
    covers all 24 service areas (projects, repos, workitems, pipelines,
    vars, builds, artifacts, folders, prs, releases, iterations, areas,
    wikis, teams, users, extensions, agent-pools, connections, security
    groups, security permissions, banners, packages, imports, branch-policies).
 
-2. **Read `ado_auth`** before invoking any command, to confirm which auth
+2. **Read `ado-auth`** before invoking any command, to confirm which auth
    method is in effect and how to handle the `Not authenticated` error. The
    skill explains PAT vs browser OAuth vs device code, MSA personal org
    support, and the priority order of CLI flags / env vars / config file.
 
-3. **Read `ado_ci`** when running `ado` in a pipeline / CI script. The
+3. **Read `ado-ci`** when running `ado` in a pipeline / CI script. The
    skill documents:
    - The recommended env-var-based auth (`ADO_ORG` + `ADO_PAT`)
    - JSON output (`ado --json ... | jq ...`) for scripting
@@ -620,11 +620,11 @@ If your agent supports the `skills` discovery protocol:
 ado skills list | head
 
 # Dump a skill to a file (e.g., for an agent's skill directory)
-ado skills read ado_cli > ~/.claude/skills/ado_cli/SKILL.md
+ado skills read ado-cli > ~/.claude/skills/ado-cli/SKILL.md
 ```
 
 If your agent does **not** support the skills protocol, paste the output of
-`ado skills read ado_cli` into its context — it contains the full command
+`ado skills read ado-cli` into its context — it contains the full command
 reference (~130 lines).
 
 ### Skills vs REST API

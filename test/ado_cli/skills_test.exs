@@ -8,14 +8,14 @@ defmodule AdoCli.SkillsTest do
       skills = Skills.list_skills()
       assert is_list(skills)
       assert skills == Enum.sort(skills)
-      assert "ado_cli" in skills
+      assert "ado-cli" in skills
     end
 
     test "returns at least the four built-in skills" do
       skills = Skills.list_skills()
-      assert "ado_cli" in skills
-      assert "ado_auth" in skills
-      assert "ado_ci" in skills
+      assert "ado-cli" in skills
+      assert "ado-auth" in skills
+      assert "ado-ci" in skills
     end
   end
 
@@ -46,8 +46,8 @@ defmodule AdoCli.SkillsTest do
 
   describe "describe/1" do
     test "returns frontmatter + command index for a known skill" do
-      assert {:ok, info} = Skills.describe("ado_cli")
-      assert info.name == "ado_cli"
+      assert {:ok, info} = Skills.describe("ado-cli")
+      assert info.name == "ado-cli"
       assert is_binary(info.description)
       assert info.description != ""
       assert is_binary(info.version)
@@ -65,13 +65,13 @@ defmodule AdoCli.SkillsTest do
 
   describe "search/1" do
     test "finds skills by name (case-insensitive)" do
-      [hit | _] = Skills.search("ado_cli")
-      assert hit.skill == "ado_cli"
+      [hit | _] = Skills.search("ado-cli")
+      assert hit.skill == "ado-cli"
       assert hit.match_type == "name"
     end
 
     test "finds skills by command pattern" do
-      # "create PR" should match a command in ado_cli
+      # "create PR" should match a command in ado-cli
       [hit | _] = Skills.search("create PR")
       assert hit.match_type in ["command", "description"]
     end
@@ -96,7 +96,7 @@ defmodule AdoCli.SkillsTest do
 
   describe "read_skill/1" do
     test "returns skill content for a valid skill" do
-      assert {:ok, content} = Skills.read_skill("ado_cli")
+      assert {:ok, content} = Skills.read_skill("ado-cli")
       assert is_binary(content)
       assert content =~ "ado"
     end
@@ -104,14 +104,14 @@ defmodule AdoCli.SkillsTest do
     test "returns error for unknown skill" do
       assert {:error, msg} = Skills.read_skill("unknown_skill")
       assert msg =~ "unknown skill"
-      assert msg =~ "ado_cli skills list"
+      assert msg =~ "ado skills list"
     end
   end
 
   describe "list_path/1" do
     test "lists the skill root" do
-      assert {:ok, dir, entries} = Skills.list_path("ado_cli")
-      assert dir == "ado_cli"
+      assert {:ok, dir, entries} = Skills.list_path("ado-cli")
+      assert dir == "ado-cli"
       assert is_list(entries)
       assert Enum.any?(entries, fn e -> e.path =~ "SKILL.md" end)
     end
@@ -122,7 +122,7 @@ defmodule AdoCli.SkillsTest do
     end
 
     test "list entries have a path and is_dir flag" do
-      {:ok, _, entries} = Skills.list_path("ado_cli")
+      {:ok, _, entries} = Skills.list_path("ado-cli")
 
       Enum.each(entries, fn entry ->
         assert is_binary(entry.path)
@@ -133,15 +133,15 @@ defmodule AdoCli.SkillsTest do
 
   describe "read_reference/2" do
     test "returns content for an existing reference" do
-      {:ok, _, entries} = Skills.list_path("ado_cli")
+      {:ok, _, entries} = Skills.list_path("ado-cli")
 
       case Enum.find(entries, &(&1.path =~ "SKILL.md")) do
         nil ->
           :ok
 
         entry ->
-          rel = String.trim_leading(entry.path, "ado_cli/")
-          assert {:ok, content, ^rel} = Skills.read_reference("ado_cli", rel)
+          rel = String.trim_leading(entry.path, "ado-cli/")
+          assert {:ok, content, ^rel} = Skills.read_reference("ado-cli", rel)
           assert is_binary(content)
       end
     end
@@ -152,7 +152,7 @@ defmodule AdoCli.SkillsTest do
     end
 
     test "returns error for missing file under existing skill" do
-      assert {:error, msg} = Skills.read_reference("ado_cli", "nonexistent.md")
+      assert {:error, msg} = Skills.read_reference("ado-cli", "nonexistent.md")
       assert msg =~ "file not found"
     end
   end

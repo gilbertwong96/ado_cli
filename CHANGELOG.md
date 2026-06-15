@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking changes
+
+- **Skill names renamed**: `ado_cli` → `ado-cli`, `ado_auth` → `ado-auth`,
+  `ado_ci` → `ado-ci`. pi (the AI agent) requires skill names to use only
+  lowercase `a-z`, `0-9`, and hyphens — underscores are rejected with a
+  "name contains invalid characters" warning. Updated:
+  - Source dirs in `priv/skills/`
+  - `name:` field in each `SKILL.md` frontmatter
+  - `@skills` embedded map (skill keys)
+  - All test assertions
+  - README + GitHub Pages references
+  - Embedded error messages
+
+  **Action required**: delete the old install dirs and reinstall:
+  ```bash
+  rm -rf ~/.pi/agent/skills/ado_{cli,auth,ci}
+  rm -rf ~/.claude/skills/ado_{cli,auth,ci}
+  rm -rf ~/.cursor/skills/ado_{cli,auth,ci}
+  rm -rf ~/.codex/skills/ado_{cli,auth,ci}
+  ado skills install
+  ```
+
+  Or with one command per target:
+  ```bash
+  ado skills install --target pi       # creates ~/.pi/agent/skills/ado-{cli,auth,ci}/
+  ado skills install --target claude   # creates ~/.claude/skills/ado-{cli,auth,ci}/
+  ```
+
 ## [0.1.0] - 2026-06-15
 
 The first public release. `ado` is a self-contained, cross-platform Azure DevOps

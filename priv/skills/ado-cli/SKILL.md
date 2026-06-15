@@ -1,5 +1,5 @@
 ---
-name: ado_cli
+name: ado-cli
 description: Main ado skill — setup, authentication, and complete command reference for all 24 service areas
 version: "0.4.0"
 commands:
@@ -199,7 +199,7 @@ ado skills install --target pi              # ~/.pi/agent/skills/
 ado skills install --target claude          # ~/.claude/skills/
 ado skills install --target cursor          # ~/.cursor/skills/
 ado skills install --target /custom/path    # absolute path
-ado skills install --skill ado_ci           # install only this skill
+ado skills install --skill ado-ci           # install only this skill
 ado skills install --force                  # overwrite existing files
 ```
 

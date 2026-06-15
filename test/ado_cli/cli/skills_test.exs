@@ -21,7 +21,7 @@ defmodule AdoCli.CLI.SkillsTest do
     test "lists files under a specific skill" do
       Skills.list_skills(%{
         options: %{json: true},
-        arguments: %{path: "ado_cli"}
+        arguments: %{path: "ado-cli"}
       })
 
       assert_receive {:cli_mate_shell, :halt, _}, 1000
@@ -32,7 +32,7 @@ defmodule AdoCli.CLI.SkillsTest do
     test "reads the SKILL.md of a skill" do
       Skills.read_skill(%{
         options: %{json: false},
-        arguments: %{target: "ado_cli"}
+        arguments: %{target: "ado-cli"}
       })
 
       assert_receive {:cli_mate_shell, :halt, _}, 1000
@@ -41,7 +41,7 @@ defmodule AdoCli.CLI.SkillsTest do
     test "reads SKILL.md as JSON" do
       Skills.read_skill(%{
         options: %{json: true},
-        arguments: %{target: "ado_cli"}
+        arguments: %{target: "ado-cli"}
       })
 
       assert_receive {:cli_mate_shell, :halt, _}, 1000
@@ -74,7 +74,7 @@ defmodule AdoCli.CLI.SkillsTest do
       assert decoded["result"]["errors"] == []
 
       # Verify files were actually written
-      for skill <- ~w(ado_cli ado_auth ado_ci) do
+      for skill <- ~w(ado-cli ado-auth ado-ci) do
         path = Path.join([tmpdir, skill, "SKILL.md"])
         assert File.exists?(path), "Expected #{path} to exist"
         content = File.read!(path)
@@ -84,7 +84,7 @@ defmodule AdoCli.CLI.SkillsTest do
 
     test "skips existing files without --force", %{tmpdir: tmpdir} do
       # Pre-create one file
-      skill_path = Path.join([tmpdir, "ado_cli", "SKILL.md"])
+      skill_path = Path.join([tmpdir, "ado-cli", "SKILL.md"])
       File.mkdir_p!(Path.dirname(skill_path))
       File.write!(skill_path, "pre-existing content\n")
 
@@ -98,19 +98,19 @@ defmodule AdoCli.CLI.SkillsTest do
 
       # The pre-existing file should be in skipped
       skipped_skills = Enum.map(decoded["result"]["skipped"], & &1["skill"])
-      assert "ado_cli" in skipped_skills
+      assert "ado-cli" in skipped_skills
 
       # The other two should have been installed
       installed_skills = Enum.map(decoded["result"]["installed"], & &1["skill"])
-      assert "ado_auth" in installed_skills
-      assert "ado_ci" in installed_skills
+      assert "ado-auth" in installed_skills
+      assert "ado-ci" in installed_skills
 
       # Verify pre-existing file was NOT overwritten
       assert File.read!(skill_path) == "pre-existing content\n"
     end
 
     test "overwrites existing files with --force", %{tmpdir: tmpdir} do
-      skill_path = Path.join([tmpdir, "ado_cli", "SKILL.md"])
+      skill_path = Path.join([tmpdir, "ado-cli", "SKILL.md"])
       File.mkdir_p!(Path.dirname(skill_path))
       File.write!(skill_path, "stale content\n")
 
@@ -125,17 +125,18 @@ defmodule AdoCli.CLI.SkillsTest do
       # Nothing should be skipped when --force
       assert decoded["result"]["skipped"] == []
       installed_skills = Enum.map(decoded["result"]["installed"], & &1["skill"])
-      assert "ado_cli" in installed_skills
+      assert "ado-cli" in installed_skills
 
       # Verify the file content was actually replaced (not just timestamp)
       content = File.read!(skill_path)
       refute content == "stale content\n"
-      assert String.starts_with?(content, "---\nname: ado_cli")
+      assert String.starts_with?(content, "---
+name: ado-cli")
     end
 
     test "installs only the specified skill when --skill is given", %{tmpdir: tmpdir} do
       Skills.install_skills(%{
-        options: %{target: tmpdir, force: false, json: true, skill: "ado_ci"},
+        options: %{target: tmpdir, force: false, json: true, skill: "ado-ci"},
         arguments: %{}
       })
 
@@ -143,11 +144,11 @@ defmodule AdoCli.CLI.SkillsTest do
       {:ok, decoded} = JSON.decode(msg)
 
       assert [_x] = decoded["result"]["installed"]
-      assert hd(decoded["result"]["installed"])["skill"] == "ado_ci"
+      assert hd(decoded["result"]["installed"])["skill"] == "ado-ci"
 
-      assert File.exists?(Path.join([tmpdir, "ado_ci", "SKILL.md"]))
-      refute File.exists?(Path.join([tmpdir, "ado_cli", "SKILL.md"]))
-      refute File.exists?(Path.join([tmpdir, "ado_auth", "SKILL.md"]))
+      assert File.exists?(Path.join([tmpdir, "ado-ci", "SKILL.md"]))
+      refute File.exists?(Path.join([tmpdir, "ado-cli", "SKILL.md"]))
+      refute File.exists?(Path.join([tmpdir, "ado-auth", "SKILL.md"]))
     end
 
     test "expands ~ in custom target paths", %{tmpdir: _tmpdir} do
@@ -156,14 +157,14 @@ defmodule AdoCli.CLI.SkillsTest do
       on_exit(fn -> File.rm_rf!(home_subdir) end)
 
       Skills.install_skills(%{
-        options: %{target: home_subdir, force: false, json: true, skill: "ado_cli"},
+        options: %{target: home_subdir, force: false, json: true, skill: "ado-cli"},
         arguments: %{}
       })
 
       assert_receive {:cli_mate_shell, :info, msg}, 1000
       {:ok, decoded} = JSON.decode(msg)
       assert [_x] = decoded["result"]["installed"]
-      assert File.exists?(Path.join([home_subdir, "ado_cli", "SKILL.md"]))
+      assert File.exists?(Path.join([home_subdir, "ado-cli", "SKILL.md"]))
     end
 
     test "JSON envelope has the expected structure", %{tmpdir: tmpdir} do
@@ -193,7 +194,9 @@ defmodule AdoCli.CLI.SkillsTest do
       # Each test gets a temp dir pretending to be a git repo.
       # We don't actually init .git; the install command doesn't
       # require it, but the layout mirrors a real repo.
-      repo_dir = Path.join(System.tmp_dir!(), "ado_copilot_repo_#{System.unique_integer([:positive])}")
+      repo_dir =
+        Path.join(System.tmp_dir!(), "ado_copilot_repo_#{System.unique_integer([:positive])}")
+
       File.mkdir_p!(repo_dir)
       on_exit(fn -> File.rm_rf!(repo_dir) end)
       {:ok, repo_dir: repo_dir}
@@ -213,7 +216,7 @@ defmodule AdoCli.CLI.SkillsTest do
       assert [_x, _y, _z] = decoded["result"]["installed"]
 
       # Each skill should land under <repo>/.github/ado-cli/<skill>/
-      for skill <- ~w(ado_cli ado_auth ado_ci) do
+      for skill <- ~w(ado-cli ado-auth ado-ci) do
         path = Path.join([repo_dir, ".github", "ado-cli", skill, "SKILL.md"])
         assert File.exists?(path), "expected #{path} to exist"
         content = File.read!(path)
@@ -243,7 +246,7 @@ defmodule AdoCli.CLI.SkillsTest do
       # verify it ends with the expected suffix instead.
       assert String.ends_with?(target["path"], Path.join([".github", "ado-cli"]))
       # And the file should actually exist where we expect
-      assert File.exists?(Path.join([repo_dir, ".github", "ado-cli", "ado_cli", "SKILL.md"]))
+      assert File.exists?(Path.join([repo_dir, ".github", "ado-cli", "ado-cli", "SKILL.md"]))
     end
 
     test "emits validation_error when --repo points to a nonexistent dir" do
@@ -252,7 +255,13 @@ defmodule AdoCli.CLI.SkillsTest do
       json =
         capture_io(fn ->
           Skills.install_skills(%{
-            options: %{target: "copilot", repo: "/this/path/does/not/exist", force: false, json: true, skill: nil},
+            options: %{
+              target: "copilot",
+              repo: "/this/path/does/not/exist",
+              force: false,
+              json: true,
+              skill: nil
+            },
             arguments: %{}
           })
         end)
@@ -267,7 +276,7 @@ defmodule AdoCli.CLI.SkillsTest do
 
     test "skips existing files without --force", %{repo_dir: repo_dir} do
       # Pre-create one file
-      skill_path = Path.join([repo_dir, ".github", "ado-cli", "ado_cli", "SKILL.md"])
+      skill_path = Path.join([repo_dir, ".github", "ado-cli", "ado-cli", "SKILL.md"])
       File.mkdir_p!(Path.dirname(skill_path))
       File.write!(skill_path, "stale content\n")
 
@@ -280,11 +289,13 @@ defmodule AdoCli.CLI.SkillsTest do
       {:ok, decoded} = JSON.decode(msg)
 
       skipped = Enum.map(decoded["result"]["skipped"], & &1["skill"])
-      assert "ado_cli" in skipped
+      assert "ado-cli" in skipped
       assert File.read!(skill_path) == "stale content\n"
     end
 
-    test "does NOT include copilot when --target=all (copilot is per-repo, not per-user)", %{repo_dir: _repo_dir} do
+    test "does NOT include copilot when --target=all (copilot is per-repo, not per-user)", %{
+      repo_dir: _repo_dir
+    } do
       Skills.install_skills(%{
         options: %{target: "all", force: false, json: true, skill: nil},
         arguments: %{}
