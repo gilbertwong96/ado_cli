@@ -488,6 +488,13 @@ section {
   font-style: italic;
 }
 
+/* JSON syntax highlighting (applied by assets/highlight.js) */
+.shell-content .tok-key   { color: #79c0ff; }   /* JSON keys ("foo":) */
+.shell-content .tok-str   { color: #a5d6ff; }   /* string values */
+.shell-content .tok-bool  { color: #ffa657; }   /* true/false/null */
+.shell-content .tok-num   { color: #d2a8ff; }   /* numbers */
+.shell-content .tok-punct { color: #8b949e; }   /* , { } [ ] */
+
 /* ── footer ───────────────────────────────────────────────── */
 footer {
   background: #010409;
@@ -533,6 +540,54 @@ footer {
   color: #8b949e;
   font-size: 0.9em;
   margin-top: 32px;
+}
+
+/* ── hero refinements ──────────────────────────────────────────── */
+.install-row-hero {
+  justify-content: center;
+  margin: 32px 0 16px;
+}
+
+.install-row-hero .install-cmd {
+  width: auto;
+  min-width: 420px;
+}
+
+.recommended-pill {
+  font-size: 0.6em;
+  color: #3fb950;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  background: rgba(63, 185, 80, 0.1);
+  padding: 2px 8px;
+  border-radius: 10px;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+
+.hero-hint {
+  text-align: center;
+  color: #8b949e;
+  font-size: 0.9em;
+  margin: 8px 0 32px;
+}
+
+.hero-hint a {
+  color: #58a6ff;
+}
+
+/* Section lede — a slightly larger intro paragraph under a heading */
+.section-lede {
+  font-size: 1.05em;
+  color: #8b949e;
+  max-width: 700px;
+  margin: 0 auto 24px;
+  text-align: center;
+}
+
+.section-lede a {
+  color: #58a6ff;
 }
 @media (max-width: 700px) {
   .hero h1 { font-size: 2.2em; }
