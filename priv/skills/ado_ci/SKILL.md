@@ -1,6 +1,7 @@
 ---
+name: ado_ci
 description: Using ado in CI/CD — authentication, pipeline triggers, PR automation, package publishing
-version: "0.3.0"
+version: "0.4.0"
 commands:
   - ado projects list
   - ado pipelines list PROJECT
