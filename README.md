@@ -1,8 +1,13 @@
-# AdoCli
+# ado
 
-A command-line tool for managing Azure DevOps — projects, repositories, work items,
-pipelines, pull requests, and releases. Works with both **cloud** (`dev.azure.com`)
-and **self-hosted** Azure DevOps Server.
+> **AI-native Azure DevOps CLI** — structured JSON output, embedded skills for
+> LLM agents, and a self-discoverable command tree. Built for humans **and**
+> AI agents (pi, Claude Code, Copilot, Cursor, etc.) to share.
+
+A self-contained, cross-platform command-line tool for managing Azure DevOps —
+projects, repositories, work items, pipelines, pull requests, releases, and
+more. Works with both **cloud** (`dev.azure.com`) and **self-hosted** Azure
+DevOps Server.
 
 Built with [Finch](https://hex.pm/packages/finch),
 [CLI Mate](https://hex.pm/packages/cli_mate), and
@@ -12,6 +17,30 @@ Built with [Finch](https://hex.pm/packages/finch),
 [![codecov](https://codecov.io/gh/gilbertwong96/ado_cli/graph/badge.svg)](https://codecov.io/gh/gilbertwong96/ado_cli)
 [![Elixir](https://img.shields.io/badge/elixir-1.20+-purple.svg)](https://elixir-lang.org)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+
+---
+
+## Why "AI-native"?
+
+Most CLIs are designed for humans and retrofitted for AI agents with `--json`
+flags that nobody uses. `ado` is designed the other way around:
+
+| Feature | Human-friendly | AI-agent-friendly |
+|---|---|---|
+| Output | Tables + colors | Stable JSON envelopes on every command |
+| Discovery | `ado --help` → 3 levels deep | `ado schema --json` — full command tree in 1 round trip |
+| Documentation | Embedded `man` pages | `ado skills list` / `ado skills read NAME --json` |
+| Error handling | Pretty stack traces | `{ok: false, error: {code, status, message, details}}` |
+| Auth | Browser OAuth (interactive) | PAT, device code, browser — all machine-discoverable |
+| Distribution | `brew install ado` | Single self-contained binary, no runtime deps |
+
+Every command supports `--json` for machine consumption. Every error has a
+stable `code` (e.g. `auth_required`, `not_found`, `validation_error`) so agents
+can match on it instead of parsing English.
+
+**For LLM agents:** run `ado skills install` to install the embedded skills to
+your agent's skill directory (`~/.pi/agent/skills/`, `~/.claude/skills/`, etc.)
+so they load natively on startup.
 
 ---
 
@@ -58,6 +87,27 @@ ado workitems create MyProject --type Bug --title "Fix login page"
 # Open a pull request
 ado prs create MyProject MyRepo --title "Add feature" --source dev --target main
 ```
+
+---
+
+## For LLM Agents (pi, Claude Code, Copilot, Cursor)
+
+Run `ado schema --json` to discover the full command tree, or install the
+embedded skills so your agent loads them natively:
+
+```bash
+# Install skills to your agent's skill directory
+ado skills install                          # pi + claude + cursor
+ado skills install --target pi              # ~/.pi/agent/skills/
+ado skills install --target claude          # ~/.claude/skills/
+ado skills install --target cursor          # ~/.cursor/skills/
+
+# Verify the install
+ls ~/.pi/agent/skills/                       # you should see ado_cli/, ado_auth/, ado_ci/
+```
+
+Once installed, the agent can `ado skills list`, `ado skills read <name>`, and
+`ado schema <command> --json` as native operations, with no shell-out overhead.
 
 ---
 
