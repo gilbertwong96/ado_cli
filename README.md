@@ -88,6 +88,31 @@ ado workitems create MyProject --type Bug --title "Fix login page"
 ado prs create MyProject MyRepo --title "Add feature" --source dev --target main
 ```
 
+## Shell Completion
+
+`<TAB>` works out of the box once you source the generated script:
+
+```bash
+# bash (add to ~/.bashrc)
+eval "$(ado completion bash)"
+
+# zsh (add to ~/.zshrc; also works as a one-liner)
+ado completion zsh > "${fpath[1]}/_ado"
+
+# fish (add to ~/.config/fish/config.fish)
+ado completion fish | source
+
+# PowerShell (add to $PROFILE)
+ado completion powershell | Out-String | Invoke-Expression
+```
+
+After installing, pressing `<TAB>` after `ado ` shows every top-level
+subcommand; after `ado prs ` shows `abandon`, `comments`, `complete`,
+`create`, `diff`, `list`, `show`; and so on at every nesting level.
+
+Re-run the completion command after upgrading `ado` to pick up new
+subcommands and options.
+
 ---
 
 ## For LLM Agents (pi, Claude Code, Copilot, Cursor, Codex)
