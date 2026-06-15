@@ -115,27 +115,29 @@ defmodule AdoCli.Frontmatter do
     #
     # The map is keyed by the lowercased frontmatter key (matching
     # what the previous parser did).
-    Enum.reduce(lines, %{}, fn line, acc ->
-      case String.split(line, ":", parts: 2) do
-        [k, v] ->
-          key = String.trim(k)
-          value = collect_value(line, v, lines, acc)
-          Map.put_new(acc, key, value)
+    merged =
+      Enum.reduce(lines, %{}, fn line, acc ->
+        case String.split(line, ":", parts: 2) do
+          [k, v] ->
+            key = String.trim(k)
+            value = collect_value(line, v, lines, acc)
+            Map.put_new(acc, key, value)
 
-        _ ->
-          # Continuation line of a previous multi-line value. If
-          # we have a `commands:` key already in the acc, append
-          # this line to its value.
-          case Map.fetch(acc, "commands") do
-            {:ok, _} ->
-              Map.update!(acc, "commands", &(&1 <> "\n" <> line))
+          _ ->
+            # Continuation line of a previous multi-line value. If
+            # we have a `commands:` key already in the acc, append
+            # this line to its value.
+            case Map.fetch(acc, "commands") do
+              {:ok, _} ->
+                Map.update!(acc, "commands", &(&1 <> "\n" <> line))
 
-            :error ->
-              acc
-          end
-      end
-    end)
-    |> Map.new()
+              :error ->
+                acc
+            end
+        end
+      end)
+
+    Map.new(merged)
   end
 
   # When we see `commands:`, the value we just read is empty (because

@@ -42,10 +42,15 @@ defmodule Mix.Tasks.Ci.Dialyzer do
   end
 
   defp expected_warning?(line) do
+    # Mix.Project.config/0 is only available when Mix is loaded
+    # (dev/test), not in escript/Burrito builds. The caller guards
+    # with Code.ensure_loaded?/1 + function_exported?/3.
     String.contains?(line, "pattern_match") or
       String.contains?(line, "unused_fun") or
       String.contains?(line, ":call ") or
       String.contains?(line, "Finch.build") or
-      String.contains?(line, "lib/mix/tasks/")
+      String.contains?(line, "lib/mix/tasks/") or
+      String.contains?(line, "Mix.Project.config") or
+      String.contains?(line, "Mix.Project")
   end
 end

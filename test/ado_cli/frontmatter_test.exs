@@ -83,7 +83,7 @@ defmodule AdoCli.FrontmatterTest do
       """
 
       cmds = Frontmatter.parse_commands(content)
-      assert length(cmds) == 3
+      assert [_x, _y, _z] = cmds
       assert Enum.at(cmds, 0) == "ado projects list"
       assert Enum.at(cmds, 1) == "ado prs create PROJECT REPO --title TEXT"
       assert Enum.at(cmds, 2) == "ado pipelines run PROJECT ID --branch main"

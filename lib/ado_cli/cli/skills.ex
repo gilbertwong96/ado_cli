@@ -132,51 +132,65 @@ defmodule AdoCli.CLI.Skills do
     [name, rest] = split_target(target)
 
     if rest == "" do
-      # Top-level skill read
-      case Skills.read_skill(name) do
-        {:ok, content} ->
-          if json? do
-            case Skills.describe(name) do
-              {:ok, info} ->
-                writeln(
-                  JSON.encode!(%{
-                    ok: true,
-                    skill: name,
-                    path: "SKILL.md",
-                    content: strip_frontmatter(content),
-                    metadata: Map.take(info, [:description, :version, :commands])
-                  })
-                )
-            end
-          else
-            writeln(content)
-          end
-
-          halt_success("")
-
-        {:error, reason} ->
-          writeln("")
-          writeln("xx  #{reason}")
-          halt_error("")
-      end
+      read_top_level_skill(name, json?)
     else
-      # Reference file read
-      case Skills.read_reference(name, rest) do
-        {:ok, content, relpath} ->
-          if json? do
-            writeln(JSON.encode!(%{ok: true, skill: name, path: relpath, content: content}))
-          else
-            writeln(content)
-          end
-
-          halt_success("")
-
-        {:error, reason} ->
-          writeln("")
-          writeln("xx  #{reason}")
-          halt_error("")
-      end
+      read_skill_reference(name, rest, json?)
     end
+  end
+
+  defp read_top_level_skill(name, json?) do
+    case Skills.read_skill(name) do
+      {:ok, content} ->
+        output_skill_content(name, "SKILL.md", strip_frontmatter(content), json?)
+        halt_success("")
+
+      {:error, reason} ->
+        report_read_error(reason)
+    end
+  end
+
+  defp read_skill_reference(name, rest, json?) do
+    case Skills.read_reference(name, rest) do
+      {:ok, content, relpath} ->
+        output_skill_content(name, relpath, content, json?)
+        halt_success("")
+
+      {:error, reason} ->
+        report_read_error(reason)
+    end
+  end
+
+  defp output_skill_content(name, path, content, true = _json?) do
+    info = describe_for_json(name)
+    payload = build_skill_payload(name, path, content, info)
+    writeln(JSON.encode!(payload))
+  end
+
+  defp output_skill_content(_name, _path, content, false = _json?) do
+    writeln(content)
+  end
+
+  defp describe_for_json(name) do
+    case Skills.describe(name) do
+      {:ok, info} -> info
+      _ -> %{}
+    end
+  end
+
+  defp build_skill_payload(name, path, content, info) do
+    base = %{ok: true, skill: name, path: path, content: content}
+
+    if map_size(info) == 0 do
+      base
+    else
+      Map.put(base, :metadata, Map.take(info, [:description, :version, :commands]))
+    end
+  end
+
+  defp report_read_error(reason) do
+    writeln("")
+    writeln("xx  #{reason}")
+    halt_error("")
   end
 
   def search_skills(parsed) do
@@ -230,27 +244,30 @@ defmodule AdoCli.CLI.Skills do
   defp list_skill_files(path, json?) do
     case Skills.list_path(path) do
       {:ok, dir, entries} ->
-        if json? do
-          writeln(JSON.encode!(%{ok: true, dir: dir, entries: entries}))
-          halt_success("")
-        else
-          writeln("")
-          writeln("  #{dir}/")
-
-          Enum.each(entries, fn entry ->
-            suffix = if entry.is_dir, do: "/", else: ""
-            writeln("    #{entry.path}#{suffix}")
-          end)
-
-          writeln("")
-          halt_success("")
-        end
+        render_skill_dir(dir, entries, json?)
+        halt_success("")
 
       {:error, reason} ->
         writeln("")
         writeln("xx  #{reason}")
         halt_error("")
     end
+  end
+
+  defp render_skill_dir(dir, entries, true = _json?) do
+    writeln(JSON.encode!(%{ok: true, dir: dir, entries: entries}))
+  end
+
+  defp render_skill_dir(dir, entries, false = _json?) do
+    writeln("")
+    writeln("  #{dir}/")
+
+    Enum.each(entries, fn entry ->
+      suffix = if entry.is_dir, do: "/", else: ""
+      writeln("    #{entry.path}#{suffix}")
+    end)
+
+    writeln("")
   end
 
   defp print_describe(info) do
@@ -281,17 +298,19 @@ defmodule AdoCli.CLI.Skills do
       writeln("  Matches for #{inspect(query)} (#{length(results)}):")
       writeln("")
 
-      Enum.group_by(results, & &1.skill)
-      |> Enum.each(fn {skill, hits} ->
-        writeln("  #{skill}")
-
-        Enum.each(hits, fn hit ->
-          writeln("    [#{hit.match_type}] #{hit.matched}")
-        end)
-
-        writeln("")
-      end)
+      grouped = Enum.group_by(results, & &1.skill)
+      Enum.each(grouped, &print_skill_group/1)
     end
+
+    writeln("")
+  end
+
+  defp print_skill_group({skill, hits}) do
+    writeln("  #{skill}")
+
+    Enum.each(hits, fn hit ->
+      writeln("    [#{hit.match_type}] #{hit.matched}")
+    end)
 
     writeln("")
   end
