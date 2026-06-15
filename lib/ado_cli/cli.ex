@@ -32,6 +32,7 @@ defmodule AdoCli.CLI do
   alias AdoCli.CLI.BranchPolicies
   alias AdoCli.CLI.Builds
   alias AdoCli.CLI.CI
+  alias AdoCli.CLI.Completion
   alias AdoCli.CLI.Connections
   alias AdoCli.CLI.Extensions
   alias AdoCli.CLI.Folders
@@ -89,6 +90,7 @@ defmodule AdoCli.CLI do
       version: Version,
       ci: CI,
       schema: Schema,
+      completion: Completion,
       "agent-pools": AgentPools,
       areas: Areas,
       connections: Connections,
