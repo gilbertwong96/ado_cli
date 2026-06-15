@@ -685,7 +685,7 @@ before they go public.
 
 ```bash
 # 1. Bump version in mix.exs, commit, tag
-$EDITOR mix.exs                          # bump version: "0.1.0" -> "0.2.0"
+$EDITOR mix.exs                          # bump version: "0.2.0" -> "0.3.0"
 git add -u && git commit -m "v0.2.0"
 git tag -a v0.2.0 -m "Release 0.2.0"
 git push github main v0.2.0
