@@ -35,10 +35,74 @@ defmodule AdoCli.CLI.Completion do
   surface.
   """
 
+  @behaviour CliMate.CLI.Command
   import CliMate.CLI
 
   @supported_shells ~w(bash zsh fish powershell)
   @default_shell "bash"
+
+  @impl true
+  def command do
+    [
+      name: "ado completion",
+      doc: """
+      Generate a shell completion script for the ado CLI.
+
+      Usage:
+        eval "$(ado completion bash)"          # bash
+        ado completion zsh > "${fpath[1]}/_ado"  # zsh
+        ado completion fish | source            # fish
+        ado completion powershell | Out-String | Invoke-Expression  # pwsh
+
+      The generated script knows about all subcommands in the
+      CliMate command tree. Run it again after upgrading ado
+      to pick up new commands.
+
+      With no argument, defaults to 'bash' (since that's what
+      most people use interactively for a first try).
+
+      Note: the shell is passed as a positional argument
+      (e.g. `ado completion bash`), not as `-s` — `-s` is
+      already the global short for `--server`.
+      """,
+      arguments: [
+        shell: [
+          type: :string,
+          required: false,
+          doc:
+            "Shell to generate completion for: bash, zsh, fish, " <>
+              "powershell. Default: bash"
+        ]
+      ],
+      options: [
+        write_to_file: [
+          type: :string,
+          short: :w,
+          doc:
+            "Write the script to this file path instead of stdout. " <>
+              "Useful for installing to a system fpath (e.g. " <>
+              "`ado completion zsh -w ~/.zsh/completions/_ado`).",
+          doc_arg: "PATH"
+        ]
+      ],
+      execute: &run/1
+    ]
+  end
+
+  def run(parsed) do
+    args = parsed.arguments || %{}
+    opts = parsed.options || %{}
+    shell = parse_shell(Map.get(args, :shell))
+    tree = AdoCli.CLI.Schema.build_tree()
+    script = generate(shell, tree)
+
+    case Map.get(opts, :write_to_file) do
+      nil -> IO.puts(script)
+      path -> File.write!(path, script)
+    end
+
+    halt(0)
+  end
 
   @doc """
   Returns the list of supported shell names. Public for use in
@@ -93,8 +157,13 @@ defmodule AdoCli.CLI.Completion do
 
   def parse_shell(shell) when is_binary(shell) do
     case String.downcase(shell) do
-      s when s in @supported_shells -> s
-      other -> halt_error("Unknown shell '#{other}'. Must be one of: #{Enum.join(@supported_shells, ", ")}.")
+      s when s in @supported_shells ->
+        s
+
+      other ->
+        halt_error(
+          "Unknown shell '#{other}'. Must be one of: #{Enum.join(@supported_shells, ", ")}."
+        )
     end
   end
 

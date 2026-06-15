@@ -16,6 +16,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
       delta/less/vimdiff for pretty viewing)
   Also supports `--iteration N` to inspect an earlier iteration
   (default: latest) and `--json` for LLM-friendly structured output.
+- **`ado completion`** for generating shell completion scripts.
+  Supports bash, zsh, fish, and PowerShell. The generated script
+  is static (regenerate it when ado upgrades) and always in sync
+  with the CliMate command tree.
+
+      eval "$(ado completion bash)"   # bash
+      ado completion zsh > "${fpath[1]}/_ado"   # zsh
+      ado completion fish | source    # fish
+      ado completion powershell | Out-String | Invoke-Expression  # pwsh
+
+  The shell is a positional argument (not `-s`, which is the
+  global short for `--server`). Defaults to `bash` when no
+  argument is given. Use `-w PATH` to write the script to a
+  file instead of stdout (e.g. for system fpath installation).
 - **`ado prs comments add`** for adding/replying to PR review comments.
   Three modes:
     * General thread: `ado prs comments add PROJ REPO PR --content "LGTM!"`
