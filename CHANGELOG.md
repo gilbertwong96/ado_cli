@@ -5,6 +5,46 @@ All notable changes to `ado` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] - 2026-06-15
+
+Re-publish of v0.2.0 with the npm packaging bugs fixed. The Elixir
+code, GitHub release binaries, and Burrito build artifacts are
+**identical** to v0.2.0 — only the npm distribution was rebuilt.
+
+### Fixed
+
+- **npm `optionalDependencies` referenced the wrong version.** The
+  original v0.2.0 `@gilbertwong1996/ado@0.2.0` npm package
+  shipped with `optionalDependencies` pointing at `0.1.0` of the
+  platform packages, so `npm install -g @gilbertwong1996/ado`
+  pulled the v0.1.0 binary. The new `optionalDependencies` points
+  at `0.2.1` (matching this release). `scripts/npm-publish.sh`
+  was missing the `optionalDependencies` bump — only `.version`
+  was being updated. Fixed.
+- **npm `scripts/postinstall.js` was missing from the v0.2.0
+  tarball.** The main package's `package.json` declared a
+  `postinstall` hook that auto-installs shell completion, and
+  listed `scripts/postinstall.js` in `files`, but the publish
+  script never actually copied the file into the package dir.
+  npm silently omits missing files from the tarball, so users
+  who installed v0.2.0 got no shell-completion auto-install.
+  `scripts/npm-publish.sh` now has a step that copies the
+  postinstall hook into the main package and hard-errors if the
+  source file is missing.
+
+### Notes
+
+- v0.2.0 of the `@gilbertwong1996/ado` npm package was unpublished
+  immediately after discovery of the bugs, but npm's policy
+  forbids republishing an unpublished version. Hence v0.2.1.
+- The v0.2.0 GitHub release (with all 5 binaries) is preserved.
+  The v0.2.1 release on GitHub is a re-tag with the same
+  binaries.
+- The release also adds `scripts/npm-unpublish.sh` — a new script
+  for unpublishing a specific version of all 6 packages within
+  npm's 72h window, with `--dry-run` / `--yes` / `--no-local`
+  flags and tolerant handling of partial state.
+
 ## [0.2.0] - 2026-06-15
 
 The v0.2.0 release adds end-to-end PR review workflows (`prs comments`
@@ -266,6 +306,7 @@ the embedded skills can be installed into any LLM agent's skill directory.
   are filtered by the `mix ci.dialyzer` task.
 - ExUnit test count: 234 (across 30+ test files). All pass.
 
-[Unreleased]: https://github.com/gilbertwong96/ado_cli/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/gilbertwong96/ado_cli/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/gilbertwong96/ado_cli/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/gilbertwong96/ado_cli/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/gilbertwong96/ado_cli/releases/tag/v0.1.0
