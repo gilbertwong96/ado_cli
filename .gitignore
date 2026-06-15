@@ -39,3 +39,7 @@ ado.tgz
 # Git worktrees for parallel agent work
 .worktrees/
 node_modules/
+
+# Node.js test artifacts (root only)
+/package.json
+/package-lock.json
