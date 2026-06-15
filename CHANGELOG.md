@@ -5,7 +5,14 @@ All notable changes to `ado` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.2.0] - 2026-06-15
+
+The v0.2.0 release adds end-to-end PR review workflows (`prs comments`
+add/list/update with file & thread context, plus `prs diff` in three
+modes), shell completion for bash/zsh/fish/powershell with automatic
+install via npm postinstall, and the `ado version` / `--version`
+command. The release also cleans up all 25 outstanding Credo strict
+issues.
 
 ### Added
 
@@ -16,6 +23,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
       delta/less/vimdiff for pretty viewing)
   Also supports `--iteration N` to inspect an earlier iteration
   (default: latest) and `--json` for LLM-friendly structured output.
+- **`ado prs comments add`** for adding/replying to PR review comments.
+  Three modes:
+    * General thread: `ado prs comments add PROJ REPO PR --content "LGTM!"`
+    * Inline (file/line): `ado prs comments add PROJ REPO PR --content "use a guard clause" --file-path src/foo.ex --line 42`
+    * Reply to existing thread: `ado prs comments add PROJ REPO PR --content "fixed in abc123" --thread-id 5`
+  Supports `--status` (`active` (default) | `fixed` | `wontFix` |
+  `closed` | `byDesign`) to set the new thread's status, `--content
+  @<file>` to read text from a file, and `--content -` to read text
+  from stdin. Emits `--json` with `{ok, thread_id, comment_id}` on
+  success. See
+  <https://learn.microsoft.com/en-us/rest/azure/devops/git/pull-request-threads>.
+- **`ado prs comments list --all`** to expand the listing to show
+  full comment content (no 80-char truncation), file path for inline
+  threads, and reply markers (e.g. `[11] (reply to 10) bob:`). The
+  default view still shows thread headers with a preview of each
+  comment.
+- **`ado prs comments update`** with both content and status changes
+  (at least one of `--content` or `--status` is required):
+    * `--content "new text"` edits the comment (legacy behavior)
+    * `--status fixed` changes the thread's resolution state
+      (`active`, `fixed`, `wontFix`, `closed`, `byDesign`)
+    * `--content @<file>` reads from a file (multi-line friendly)
+    * `--content -` reads from stdin
+    * `--resolved-by-me` auto-sets the thread's `resolvedBy` field
+      to the authenticated user's GUID (fetches it from
+      `/_apis/connectionData`, cached for the command's lifetime)
+    * `--dry-run` prints the would-be PATCH request(s) as JSON
+      (method, path, body) and exits without making any network calls
+    * `--json` emits a structured envelope
 - **`ado completion`** for generating shell completion scripts.
   Supports bash, zsh, fish, and PowerShell. The generated script
   is static (regenerate it when ado upgrades) and always in sync
@@ -30,85 +66,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   global short for `--server`). Defaults to `bash` when no
   argument is given. Use `-w PATH` to write the script to a
   file instead of stdout (e.g. for system fpath installation).
-- **`ado prs comments add`** for adding/replying to PR review comments.
-  Three modes:
-    * General thread: `ado prs comments add PROJ REPO PR --content "LGTM!"`
-    * Inline (file/line): `ado prs comments add PROJ REPO PR --content "use a guard clause" --file-path src/foo.ex --line 42`
-    * Reply to existing thread: `ado prs comments add PROJ REPO PR --content "fixed in abc123" --thread-id 5`
-  Supports `--json` for structured output (returns `{ok, thread_id, comment_id}`).
-  See https://learn.microsoft.com/en-us/rest/azure/devops/git/pull-request-threads
-- **`ado prs comments add --status`** to set the new thread's status.
-  Valid values: `active` (default), `fixed`, `wontFix`, `closed`, `byDesign`.
-  Invalid values produce a clear error listing the allowed set.
-- **`ado prs comments add --content @<file>`** to read comment text from a file
-  (useful for multi-line comments). Trailing newlines are stripped.
-- **`ado prs comments add --content -`** to read comment text from stdin
-  (also for multi-line). Example: `echo 'first line\nsecond' | ado prs comments add ... --content -`
-- **`ado prs comments list --all`** to expand the listing to show full comment
-  content (no 80-char truncation), file path for inline threads, and
-  reply markers (e.g. `[11] (reply to 10) bob:`). Default view still shows
-  thread headers with a preview of each comment.
-- **`ado prs comments update`** now supports both content and status
-  changes. At least one of `--content` or `--status` is required.
-    * `--content "new text"` edits the comment (legacy behavior)
-    * `--status fixed` changes the thread's resolution state
-      (active, fixed, wontFix, closed, byDesign)
-    * Pass both to update in one call
-    * `--content @<file>` reads from a file (multi-line friendly)
-    * `--content -` reads from stdin
-    * `--resolved-by-me` auto-sets the thread's `resolvedBy` field
-      to the authenticated user's GUID (fetches it from
-      `/_apis/connectionData`, cached for the command's lifetime)
-    * `--dry-run` prints the would-be PATCH request(s) as JSON
-      (method, path, body) and exits without making any network calls
-    * `--json` emits a structured envelope
+- **npm postinstall auto-installs shell completion.** When you
+  `npm install -g @gilbertwong1996/ado`, the postinstall hook
+  generates the right completion script for your shell and wires
+  it up (e.g. appends `fpath=($HOME/.zsh/completions $fpath) +
+  autoload -U compinit && compinit` to `~/.zshrc`, installs to
+  `~/.local/share/bash-completion/completions/ado` for bash, and
+  adds a source line to `$PROFILE` for PowerShell). The hook is
+  idempotent (checks for a marker line) and respects
+  `ADO_NO_COMPLETION=1` to opt out. Set `ADO_BIN` to override the
+  binary used during testing. Implementation lives in
+  `scripts/postinstall.js` (336 LOC, Node.js, cross-platform).
+- **`ado version` subcommand and `--version` flag.** `ado version`
+  prints `ado 0.2.0` (plain text) or `{"ok": true, "version":
+  "0.2.0"}` with `--json`. `ado --version` prints the same and
+  exits immediately. `ado -v` still means `--verbose` (no breaking
+  change to existing behavior). Version resolves from
+  `Application.spec/2` and works in dev, escript, and Burrito
+  binaries.
+- **`AdoCli.Version` module** (`lib/ado_cli/version.ex`) — shared
+  helper for resolving the current version across dev, escript,
+  and Burrito build contexts. Replaces the duplicated
+  `current_version/0` that was previously in `AdoCli.CLI.Schema`.
+- **`AdoCli.Auth.current_user_id/0`** public helper that fetches
+  and caches the authenticated user's GUID from
+  `/_apis/connectionData`. Returns `{:ok, guid} | {:error, msg}`.
+  Used by `ado prs comments update --resolved-by-me` to set the
+  thread's `resolvedBy.id` without forcing the caller to look it
+  up first.
 
-- **`ado prs comments add`** for adding/replying to PR review comments.
-  Three modes:
-    * General thread: `ado prs comments add PROJ REPO PR --content "LGTM!"`
-    * Inline (file/line): `ado prs comments add PROJ REPO PR --content "use a guard clause" --file-path src/foo.ex --line 42`
-    * Reply to existing thread: `ado prs comments add PROJ REPO PR --content "fixed in abc123" --thread-id 5`
-  Supports `--json` for structured output (returns `{ok, thread_id, comment_id}`).
-  See https://learn.microsoft.com/en-us/rest/azure/devops/git/pull-request-threads
-- **`ado prs comments add --status`** to set the new thread's status.
-  Valid values: `active` (default), `fixed`, `wontFix`, `closed`, `byDesign`.
-  Invalid values produce a clear error listing the allowed set.
-- **`ado prs comments add --content @<file>`** to read comment text from a file
-  (useful for multi-line comments). Trailing newlines are stripped.
-- **`ado prs comments add --content -`** to read comment text from stdin
-  (also for multi-line). Example: `echo 'first line\nsecond' | ado prs comments add ... --content -`
-- **`ado prs comments list --all`** to expand the listing to show full comment
-  content (no 80-char truncation), file path for inline threads, and
-  reply markers (e.g. `[11] (reply to 10) bob:`). Default view still shows
-  thread headers with a preview of each comment.
-- **`ado prs comments update`** now supports both content and status
-  changes. At least one of `--content` or `--status` is required.
-    * `--content "new text"` edits the comment (legacy behavior)
-    * `--status fixed` changes the thread's resolution state
-      (active, fixed, wontFix, closed, byDesign)
-    * Pass both to update in one call
-    * `--content @<file>` reads from a file (multi-line friendly)
-    * `--content -` reads from stdin
-    * `--resolved-by-me` auto-sets the thread's `resolvedBy` field
-      to the authenticated user's GUID (fetches it from
-      `/_apis/connectionData`, cached for the command's lifetime)
-    * `--dry-run` prints the would-be PATCH request(s) as JSON
-      (method, path, body) and exits without making any network calls
-    * `--json` emits a structured envelope
-- **`ado version` subcommand and `--version` flag** for the next release.
-  - `ado version` — prints `ado 0.2.0` (plain text) or `{"ok": true, "version": "0.2.0"}` (with `--json`)
-  - `ado --version` — same output, exits immediately
-  - `ado -v` still means `--verbose` (no breaking change to existing behavior)
-  - Resolves the version from `Application.spec/2` (works in dev, escript, and Burrito binaries)
-- **New `AdoCli.Version` module** (lib/ado_cli/version.ex) — shared helper for resolving the current version across dev, escript, and Burrito build contexts. Replaces the duplicated `current_version/0` that was previously in `AdoCli.CLI.Schema`.
-- **Fixed bug**: `ado schema --json` returned an empty `"version": ""` field when run from the escript. The `AdoCli.Version` module now calls `Application.ensure_loaded/1` to load the bundled `.app` file, so `Application.spec/2` works correctly in escript/Burrito mode (where the app isn't auto-loaded).
+### Fixed
 
-### Breaking changes
+- **`ado schema --json` empty `version` field** when run from the
+  escript. `AdoCli.Version` now calls `Application.ensure_loaded/1`
+  to load the bundled `.app` file, so `Application.spec/2` works
+  correctly in escript/Burrito mode (where the app isn't
+  auto-loaded).
+- **npm `package.json` `os`/`cpu` filters** were missing on a
+  couple of platform packages, so npm would warn on every install.
+  `scripts/npm-publish.sh` now validates each `package.json` against
+  the binary inside it before publishing, and refuses to publish
+  a tarball that doesn't match the manifest.
+- **`scripts/npm-publish.sh` JSON parse failure** when the maintainer
+  ran it without arguments (the script would silently no-op).
+  Added `set -euo pipefail`, an explicit `VERSION` positional arg,
+  and a clearer error if `gh release view` can't find the release.
 
-- **Skill names renamed**: `ado_cli` → `ado-cli`, `ado_auth` → `ado-auth`,
-  `ado_ci` → `ado-ci`. pi (the AI agent) requires skill names to use only
-  lowercase `a-z`, `0-9`, and hyphens — underscores are rejected with a
-  "name contains invalid characters" warning. Updated:
+### Changed
+
+- **Skill names renamed**: `ado_cli` → `ado-cli`, `ado_auth` →
+  `ado-auth`, `ado_ci` → `ado-ci`. pi (the AI agent) requires skill
+  names to use only lowercase `a-z`, `0-9`, and hyphens — underscores
+  are rejected with a "name contains invalid characters" warning.
+  Updated:
   - Source dirs in `priv/skills/`
   - `name:` field in each `SKILL.md` frontmatter
   - `@skills` embedded map (skill keys)
@@ -124,12 +134,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   rm -rf ~/.codex/skills/ado_{cli,auth,ci}
   ado skills install
   ```
+- **`AdoCli.CLI.Skills` refactored.** `resolve_target_dirs/3` is now
+  public so tests can assert on the install layout without mocking
+  `File.cwd/0`. `--target copilot` and `--target codex` now share a
+  common path resolver, eliminating ~40 lines of duplication.
+- **Code style cleanup: 25 outstanding Credo `--strict` issues
+  fixed** across `lib/ado_cli/auth.ex`,
+  `lib/ado_cli/cli/completion.ex`, `lib/ado_cli/cli/pull_requests.ex`,
+  and `test/ado_cli/cli/pull_requests_test.exs`. Notable refactors:
+    * `Completion.generate/2` split into a `dispatch/2` clause
+      group keyed on shell name (cyclomatic complexity 9 → 5).
+    * `PullRequests.update_comment/1` extracted `update_flags/1`
+      and `resolve_inputs/2` (cyclomatic complexity 9 → 4).
+    * `PullRequests.do_real_update/6` extracted `patch_only/4`
+      (cyclomatic complexity 9 → 5).
+    * `length(list) == 1` → `match?([_], list)` in tests
+      (LengthComparison warning).
+  Result: `786 mods/funs, 0 credo issues`.
 
-  Or with one command per target:
-  ```bash
-  ado skills install --target pi       # creates ~/.pi/agent/skills/ado-{cli,auth,ci}/
-  ado skills install --target claude   # creates ~/.claude/skills/ado-{cli,auth,ci}/
-  ```
+### Notes
+
+- All 311 Elixir tests pass. `mix format --check-formatted` is clean.
+- ExUnit test count grew from 234 (v0.1.0) to 311 (v0.2.0) — the
+  +77 tests cover the new `prs comments`, `prs diff`, `completion`,
+  and `version` subcommands.
+- The npm postinstall hook ships 5 unit tests in
+  `scripts/test_postinstall.js`, run with `node --test`.
 
 ## [0.1.0] - 2026-06-15
 
@@ -236,5 +266,6 @@ the embedded skills can be installed into any LLM agent's skill directory.
   are filtered by the `mix ci.dialyzer` task.
 - ExUnit test count: 234 (across 30+ test files). All pass.
 
-[Unreleased]: https://github.com/gilbertwong96/ado_cli/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/gilbertwong96/ado_cli/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/gilbertwong96/ado_cli/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/gilbertwong96/ado_cli/releases/tag/v0.1.0
