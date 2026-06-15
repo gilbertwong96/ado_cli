@@ -1,5 +1,5 @@
 ---
-name: ado_ci
+name: ado-ci
 description: Using ado in CI/CD — authentication, pipeline triggers, PR automation, package publishing
 version: "0.4.0"
 commands:

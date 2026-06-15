@@ -2,13 +2,13 @@ defmodule AdoCli.CLI.Skills do
   @moduledoc """
   Embedded skill commands for AI agent integration.
 
-      ado_cli skills list                       # all skills (name + desc + command count)
-      ado_cli skills list ado_api               # files under a skill (like ls)
-      ado_cli skills describe ado_api           # frontmatter + command index (no body)
-      ado_cli skills read ado_api               # full SKILL.md content (markdown)
-      ado_cli skills read ado_api --json        # as JSON envelope, including commands
-      ado_cli skills search "create PR"        # find skills by name/desc/command
-      ado_cli skills search "pipeline" --json   # machine-parseable
+      ado skills list                          # all skills (name + desc + command count)
+      ado skills list ado-api                  # files under a skill (like ls)
+      ado skills describe ado-api              # frontmatter + command index (no body)
+      ado skills read ado-cli                  # full SKILL.md content (markdown)
+      ado skills read ado-cli --json           # as JSON envelope, including commands
+      ado skills search "create PR"           # find skills by name/desc/command
+      ado skills search "pipeline" --json      # machine-parseable
 
   ## Recommended LLM workflow
 

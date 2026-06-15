@@ -142,8 +142,7 @@ defmodule AdoCli.Skills do
          }}
 
       :error ->
-        {:error,
-         "unknown skill #{inspect(name)}. Run 'ado_cli skills list' to see available skills"}
+        {:error, "unknown skill #{inspect(name)}. Run 'ado skills list' to see available skills"}
     end
   end
 
@@ -244,8 +243,7 @@ defmodule AdoCli.Skills do
 
       {:ok, dir, entries}
     else
-      {:error,
-       "unknown skill #{inspect(skill)}. Run 'ado_cli skills list' to see available skills"}
+      {:error, "unknown skill #{inspect(skill)}. Run 'ado skills list' to see available skills"}
     end
   end
 
@@ -257,8 +255,7 @@ defmodule AdoCli.Skills do
     if Map.has_key?(@skills, name) do
       read_file(name, "SKILL.md")
     else
-      {:error,
-       "unknown skill #{inspect(name)}. Run 'ado_cli skills list' to see available skills"}
+      {:error, "unknown skill #{inspect(name)}. Run 'ado skills list' to see available skills"}
     end
   end
 
@@ -277,8 +274,7 @@ defmodule AdoCli.Skills do
         content -> {:ok, content, relpath}
       end
     else
-      {:error,
-       "unknown skill #{inspect(name)}. Run 'ado_cli skills list' to see available skills"}
+      {:error, "unknown skill #{inspect(name)}. Run 'ado skills list' to see available skills"}
     end
   end
 

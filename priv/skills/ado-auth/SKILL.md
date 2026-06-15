@@ -1,5 +1,5 @@
 ---
-name: ado_auth
+name: ado-auth
 description: How to authenticate ado — PAT, browser OAuth, device code, MSA support
 version: "0.4.0"
 commands:
