@@ -76,4 +76,61 @@ defmodule AdoCli.AuthTest do
       assert status.method == "pat"
     end
   end
+
+  describe "current_user_id/0" do
+    setup do
+      # Reset the user-id cache so each test sees a fresh fetch.
+      Process.delete({Auth, :user_id})
+      :ok
+    end
+
+    test "returns the authenticated user GUID on first call" do
+      TestServer.expect(
+        TestServer,
+        "GET",
+        "/testorg/_apis/connectionData",
+        fn conn -> Plug.Conn.resp(conn, 200, ~s({"authenticatedUser":{"id":"abc-123"}})) end
+      )
+
+      assert {:ok, "abc-123"} = Auth.current_user_id()
+    end
+
+    test "caches the result on subsequent calls (no second HTTP request)" do
+      TestServer.expect(
+        TestServer,
+        "GET",
+        "/testorg/_apis/connectionData",
+        fn conn -> Plug.Conn.resp(conn, 200, ~s({"authenticatedUser":{"id":"abc-123"}})) end
+      )
+
+      assert {:ok, "abc-123"} = Auth.current_user_id()
+      # Second call: if this made another HTTP request, the
+      # test server would return 500 (no expectation matched).
+      assert {:ok, "abc-123"} = Auth.current_user_id()
+    end
+
+    test "returns an error tuple if the response is missing the user ID" do
+      TestServer.expect(
+        TestServer,
+        "GET",
+        "/testorg/_apis/connectionData",
+        fn conn -> Plug.Conn.resp(conn, 200, ~s({})) end
+      )
+
+      assert {:error, msg} = Auth.current_user_id()
+      assert msg =~ "did not include an authenticated user ID"
+    end
+
+    test "returns an error tuple if the HTTP call fails" do
+      TestServer.expect(
+        TestServer,
+        "GET",
+        "/testorg/_apis/connectionData",
+        fn conn -> Plug.Conn.resp(conn, 500, ~s({"message":"boom"})) end
+      )
+
+      assert {:error, msg} = Auth.current_user_id()
+      assert msg =~ "Could not fetch connection data"
+    end
+  end
 end
