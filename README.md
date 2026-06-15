@@ -634,6 +634,153 @@ self-hosted deployments.
 
 ---
 
+## Publishing
+
+`ado` is distributed through two channels:
+
+1. **GitHub Releases** — single self-contained binary per platform.
+2. **npm** — 6 packages under the `@gilbertwong1996` scope, one of
+   which (the main `@gilbertwong1996/ado`) is a thin Node.js wrapper
+   that picks the right platform binary via `optionalDependencies`.
+
+> **Note:** The npm scope is `@gilbertwong1996` (the maintainer's npm
+> username), but the GitHub repo is `gilbertwong96/ado_cli` (the
+> maintainer's GitHub handle). These are different accounts.
+
+**All publishing happens from your local laptop, not from CI.** Tag a
+release, push the tag, wait for the CI release job to attach the
+binaries, then run the publish script. The CI release job produces the
+GitHub Release artifacts; npm publishing is intentionally a manual
+step so the maintainer (currently just you) can verify the artifacts
+before they go public.
+
+### Release flow
+
+```bash
+# 1. Bump version in mix.exs, commit, tag
+$EDITOR mix.exs                          # bump version: "0.1.0" -> "0.2.0"
+git add -u && git commit -m "v0.2.0"
+git tag -a v0.2.0 -m "Release 0.2.0"
+git push github main v0.2.0
+```
+
+Pushing the tag triggers the CI `release` job, which cross-compiles
+the Burrito binary for all 5 platforms and uploads them as artifacts.
+The `release-attach` job then creates the GitHub Release with the 5
+binaries attached.
+
+Wait a few minutes for CI to finish. Verify the release is up:
+
+```bash
+gh release view v0.2.0
+```
+
+Then publish to npm locally:
+
+```bash
+# Downloads binaries from the v0.2.0 release + publishes all 6 pkgs
+./scripts/npm-publish.sh 0.2.0
+```
+
+That's it. The script handles everything else.
+
+### What the publish script does
+
+`scripts/npm-publish.sh VERSION` runs four steps:
+
+1. **`gh release download v${VERSION}`** — fetches the 5 binaries
+   (`ado-${VERSION}-{macos-aarch64,macos-x86_64,linux-x86_64,linux-aarch64,windows-x86_64.exe}`)
+   from the GitHub Release you just tagged.
+2. **Copies each binary** into
+   `npm/@gilbertwong1996-ado-<platform>-<arch>/bin/ado{,.exe}`.
+3. **`jq` bumps the version** in all 6 `package.json` files
+   (`@gilbertwong1996/ado` and the 5 platform packages).
+4. **`npm publish --access public`** for the 5 platform packages first,
+   then the main package last (so its `optionalDependencies` resolve
+   cleanly).
+
+### Useful flags
+
+```bash
+./scripts/npm-publish.sh 0.2.0 --dry-run       # show what would happen, no network
+./scripts/npm-publish.sh 0.2.0 --skip-download  # binaries already in place
+```
+
+### Verifying a publish
+
+```bash
+# Check the published package on npm
+npm view @gilbertwong1996/ado
+npm view @gilbertwong1996/ado-darwin-arm64 dist.integrity
+
+# Install from npm and smoke-test
+npm install -g @gilbertwong1996/ado
+ado --help
+ado projects list --json
+ado skills install --target pi
+```
+
+### Prerequisites
+
+| Tool | Why | How to get it |
+|---|---|---|
+| `gh` | Download release binaries | `brew install gh && gh auth login` |
+| `npm` | Publish packages | `brew install node` (bundles npm) |
+| `jq` | Edit `package.json` files | `brew install jq` |
+| An `npm` token with publish rights on `@gilbertwong1996/*` | Auth | `npm login` then verify with `npm whoami` |
+
+The script uses whatever `npm` authentication is in your environment
+(usually `~/.npmrc`). No tokens are hard-coded.
+
+### Why local-only publishing?
+
+A few reasons:
+
+- **You're the only maintainer.** There's no team to coordinate with,
+  and no separation-of-duties that requires a CI service identity.
+- **OIDC provenance doesn't work locally.** `npm publish --provenance`
+  requires a GitHub Actions OIDC token, which only Actions has. Your
+  local publish will show no provenance badge on npmjs.com — that's
+  fine for a single-maintainer project.
+- **You want to verify before going public.** The script's `--dry-run`
+  flag lets you inspect exactly what would be published without
+  actually publishing.
+- **The `NPM_TOKEN` secret is fragile.** Long-lived npm tokens in CI
+  are a security liability. A local publish uses your own short-lived
+  login session.
+
+If a second maintainer joins later, the script can still be invoked
+from CI by exporting the same `gh` and `npm` auth that you'd use
+locally. The script has no assumptions about where it runs.
+
+### Rolling back a bad publish
+
+npm allows unpublishing within 72 hours of release:
+
+```bash
+npm unpublish @gilbertwong1996/ado@0.2.0
+```
+
+After 72 hours, you'll need to publish a new patch version. Prefer
+fix-forward over rollback.
+
+### Why the 6-package split?
+
+| Package | Size | Who downloads |
+|---|---|---|
+| `@gilbertwong1996/ado` | ~3 KB (Node.js wrapper) | Everyone |
+| `@gilbertwong1996/ado-darwin-arm64` | ~9 MB | Apple Silicon Mac users only |
+| `@gilbertwong1996/ado-darwin-x64` | ~9 MB | Intel Mac users only |
+| `@gilbertwong1996/ado-linux-arm64` | ~15 MB | Linux aarch64 users only |
+| `@gilbertwong1996/ado-linux-x64` | ~16 MB | Linux x86_64 users only |
+| `@gilbertwong1996/ado-win32-x64` | ~22 MB | Windows users only |
+
+`os`, `cpu`, and `libc` fields in each `package.json` make npm pick
+only the right one at install time. A Mac user never downloads the
+22 MB Windows binary, and vice versa.
+
+---
+
 ## License
 
 Copyright © 2026 Gilbert Wong
