@@ -1,0 +1,11 @@
+# The platform binaries are large (9-22 MB each) and would bloat the
+# git repo. They're downloaded from GitHub Releases at publish time
+# by scripts/npm-publish.sh.
+#
+# To publish a new version locally:
+#   ./scripts/npm-publish.sh 0.1.0
+#
+# To skip the download (if you already have the binaries in place):
+#   ./scripts/npm-publish.sh 0.1.0 --skip-download
+@gilbertwong1996-ado-*/bin/ado
+@gilbertwong1996-ado-*/bin/ado.exe

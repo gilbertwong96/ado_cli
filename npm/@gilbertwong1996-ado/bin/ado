@@ -1,0 +1,36 @@
+#!/usr/bin/env node
+// ado launcher for npm.
+//
+// Resolves the platform-specific binary from @gilbertwong1996/ado-<platform>-<arch>
+// (installed as an optionalDependency) and execs it with the user's argv.
+//
+// We use child_process.execFileSync so signals (Ctrl+C) propagate to the
+// Burrito-built Erlang runtime. Spawning with the shell would break signal
+// forwarding on POSIX.
+
+const { execFileSync } = require('child_process');
+const path = require('path');
+
+const PLATFORM = process.platform; // 'darwin' | 'linux' | 'win32' | ...
+const ARCH = process.arch;         // 'arm64' | 'x64' | ...
+
+const PACKAGE = `@gilbertwong1996/ado-${PLATFORM}-${ARCH}`;
+const BINARY = PLATFORM === 'win32' ? 'ado.exe' : 'ado';
+
+let binaryPath;
+try {
+  binaryPath = require.resolve(`${PACKAGE}/bin/${BINARY}`);
+} catch (err) {
+  console.error(`ado: no binary available for ${PLATFORM}/${ARCH}.`);
+  console.error(`       The '${PACKAGE}' package may not be installed.`);
+  console.error(`       Try: npm install -g @gilbertwong1996/ado (with --force to reinstall).`);
+  process.exit(1);
+}
+
+try {
+  execFileSync(binaryPath, process.argv.slice(2), { stdio: 'inherit' });
+} catch (err) {
+  // execFileSync throws on non-zero exit. The binary already printed its
+  // error; just propagate the exit code.
+  process.exit(err.status || 1);
+}
