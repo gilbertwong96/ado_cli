@@ -7,7 +7,9 @@ defmodule AdoCli.CLI.WhoamiJsonTest do
   use AdoCli.CLI.TestHelper
   import ExUnit.CaptureIO
 
-  alias AdoCli.CLI.{Whoami, Logout, AuthCommands}
+  alias AdoCli.CLI.AuthCommands
+  alias AdoCli.CLI.Logout
+  alias AdoCli.CLI.Whoami
 
   describe "whoami --json (the path that was broken)" do
     test "emits a structured {ok: true, result: ...} envelope" do

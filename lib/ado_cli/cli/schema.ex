@@ -85,14 +85,28 @@ defmodule AdoCli.CLI.Schema do
   # (via Application.spec/0). Falls back to "unknown" if neither works.
   defp current_version do
     cond do
-      function_exported?(Mix.Project, :config, 0) ->
-        Mix.Project.config()[:version] || "unknown"
+      mix_project?() ->
+        mix_project_version()
 
       Application.spec(:ado_cli, :vsn) != :undefined ->
-        Application.spec(:ado_cli, :vsn) |> to_string()
+        to_string(Application.spec(:ado_cli, :vsn))
 
       true ->
         "unknown"
+    end
+  end
+
+  # Mix.Project is only available in dev/test environments where the
+  # Mix task is loaded. In escript/Burrito builds, Code.ensure_loaded?
+  # returns false and we fall through to Application.spec/1.
+  defp mix_project? do
+    Code.ensure_loaded?(Mix.Project) and function_exported?(Mix.Project, :config, 0)
+  end
+
+  defp mix_project_version do
+    case Mix.Project.config()[:version] do
+      nil -> "unknown"
+      version -> to_string(version)
     end
   end
 
@@ -117,51 +131,48 @@ defmodule AdoCli.CLI.Schema do
   end
 
   defp find_and_dump(node, name) do
-    node_name = stringify(Keyword.get(node, :name, ""))
-    base = String.replace(node_name, ~r/^ado\s+/, "")
+    base = strip_ado_prefix(Keyword.get(node, :name, ""))
 
-    # Try matching the bare name (e.g. "projects") against the last
-    # token of the command name (e.g. "ado projects" or
-    # "ado pipelines-builds list").
-    cond do
-      base == name ->
-        node_to_map(node)
-
-      String.ends_with?(base, " " <> name) ->
-        node_to_map(node)
-
-      true ->
-        # Look for the command at the top level of this node's subcommands
-        case Keyword.get(node, :subcommands, []) do
-          [] ->
-            not_found(name)
-
-          subs ->
-            found = Enum.find_value(subs, fn sub -> match_subcommand(sub, name) end)
-
-            case found do
-              {sub_name, mod} when is_atom(mod) and not is_nil(mod) ->
-                # mod is a module — call its .command() to get the def
-                cmd_def =
-                  try do
-                    if Code.ensure_loaded?(mod), do: mod.command(), else: [name: sub_name]
-                  rescue
-                    _ -> [name: sub_name]
-                  end
-
-                recurse_into(cmd_def, sub_name, name)
-
-              {sub_name, def} when is_list(def) ->
-                recurse_into(def, sub_name, name)
-
-              {sub_name, _} ->
-                recurse_into([name: sub_name], sub_name, name)
-
-              nil ->
-                not_found(name)
-            end
-        end
+    if matches?(base, name) do
+      node_to_map(node)
+    else
+      search_subcommands(Keyword.get(node, :subcommands, []), name)
     end
+  end
+
+  defp strip_ado_prefix("ado " <> rest), do: rest
+  defp strip_ado_prefix(other), do: other
+
+  defp matches?(base, name) do
+    base == name or String.ends_with?(base, " " <> name)
+  end
+
+  defp search_subcommands([], name), do: not_found(name)
+
+  defp search_subcommands(subs, name) do
+    found = Enum.find_value(subs, fn sub -> match_subcommand(sub, name) end)
+    handle_match_result(found, name)
+  end
+
+  defp handle_match_result(nil, name), do: not_found(name)
+
+  defp handle_match_result({sub_name, mod}, name) when is_atom(mod) and not is_nil(mod) do
+    cmd_def = safe_command_def(mod, name: sub_name)
+    recurse_into(cmd_def, sub_name, name)
+  end
+
+  defp handle_match_result({sub_name, def}, name) when is_list(def) do
+    recurse_into(def, sub_name, name)
+  end
+
+  defp handle_match_result({sub_name, _}, name) do
+    recurse_into([name: sub_name], sub_name, name)
+  end
+
+  defp safe_command_def(mod, fallback) do
+    if Code.ensure_loaded?(mod), do: mod.command(), else: fallback
+  rescue
+    _ -> fallback
   end
 
   # If the user asked for a path like "pipelines list", check whether
