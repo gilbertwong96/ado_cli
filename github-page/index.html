@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ado — AI-native Azure DevOps CLI</title>
+  <meta name="description" content="A self-contained, cross-platform Azure DevOps CLI in Elixir. Designed for both humans and LLM agents: structured JSON output, embedded skills, self-discoverable command tree.">
+  <link rel="stylesheet" href="style.css">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>">
+</head>
+<body>
+  <header>
+    <div class="container">
+      <div class="brand">
+        <span class="logo">⚡</span>
+        <span class="name">ado</span>
+        <span class="tagline">Azure DevOps CLI</span>
+      </div>
+      <nav>
+        <a href="#features">Features</a>
+        <a href="#ai-native">AI-native</a>
+        <a href="#install">Install</a>
+        <a href="https://github.com/gilbertwong96/ado_cli" target="_blank" rel="noopener">GitHub →</a>
+      </nav>
+    </div>
+  </header>
+
+  <section class="hero">
+    <div class="container">
+      <h1>The Azure DevOps CLI<br>for humans <em>and</em> LLM agents</h1>
+      <p class="lede">
+        Structured <code>--json</code> output on every command. Embedded skills for
+        pi, Claude Code, Cursor, Codex, and GitHub Copilot. Single self-contained
+        binary for macOS, Linux, and Windows.
+      </p>
+      <div class="install-row">
+        <div class="install-cmd">
+          <span class="label">macOS / Linux</span>
+          <pre><code>brew install ado</code></pre>
+        </div>
+        <div class="install-cmd">
+          <span class="label">npm (all platforms)</span>
+          <pre><code>npm install -g @gilbertwong1996/ado</code></pre>
+        </div>
+        <div class="install-cmd">
+          <span class="label">from source</span>
+          <pre><code>git clone https://github.com/gilbertwong96/ado_cli
+cd ado_cli && mix deps.get && mix escript.build
+cp ado /usr/local/bin/</code></pre>
+        </div>
+      </div>
+      <div class="badges">
+        <a href="https://github.com/gilbertwong96/ado_cli/actions/workflows/ci.yml"><img src="https://github.com/gilbertwong96/ado_cli/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+        <a href="https://codecov.io/gh/gilbertwong96/ado_cli"><img src="https://codecov.io/gh/gilbertwong96/ado_cli/graph/badge.svg" alt="Codecov"></a>
+        <img src="https://img.shields.io/badge/elixir-1.20+-purple.svg" alt="Elixir 1.20+">
+        <img src="https://img.shields.io/badge/License-Apache_2.0-blue.svg" alt="Apache-2.0">
+      </div>
+    </div>
+  </section>
+
+  <section id="features" class="features">
+    <div class="container">
+      <h2>What it does</h2>
+      <div class="grid">
+        <div class="card">
+          <h3>24 service areas</h3>
+          <p>Projects, repos, work items, pipelines, builds, pull requests, packages, security, agent pools, branches, wikis, service connections, and more.</p>
+        </div>
+        <div class="card">
+          <h3>3 auth methods</h3>
+          <p>Personal Access Token, browser OAuth (PKCE), device code. MSA personal accounts (<code>*.visualstudio.com</code>) supported. No <code>az</code> CLI dependency.</p>
+        </div>
+        <div class="card">
+          <h3>Cross-platform</h3>
+          <p>One self-contained binary for macOS (arm64/x86_64), Linux (x86_64/aarch64), and Windows x86_64. Built with <a href="https://github.com/burrito-elixir/burrito">Burrito</a>.</p>
+        </div>
+        <div class="card">
+          <h3>CI/CD friendly</h3>
+          <p><code>ado ci watch PROJECT BUILD_ID</code> streams build logs in real time. Per-run variables, variable groups, PR automation, package publishing.</p>
+        </div>
+        <div class="card">
+          <h3>Apache-2.0 licensed</h3>
+          <p>Free for commercial and personal use. No telemetry, no phone-home, no surprise license changes.</p>
+        </div>
+        <div class="card">
+          <h3>234+ tests, 90%+ coverage</h3>
+          <p><code>mix ci</code> runs 8 quality gates: compile, format, Credo, deps audit, xref, Dialyzer, tests, coverage. All pass on every push.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="ai-native" class="ai-native">
+    <div class="container">
+      <h2>Why "AI-native"?</h2>
+      <p class="lede">
+        Most CLIs are designed for humans and retrofitted for AI agents with
+        <code>--json</code> flags that nobody uses. <code>ado</code> is designed
+        the other way around.
+      </p>
+
+      <table class="compare">
+        <thead>
+          <tr>
+            <th>Feature</th>
+            <th>Human-friendly</th>
+            <th>AI-agent-friendly</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Output</td>
+            <td>Tables + colors</td>
+            <td>Stable JSON envelopes on every command</td>
+          </tr>
+          <tr>
+            <td>Discovery</td>
+            <td><code>ado --help</code> → 3 levels deep</td>
+            <td><code>ado schema --json</code> — full command tree in 1 round trip</td>
+          </tr>
+          <tr>
+            <td>Documentation</td>
+            <td>Embedded help pages</td>
+            <td><code>ado skills list</code> / <code>ado skills read NAME --json</code></td>
+          </tr>
+          <tr>
+            <td>Errors</td>
+            <td>Pretty stack traces</td>
+            <td><code>{ok: false, error: {code, status, message, details}}</code></td>
+          </tr>
+          <tr>
+            <td>Auth</td>
+            <td>Browser OAuth (interactive)</td>
+            <td>PAT, device code, browser — all machine-discoverable</td>
+          </tr>
+          <tr>
+            <td>Distribution</td>
+            <td><code>brew install ado</code></td>
+            <td>Single self-contained binary, no runtime deps</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>Try it: structured output in one command</h3>
+      <div class="code-block">
+<pre><code>$ <strong>ado projects list --json</strong>
+{
+  "ok": true,
+  "count": 3,
+  "items": [
+    { "id": "...", "name": "alpha", "state": "wellFormed" },
+    { "id": "...", "name": "beta",  "state": "wellFormed" },
+    { "id": "...", "name": "gamma", "state": "deleting"  }
+  ]
+}</code></pre>
+      </div>
+
+      <h3>Errors that agents can match on</h3>
+      <div class="code-block">
+<pre><code>$ <strong>ado projects show nonexistent --json</strong>
+{
+  "ok": false,
+  "error": {
+    "code": "not_found",
+    "message": "Resource not found. Check the project/repo/build ID and your permissions.",
+    "status": 404,
+    "details": { "body": "..." }
+  }
+}</code></pre>
+      </div>
+      <p>
+        Every error has a stable <code>code</code> from a small set:
+        <code>auth_required</code>, <code>not_found</code>, <code>forbidden</code>,
+        <code>conflict</code>, <code>validation_error</code>, <code>api_error</code>,
+        <code>network_error</code>, <code>cancelled</code>. LLM agents match on
+        <code>error.code</code>, not on English text.
+      </p>
+    </div>
+  </section>
+
+  <section id="llm-agents" class="llm-agents">
+    <div class="container">
+      <h2>For LLM agents</h2>
+      <p class="lede">
+        The CLI ships with 3 embedded skills that teach agents how to use it.
+        Install them once and the agent loads them natively on startup — no
+        shell-out overhead.
+      </p>
+
+      <div class="code-block">
+<pre><code>$ <strong>ado skills install</strong>
+
+  Installing 3 skills to 4 target(s):
+    - pi:     ~/.pi/agent/skills
+    - claude: ~/.claude/skills
+    - cursor: ~/.cursor/skills
+    - codex:  ~/.codex/skills
+
+  Installed: 12
+  Skipped:   0
+  Errors:    0
+
+$ <strong>ls ~/.pi/agent/skills</strong>
+ado_cli/  ado_auth/  ado_ci/</code></pre>
+      </div>
+
+      <h3>What the skills teach</h3>
+      <div class="grid">
+        <div class="card">
+          <h3><code>ado_cli</code></h3>
+          <p>Complete command reference for all 24 service areas. The big one — load it when the agent first encounters <code>ado</code>.</p>
+        </div>
+        <div class="card">
+          <h3><code>ado_auth</code></h3>
+          <p>How to authenticate: PAT, browser OAuth, device code. Covers headless/CI flows. No <code>az</code> dependency.</p>
+        </div>
+        <div class="card">
+          <h3><code>ado_ci</code></h3>
+          <p>CI/CD patterns: trigger pipelines, manage variable groups, automate PRs, publish packages.</p>
+        </div>
+      </div>
+
+      <h3>Or — discover dynamically</h3>
+      <p>Agents that don't install skills can still discover the full surface in one call:</p>
+      <div class="code-block">
+<pre><code>$ <strong>ado schema --json</strong> | jq '.schema.subcommands | length'
+28
+
+$ <strong>ado schema ci watch --json</strong> | jq '.schema.options[].name'
+"project"
+"build_id"
+"poll_interval"
+"json"</code></pre>
+      </div>
+    </div>
+  </section>
+
+  <section id="install" class="install">
+    <div class="container">
+      <h2>Install</h2>
+      <div class="grid install-grid">
+        <div class="card">
+          <h3>🍺 Homebrew <span class="soon">(coming soon)</span></h3>
+          <pre><code>brew install ado</code></pre>
+        </div>
+        <div class="card">
+          <h3>📦 npm</h3>
+          <pre><code>npm install -g @gilbertwong1996/ado</code></pre>
+        </div>
+        <div class="card">
+          <h3>📥 GitHub Releases</h3>
+          <p>Download the binary for your platform from the
+          <a href="https://github.com/gilbertwong96/ado_cli/releases/latest">latest release</a>.</p>
+        </div>
+        <div class="card">
+          <h3>🔨 From source</h3>
+          <pre><code>git clone https://github.com/gilbertwong96/ado_cli
+cd ado_cli
+mix deps.get
+mix escript.build
+cp ado /usr/local/bin/</code></pre>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="quickstart">
+    <div class="container">
+      <h2>Quick start</h2>
+      <div class="code-block">
+<pre><code><span class="comment"># 1. Authenticate (pick one)</span>
+ado login --org myorg                            <span class="comment"># browser OAuth</span>
+ado login --method pat --org myorg --pat TOKEN   <span class="comment"># Personal Access Token</span>
+ado login --method device --org myorg            <span class="comment"># no browser needed</span>
+
+<span class="comment"># 2. List projects</span>
+ado projects list
+
+<span class="comment"># 3. Get machine-readable output for an LLM agent</span>
+ado projects list --json | jq '.items | length'
+
+<span class="comment"># 4. Create a work item</span>
+ado workitems create MyProject --type Bug --title "Fix login page"
+
+<span class="comment"># 5. Watch a pipeline run in real time</span>
+ado ci watch MyProject 12345
+
+<span class="comment"># 6. Install skills to your LLM agent</span>
+ado skills install --target pi</code></pre>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <div class="container">
+      <div class="footer-grid">
+        <div>
+          <h4>Project</h4>
+          <ul>
+            <li><a href="https://github.com/gilbertwong96/ado_cli">GitHub</a></li>
+            <li><a href="https://github.com/gilbertwong96/ado_cli/blob/main/CHANGELOG.md">Changelog</a></li>
+            <li><a href="https://github.com/gilbertwong96/ado_cli/releases">Releases</a></li>
+            <li><a href="https://github.com/gilbertwong96/ado_cli/issues">Issues</a></li>
+          </ul>
+        </div>
+        <div>
+          <h4>Docs</h4>
+          <ul>
+            <li><a href="https://github.com/gilbertwong96/ado_cli#readme">README</a></li>
+            <li><a href="https://github.com/gilbertwong96/ado_cli/blob/main/USAGE.md">USAGE</a></li>
+            <li><a href="https://github.com/gilbertwong96/ado_cli/blob/main/AUTH.md">AUTH</a></li>
+          </ul>
+        </div>
+        <div>
+          <h4>For AI agents</h4>
+          <ul>
+            <li><a href="https://github.com/gilbertwong96/ado_cli#for-llm-agents-pi-claude-code-copilot-cursor-codex">Install skills</a></li>
+            <li><code>ado schema --json</code></li>
+            <li><code>ado skills read ado_cli</code></li>
+          </ul>
+        </div>
+        <div>
+          <h4>License</h4>
+          <p><a href="https://github.com/gilbertwong96/ado_cli/blob/main/LICENSE">Apache-2.0</a></p>
+          <p>© 2026 Gilbert Wong</p>
+        </div>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>
