@@ -22,6 +22,11 @@ on:
       - '.github/workflows/pages.yml'
   workflow_dispatch:
 
+# GitHub Actions will force Node 24 starting 2026-06-16; opt in now
+# so the warning doesn't become an error later.
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
 # Required to allow deployment to the github-pages environment
 permissions:
   contents: read
