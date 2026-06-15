@@ -193,3 +193,89 @@ defmodule AdoCli.CLI.CompletionTest do
     end
   end
 end
+
+# ── CLI dispatch integration ───────────────────────────────────────
+
+defmodule AdoCli.CLI.CompletionCLITest do
+  use AdoCli.CLI.TestHelper
+  import ExUnit.CaptureIO
+
+  alias AdoCli.CLI.Completion
+
+  describe "ado completion subcommand" do
+    test "prints bash script by default" do
+      output =
+        capture_io(fn ->
+          apply(Completion, :run, [
+            %{options: %{}, arguments: %{}}
+          ])
+        end)
+
+      assert_receive {:cli_mate_shell, :halt, 0}, 500
+      assert output =~ "# bash completion for the ado CLI"
+      assert output =~ "complete -F _ado_completion ado"
+    end
+
+    test "prints zsh script for shell=zsh" do
+      output =
+        capture_io(fn ->
+          apply(Completion, :run, [
+            %{options: %{}, arguments: %{shell: "zsh"}}
+          ])
+        end)
+
+      assert_receive {:cli_mate_shell, :halt, 0}, 500
+      assert output =~ "#compdef ado"
+    end
+
+    test "prints fish script for shell=fish" do
+      output =
+        capture_io(fn ->
+          apply(Completion, :run, [
+            %{options: %{}, arguments: %{shell: "fish"}}
+          ])
+        end)
+
+      assert_receive {:cli_mate_shell, :halt, 0}, 500
+      assert output =~ "__fish_use_subcommand"
+    end
+
+    test "prints powershell script for shell=powershell" do
+      output =
+        capture_io(fn ->
+          apply(Completion, :run, [
+            %{options: %{}, arguments: %{shell: "powershell"}}
+          ])
+        end)
+
+      assert_receive {:cli_mate_shell, :halt, 0}, 500
+      assert output =~ "Register-ArgumentCompleter"
+    end
+
+    test "writes to file when -w is given" do
+      path = Path.join(System.tmp_dir!(), "ado_complete_#{System.unique_integer([:positive])}.bash")
+      on_exit(fn -> File.rm_rf(path) end)
+
+      capture_io(fn ->
+        apply(Completion, :run, [
+          %{options: %{write_to_file: path}, arguments: %{}}
+        ])
+      end)
+
+      assert_receive {:cli_mate_shell, :halt, 0}, 500
+      assert File.read!(path) =~ "# bash completion for the ado CLI"
+    end
+
+    test "halts with clear error on unknown shell" do
+      capture_io(fn ->
+        apply(Completion, :run, [
+          %{options: %{}, arguments: %{shell: "tcsh"}}
+        ])
+      end)
+
+      assert_receive {:cli_mate_shell, :halt, 1}, 500
+      assert_receive {:cli_mate_shell, :error, msg}, 500
+      assert msg =~ "Unknown shell 'tcsh'"
+    end
+  end
+end

@@ -92,16 +92,48 @@ defmodule AdoCli.CLI.Completion do
   def run(parsed) do
     args = parsed.arguments || %{}
     opts = parsed.options || %{}
-    shell = parse_shell(Map.get(args, :shell))
+
+    # parse_shell/1 sends the :halt 1 message via halt_error/1
+    # in test mode and returns a 3-tuple (the message). Use a
+    # tagged-returns guard so we don't try to use the message
+    # tuple as a shell name below (which would crash with
+    # "String.Chars not implemented for Tuple").
+    case validate_shell(Map.get(args, :shell)) do
+      :ok -> do_run(Map.get(args, :shell), Map.get(opts, :write_to_file))
+      :halted -> :ok
+    end
+  end
+
+  defp do_run(shell, write_to_file) do
+    shell = shell || @default_shell
     tree = AdoCli.CLI.Schema.build_tree()
     script = generate(shell, tree)
 
-    case Map.get(opts, :write_to_file) do
+    case write_to_file do
       nil -> IO.puts(script)
       path -> File.write!(path, script)
     end
 
     halt(0)
+  end
+
+  # True if the shell argument is valid (or absent, in which
+  # case the default is used). False (with the halt messages
+  # already sent) if it was invalid.
+  defp validate_shell(nil), do: :ok
+
+  defp validate_shell(shell_str) when is_binary(shell_str) do
+    if shell_str in @supported_shells do
+      :ok
+    else
+      halt_error("Unknown shell '#{shell_str}'. Must be one of: #{Enum.join(@supported_shells, ", ")}.")
+      :halted
+    end
+  end
+
+  defp validate_shell(other) do
+    halt_error("Shell must be a string, got: #{inspect(other)}")
+    :halted
   end
 
   @doc """
