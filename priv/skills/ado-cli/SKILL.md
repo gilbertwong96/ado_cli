@@ -68,6 +68,10 @@ commands:
   - ado skills read NAME                                       # full skill content
   - ado skills search "QUERY"                                  # find skill by topic
   - ado skills install                                         # embed all skills to LLM agents
+  - ado test-results list PROJECT
+  - ado test-results show PROJECT RUN_ID
+  - ado test-results publish PROJECT --name N --file coverage.xml
+  - ado test-coverage show PROJECT BUILD_ID
 ---
 
 # ado
@@ -136,6 +140,8 @@ The CLI auto-detects the org from the token if `--org` is omitted.
 | `banners` | Org-wide notifications: show, set, delete |
 | `packages` | Universal Packages: list, versions, show |
 | `skills` | list, describe, read, search, install (embed for LLM agents) |
+| `test-results` | Test runs: list, show, publish (Cobertura/JUnit) |
+| `test-coverage` | Code coverage: show by build ID |
 
 ## Conventions
 
@@ -199,6 +205,12 @@ ado projects list
 
 # Check auth status
 ado whoami
+
+# Check test results and code coverage
+ado test-results list MyProject
+ado test-results show MyProject 42
+ado test-results publish MyProject --name "CI Tests" --file coverage.cobertura.xml --build-id 99
+ado test-coverage show MyProject 99
 
 # Print version (or use --version flag)
 ado version

@@ -5,6 +5,28 @@ All notable changes to `ado` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+### Added
+
+- **`ado test-results`**: List, show, and publish test results.
+    * `ado test-results list PROJECT [--build-id ID] [--top N]` —
+      table of recent test runs with total/passed/failed counts
+    * `ado test-results show PROJECT RUN_ID` — detailed view of
+      a single test run with outcome breakdowns
+    * `ado test-results publish PROJECT --name NAME --file PATH`
+      [--build-id ID] — upload Cobertura XML or JUnit results
+      to Azure DevOps; creates a test run and attaches the file
+  Supports `--json` for machine-readable output on all three
+  subcommands.
+- **`ado test-coverage`**: Fetch code coverage data.
+    * `ado test-coverage show PROJECT BUILD_ID` — visual bar
+      chart of coverage percentages per metric (lines, branches)
+      with color-coded percentage bars (green ≥80%, yellow ≥50%,
+      red otherwise).
+
+  Both commands are registered in the CLI dispatch
+  (`lib/ado_cli/cli.ex`) and the `ado-cli` skill
+  (`priv/skills/ado-cli/SKILL.md`). 8 new tests added.
+
 ## [0.2.4] - 2026-06-16
 
 ### Fixed
