@@ -44,6 +44,9 @@ commands:
   - ado prs comments add PROJECT REPO PR_ID --content TEXT
   - ado prs comments update PROJECT REPO PR_ID THREAD COMMENT --content TEXT
   - ado prs diff PROJECT REPO PR_ID
+  - ado prs reviewers list PROJECT REPO PR_ID
+  - ado prs reviewers add PROJECT REPO PR_ID --reviewer USER_GUID
+  - ado prs reviewers remove PROJECT REPO PR_ID --reviewer USER_GUID
   - ado releases list PROJECT
   - ado releases show PROJECT ID
   - ado iterations list PROJECT
@@ -124,8 +127,9 @@ The CLI auto-detects the org from the token if `--org` is omitted.
 | `pipelines-folders` | Folders: list, create, delete |
 | `pipelines-artifacts` | Run artifacts: list, download |
 | `ci` | CI pipeline watching: `ci watch` (live status + streaming logs) |
-| `prs` | list, show, create, complete, abandon, approve, vote, diff, comments |
+| `prs` | list, show, create, complete, abandon, approve, vote, diff, comments, reviewers |
 | `prs comments` | Threads: add (new/reply), list (with --all), update (content/status) |
+| `prs reviewers` | Reviewers: list, add, remove |
 | `releases` | list, show, create, update |
 | `iterations` | Sprints: list, show, create, update, delete |
 | `areas` | Area paths: list, show, create, update, delete |
@@ -183,6 +187,11 @@ ado prs create MyProject MyRepo --title "Add feature" --source dev --target main
 ado prs diff MyProject MyRepo 42
 ado prs diff MyProject MyRepo 42 --file src/app.ex
 ado prs diff MyProject MyRepo 42 --unified | delta
+
+# Manage reviewers
+ado prs reviewers list MyProject MyRepo 42
+ado prs reviewers add MyProject MyRepo 42 --reviewer USER_GUID
+ado prs reviewers remove MyProject MyRepo 42 --reviewer USER_GUID
 
 # Review PR comments
 ado prs comments add MyProject MyRepo 42 --content "LGTM!"

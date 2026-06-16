@@ -5,6 +5,31 @@ All notable changes to `ado` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.1] - 2026-06-16
+
+### Fixed
+
+- **`ado prs diff --unified` and `--file` now produce proper unified diff
+  output** (like `git diff`). Previous versions crashed with
+  FunctionClauseError or returned raw JSON. Now fetches file contents
+  via the items API and computes diffs using Elixir's built-in
+  `List.myers_difference/2`.
+- **`ado prs approve` now uses the PR creator's identity** instead of
+  calling `/_apis/connectionData` (which returns 400 on some orgs via
+  the `get_raw` path that doesn't handle redirects).
+- **`ado prs complete` now includes `lastMergeSourceCommit`** in the
+  PATCH body (previously returned "You must specify a valid
+  LastMergeSourceCommit").
+- **Wiki page updates now pass the `If-Match` ETag header** for
+  optimistic concurrency.
+
+### Added
+
+- **`ado prs reviewers list/add/remove`**: manage PR reviewers via
+  the CLI. `add` and `remove` accept a user GUID (from the Azure
+  DevOps user page), `list` shows a table of current reviewers.
+
+
 ## [0.4.0] - 2026-06-16
 
 ### Added
