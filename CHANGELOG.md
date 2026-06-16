@@ -5,7 +5,32 @@ All notable changes to `ado` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.3] - 2026-06-16
+
+### Fixed
+
+- **`ado ci watch` raised `BadArityError` on the first status
+  update.** The default `:print_callback` was `&IO.write/2`
+  (a 2-arity function expecting device + data), but every
+  render function called it as `print.(line)` (1-arity). The
+  watcher crashed with:
+
+      (BadArityError) &IO.write/2 with arity 2 called with 1 argument
+        ("? Build 9655 · status=inProgress result=nil · <1s\n")
+          (ado_cli 0.2.2) lib/ado_cli/ci/watcher.ex:124: render_status/3
+
+  on every invocation. Fix: change the default to a 1-arity
+  wrapper `&IO.write(:stdio, &1)`. Also made `render_status/3`
+  and `render_final/2` public (`def` instead of `defp`) so they
+  can be unit-tested directly. Added 2 e2e tests in
+  `test/ado_cli/ci/watcher_e2e_test.exs` (one for custom print
+  callback, one for the default) that catch this exact bug.
+
 ## [0.2.2] - 2026-06-16
+
+> **Known issue**: this release has a third `ado ci watch` bug
+> (BadArityError on the default print callback) that is fixed
+> in **v0.2.3**. Use v0.2.3 if you depend on `ado ci watch`.
 
 ### Changed
 
@@ -366,7 +391,8 @@ the embedded skills can be installed into any LLM agent's skill directory.
   are filtered by the `mix ci.dialyzer` task.
 - ExUnit test count: 234 (across 30+ test files). All pass.
 
-[Unreleased]: https://github.com/gilbertwong96/ado_cli/compare/v0.2.2...HEAD
+[Unreleased]: https://github.com/gilbertwong96/ado_cli/compare/v0.2.3...HEAD
+[0.2.3]: https://github.com/gilbertwong96/ado_cli/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/gilbertwong96/ado_cli/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/gilbertwong96/ado_cli/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/gilbertwong96/ado_cli/compare/v0.1.0...v0.2.0
