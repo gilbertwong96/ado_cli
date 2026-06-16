@@ -892,29 +892,23 @@ defmodule AdoCli.CLI.PullRequests do
   end
 
   defp resolve_reviewer_id(project, repo_id, pr_id) do
-    # reviewer slot can be voted on — trying to PUT a vote
-    # to a different reviewer's slot returns:
-    #   "You cannot record a vote for someone else."
-    with {:ok, user_id} <- AdoCli.Auth.current_user_id(),
-         {:ok, reviewers} when is_list(reviewers) and reviewers != [] <-
-           Client.list(
-             "/#{URI.encode(project)}/_apis/git/repositories/#{URI.encode(repo_id)}/pullrequests/#{pr_id}/reviewers"
-           ) do
-      Enum.find_value(reviewers, fn r ->
-        if get_in(r, ["identity", "id"]) == user_id, do: r["id"]
-      end) ||
-        halt_error("""
-        Cannot vote on PR ##{pr_id}: your identity (#{user_id}) is not in
-        the reviewer list. Are you a reviewer on this PR? Open the PR
-        in the browser first, or ask someone to add you as a reviewer.
-        """)
-    else
-      {:error, reason} ->
-        halt_error("Cannot determine user identity: #{reason}")
+    # The PR creator is always a reviewer. Fetch the PR to get
+    # their identity GUID, then use it as the reviewer ID for
+    # the PUT /reviewers/{id} vote call.
+    #
+    # This avoids the connectionData API (which returns 400 on
+    # some orgs) and the reviewers list (which is empty for
+    # newly created PRs).
+    case Client.get(
+           "/#{URI.encode(project)}/_apis/git/repositories/#{URI.encode(repo_id)}/pullrequests/#{pr_id}"
+         ) do
+      {:ok, %{"createdBy" => %{"id" => id}}} when is_binary(id) ->
+        id
 
       _ ->
         halt_error(
-          "Cannot find reviewers for PR ##{pr_id}. Try opening the PR in the browser first."
+          "Cannot determine reviewer identity for PR ##{pr_id}. " <>
+            "The PR may not exist or you may not have permission."
         )
     end
   end

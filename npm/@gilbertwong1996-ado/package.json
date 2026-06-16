@@ -1,7 +1,7 @@
 {
   "name": "@gilbertwong1996/ado",
   "version": "0.3.0",
-  "description": "AI-native Azure DevOps CLI \u2014 structured JSON output, embedded skills for LLM agents, single-file cross-platform binary.",
+  "description": "AI-native Azure DevOps CLI — structured JSON output, embedded skills for LLM agents, single-file cross-platform binary.",
   "license": "Apache-2.0",
   "homepage": "https://github.com/gilbertwong96/ado_cli",
   "repository": {
