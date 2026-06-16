@@ -1,6 +1,6 @@
 {
   "name": "@gilbertwong1996/ado-linux-arm64",
-  "version": "0.2.5",
+  "version": "0.3.0",
   "description": "ado binary for Linux ARM64 (aarch64)",
   "license": "Apache-2.0",
   "repository": {

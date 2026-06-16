@@ -66,7 +66,7 @@ put it on your `$PATH`:
 
 ```bash
 # Example for Apple Silicon Mac (pick the right binary for your platform)
-curl -L -o ado https://github.com/gilbertwong96/ado_cli/releases/latest/download/ado-0.2.5-macos-aarch64
+curl -L -o ado https://github.com/gilbertwong96/ado_cli/releases/latest/download/ado-0.3.0-macos-aarch64
 chmod +x ado && sudo mv ado /usr/local/bin/
 ```
 
