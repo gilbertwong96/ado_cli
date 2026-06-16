@@ -46,16 +46,38 @@ so they load natively on startup.
 
 ## Installation
 
+### npm (recommended)
+
+```bash
+npm install -g @gilbertwong1996/ado
+npm approve-scripts @gilbertwong1996/ado      # npm 11+: allow the postinstall to auto-install shell completion
+```
+
+> **npm 11+ note**: newer npm versions gate lifecycle scripts behind explicit
+> approval. Run the second command above once — the postinstall will then
+> auto-install shell completion on every `npm install -g` afterward.
+
+### Pre-built binaries
+
+Download the binary for your platform from the
+[latest release](https://github.com/gilbertwong96/ado_cli/releases/latest) and
+put it on your `$PATH`:
+
+```bash
+# Example for Apple Silicon Mac (pick the right binary for your platform)
+curl -L -o ado https://github.com/gilbertwong96/ado_cli/releases/latest/download/ado-0.2.1-macos-aarch64
+chmod +x ado && sudo mv ado /usr/local/bin/
+```
+
+### From source
+
+Requires Elixir 1.20+ and Mix:
+
 ```bash
 git clone https://github.com/gilbertwong96/ado_cli.git
 cd ado_cli
 mix deps.get
 mix escript.build
-```
-
-Move the escript into your PATH:
-
-```bash
 cp ado /usr/local/bin/
 ```
 
