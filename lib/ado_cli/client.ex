@@ -80,6 +80,27 @@ defmodule AdoCli.Client do
     handle_response(do_request(:put, path, body, params, extra_headers))
   end
 
+  @doc """
+  Makes a GET request without the api-version query parameter.
+  Used for endpoints like /_apis/connectionData that don't
+  support the standard api-version scheme.
+  """
+  def get_raw_no_version(path, params \\ %{}) do
+    url = build_url_no_version(path, params)
+
+    with {:ok, org, auth_headers} <- AdoCli.Auth.resolve_auth(),
+         {:ok, %Finch.Response{status: status, body: body}} <-
+           Finch.request(Finch.build(:get, inject_org(url, org), auth_headers), AdoCli.Finch) do
+      if status in 200..299, do: {:ok, body}, else: {:error, %{status: status}}
+    end
+  end
+
+  defp build_url_no_version(path, params) do
+    query = if params == %{}, do: "", else: "?" <> URI.encode_query(params)
+    base = base_url()
+    "#{base}/#{String.trim_leading(path, "/")}#{query}"
+  end
+
   # ── Private ──────────────────────────────────────────────────────────
 
   defp handle_response({:ok, %{status: status, body: body}}) when status in 200..299 do

@@ -81,7 +81,7 @@ defmodule AdoCli.Auth do
   end
 
   defp fetch_and_cache_user_id do
-    case Client.get_raw("/_apis/connectionData") do
+    case Client.get_raw_no_version("/_apis/connectionData") do
       {:ok, body} ->
         case JSON.decode(body) do
           {:ok, %{"authenticatedUser" => %{"id" => id}}} when is_binary(id) and id != "" ->
