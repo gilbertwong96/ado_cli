@@ -191,9 +191,7 @@ defmodule AdoCli.CLI.Wikis do
     case Client.get("/#{URI.encode(project)}/_apis/wiki/wikis/#{URI.encode(wiki_id)}/pages", %{
            "path" => path
          }) do
-      {:ok, existing} ->
-        etag = existing["eTag"] || ""
-        _ = [{"If-Match", etag}]
+      {:ok, _existing} ->
         body = %{"content" => content}
 
         case Client.put(

@@ -1,3 +1,18 @@
+defmodule AdoCli.Skills.SearchResult do
+  @moduledoc """
+  A single search hit returned by `AdoCli.Skills.search/1`.
+  """
+  @derive {JSON.Encoder, only: [:skill, :match_type, :matched, :context]}
+  defstruct [:skill, :match_type, :matched, :context]
+
+  @type t :: %__MODULE__{
+          skill: String.t(),
+          match_type: String.t(),
+          matched: String.t(),
+          context: String.t()
+        }
+end
+
 defmodule AdoCli.Skills do
   @moduledoc """
   Compile-time embedded skill content for AI agents.
@@ -161,7 +176,7 @@ defmodule AdoCli.Skills do
 
   Sorted by `match_type` (name > command > description) then by skill name.
   """
-  @spec search(String.t()) :: [map()]
+  @spec search(String.t()) :: [AdoCli.Skills.SearchResult.t()]
   def search(query) when is_binary(query) do
     needle = String.downcase(query)
 
@@ -177,7 +192,15 @@ defmodule AdoCli.Skills do
 
     matches =
       if String.contains?(String.downcase(skill_name), needle) do
-        [%{skill: skill_name, match_type: "name", matched: skill_name, context: ""} | matches]
+        [
+          %AdoCli.Skills.SearchResult{
+            skill: skill_name,
+            match_type: "name",
+            matched: skill_name,
+            context: ""
+          }
+          | matches
+        ]
       else
         matches
       end
@@ -202,7 +225,12 @@ defmodule AdoCli.Skills do
     |> Enum.reduce(matches, fn cmd, acc ->
       if String.contains?(String.downcase(cmd), needle) do
         [
-          %{skill: skill_name, match_type: "command", matched: cmd, context: ""}
+          %AdoCli.Skills.SearchResult{
+            skill: skill_name,
+            match_type: "command",
+            matched: cmd,
+            context: ""
+          }
           | acc
         ]
       else
