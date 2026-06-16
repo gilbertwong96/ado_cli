@@ -14,6 +14,7 @@ Built with [Finch](https://hex.pm/packages/finch),
 [Burrito](https://hex.pm/packages/burrito).
 
 [![CI](https://github.com/gilbertwong96/ado_cli/actions/workflows/ci.yml/badge.svg)](https://github.com/gilbertwong96/ado_cli/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/gilbertwong96/ado_cli/graph/badge.svg)](https://codecov.io/gh/gilbertwong96/ado_cli)
 [![Elixir](https://img.shields.io/badge/elixir-1.20+-purple.svg)](https://elixir-lang.org)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Website](https://img.shields.io/badge/website-gilbertwong96.github.io%2Fado_cli-blue)](https://gilbertwong96.github.io/ado_cli/)
