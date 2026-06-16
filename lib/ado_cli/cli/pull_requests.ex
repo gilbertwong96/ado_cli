@@ -691,7 +691,11 @@ defmodule AdoCli.CLI.PullRequests do
   defp resolve_iteration(_parsed, n) when is_integer(n) and n > 0, do: {:ok, n}
 
   defp fetch_changes(parsed, iteration_id) do
-    Client.list(changes_path(parsed, iteration_id))
+    case Client.get(changes_path(parsed, iteration_id)) do
+      {:ok, %{"changeEntries" => changes}} -> {:ok, changes}
+      {:ok, %{"value" => changes}} -> {:ok, changes}
+      other -> other
+    end
   end
 
   defp render_diff(parsed, changes, iteration_id, file, unified?, json?) do
@@ -758,26 +762,29 @@ defmodule AdoCli.CLI.PullRequests do
          "No change matches --file '#{file}'. Use 'ado prs diff' (no flags) to list files."}
 
       change ->
-        change_id = change["changeId"] || change["id"]
-        path = change_path(change)
+        case fetch_iteration_data(parsed, iteration_id) do
+          {:ok, iteration} ->
+            case fetch_file_diff(parsed, iteration, file) do
+              {:ok, content} ->
+                if json? do
+                  IO.puts(
+                    JSON.encode!(%{
+                      ok: true,
+                      iteration: iteration_id,
+                      path: change_path(change),
+                      change_type: change_type(change),
+                      diff: content
+                    })
+                  )
+                else
+                  IO.puts(content)
+                end
 
-        case fetch_change_content(parsed, iteration_id, change_id) do
-          {:ok, content} ->
-            if json? do
-              IO.puts(
-                JSON.encode!(%{
-                  ok: true,
-                  iteration: iteration_id,
-                  path: path,
-                  change_type: change_type(change),
-                  diff: content
-                })
-              )
-            else
-              IO.puts(content)
+                :ok
+
+              {:error, reason} ->
+                bail(reason, parsed)
             end
-
-            :ok
 
           {:error, reason} ->
             bail(reason, parsed)
@@ -785,60 +792,97 @@ defmodule AdoCli.CLI.PullRequests do
     end
   end
 
-  # --unified: emit all file diffs concatenated.
+  # --unified: emit the full diff between source and target commits.
   defp render_unified(parsed, iteration_id, changes, json?) do
-    # Fetch each change's content in sequence. If any fails,
-    # surface the first error and stop.
-    case fetch_all_change_contents(parsed, iteration_id, changes) do
-      {:ok, fetched} ->
-        if json? do
-          IO.puts(
-            JSON.encode!(%{
-              ok: true,
-              iteration: iteration_id,
-              mode: "unified",
-              file_count: length(fetched),
-              note:
-                "Unified diff content is printed below the envelope; pipe to delta/less for pretty viewing"
-            })
-          )
+    case fetch_iteration_data(parsed, iteration_id) do
+      {:ok, iteration} ->
+        case fetch_full_diff(parsed, iteration) do
+          {:ok, content} ->
+            if json? do
+              IO.puts(
+                JSON.encode!(%{
+                  ok: true,
+                  iteration: iteration_id,
+                  mode: "unified",
+                  file_count: length(changes),
+                  diff: content
+                })
+              )
+            else
+              IO.puts(content)
+              IO.puts("")
+            end
 
-          IO.puts("")
+            :ok
+
+          {:error, reason} ->
+            bail(reason, parsed)
         end
-
-        Enum.each(fetched, fn {_path, content} ->
-          IO.puts(content)
-          IO.puts("")
-        end)
-
-        :ok
 
       {:error, reason} ->
         bail(reason, parsed)
     end
   end
 
-  defp fetch_all_change_contents(parsed, iteration_id, changes) do
-    result =
-      Enum.reduce_while(changes, {:ok, []}, fn change, {:ok, acc} ->
-        change_id = change["changeId"] || change["id"]
-
-        case fetch_change_content(parsed, iteration_id, change_id) do
-          {:ok, content} -> {:cont, {:ok, [{change_path(change), content} | acc]}}
-          {:error, _} = err -> {:halt, err}
+  # ── diff helpers ────────────────────────────────────────────────
+  defp fetch_iteration_data(parsed, iteration_id) do
+    case Client.get(iterations_path(parsed)) do
+      {:ok, %{"value" => iterations}} when is_list(iterations) ->
+        case Enum.find(iterations, &(&1["id"] == iteration_id)) do
+          nil -> {:error, "Iteration #{iteration_id} not found"}
+          iteration -> {:ok, iteration}
         end
-      end)
 
-    case result do
-      {:ok, list} -> {:ok, Enum.reverse(list)}
-      other -> other
+      {:error, _} = err ->
+        err
     end
   end
 
-  # ── diff helpers ────────────────────────────────────────────────
+  defp fetch_file_diff(parsed, iteration, file) do
+    project = URI.encode(parsed.arguments.project)
+    repo_id = URI.encode(parsed.arguments.repo_id)
+    # base = target (main branch), target = source (feature branch)
+    base = get_in(iteration, ["targetRefCommit", "commitId"])
+    target = get_in(iteration, ["sourceRefCommit", "commitId"])
 
-  defp fetch_change_content(parsed, iteration_id, change_id) do
-    Client.get_raw(single_change_path(parsed, iteration_id, change_id))
+    if !base || !target do
+      {:error, "Iteration is missing sourceRefCommit or targetRefCommit"}
+    else
+      path = "/#{project}/_apis/git/repositories/#{repo_id}/diffs/commits"
+
+      params = %{
+        "baseVersionType" => "commit",
+        "baseVersion" => base,
+        "targetVersionType" => "commit",
+        "targetVersion" => target,
+        "path" => file
+      }
+
+      Client.get_raw(path, params)
+    end
+  end
+
+  defp fetch_full_diff(parsed, iteration) do
+    project = URI.encode(parsed.arguments.project)
+    repo_id = URI.encode(parsed.arguments.repo_id)
+    # base = target (main branch), target = source (feature branch)
+    base = get_in(iteration, ["targetRefCommit", "commitId"])
+    target = get_in(iteration, ["sourceRefCommit", "commitId"])
+
+    if !base || !target do
+      {:error, "Iteration is missing sourceRefCommit or targetRefCommit"}
+    else
+      path = "/#{project}/_apis/git/repositories/#{repo_id}/diffs/commits"
+
+      params = %{
+        "baseVersionType" => "commit",
+        "baseVersion" => base,
+        "targetVersionType" => "commit",
+        "targetVersion" => target
+      }
+
+      Client.get_raw(path, params)
+    end
   end
 
   defp find_change_for_file(changes, target) do
@@ -904,14 +948,6 @@ defmodule AdoCli.CLI.PullRequests do
     pr_id = parsed.arguments.pr_id
 
     "/#{project}/_apis/git/repositories/#{repo_id}/pullRequests/#{pr_id}/iterations/#{iteration_id}/changes"
-  end
-
-  defp single_change_path(parsed, iteration_id, change_id) do
-    project = URI.encode(parsed.arguments.project)
-    repo_id = URI.encode(parsed.arguments.repo_id)
-    pr_id = parsed.arguments.pr_id
-
-    "/#{project}/_apis/git/repositories/#{repo_id}/pullRequests/#{pr_id}/iterations/#{iteration_id}/changes/#{change_id}"
   end
 
   # ── Helpers ───────────────────────────────────────────────────────────
