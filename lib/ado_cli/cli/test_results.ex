@@ -211,7 +211,7 @@ defmodule AdoCli.CLI.TestResults do
       json? = Map.get(parsed.options, :json, false)
 
       if json? do
-        writeln(Jason.encode!(%{ok: true, run: %{id: run["id"], name: name}}))
+        writeln(JSON.encode!(%{ok: true, run: %{id: run["id"], name: name}}))
       else
         writeln("")
         writeln("✓ Test run ##{run["id"]} created: #{name}")

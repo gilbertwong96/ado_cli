@@ -187,17 +187,23 @@ defmodule AdoCli.CLI.Wikis do
     path = Map.fetch!(parsed.options, :path)
     content = Map.fetch!(parsed.options, :content)
 
-    # Fetch existing etag
+    # Fetch the existing page to get its ETag for optimistic
+    # concurrency. The If-Match header prevents overwriting
+    # changes made by another user between our read and write.
     case Client.get("/#{URI.encode(project)}/_apis/wiki/wikis/#{URI.encode(wiki_id)}/pages", %{
-           "path" => path
+           "path" => path,
+           "includeContent" => "true"
          }) do
-      {:ok, _existing} ->
+      {:ok, existing} ->
+        etag = existing["eTag"] || ""
+        extra_headers = if etag != "", do: [{"If-Match", etag}], else: []
         body = %{"content" => content}
 
         case Client.put(
                "/#{URI.encode(project)}/_apis/wiki/wikis/#{URI.encode(wiki_id)}/pages",
                body,
-               %{"path" => path, "comment" => "Updated via ado CLI"}
+               %{"path" => path, "comment" => "Updated via ado CLI"},
+               extra_headers
              ) do
           {:ok, page} ->
             success("Page '#{page["path"]}' updated.\n")
