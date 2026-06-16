@@ -762,34 +762,48 @@ defmodule AdoCli.CLI.PullRequests do
          "No change matches --file '#{file}'. Use 'ado prs diff' (no flags) to list files."}
 
       change ->
-        case fetch_iteration_data(parsed, iteration_id) do
-          {:ok, iteration} ->
-            case fetch_file_diff(parsed, iteration, file) do
-              {:ok, content} ->
-                if json? do
-                  IO.puts(
-                    JSON.encode!(%{
-                      ok: true,
-                      iteration: iteration_id,
-                      path: change_path(change),
-                      change_type: change_type(change),
-                      diff: content
-                    })
-                  )
-                else
-                  IO.puts(content)
-                end
+        do_render_file_diff(parsed, iteration_id, change, file, json?)
+    end
+  end
 
-                :ok
+  defp do_render_file_diff(parsed, iteration_id, change, file, json?) do
+    case fetch_iteration_data(parsed, iteration_id) do
+      {:ok, iteration} ->
+        case fetch_file_diff(parsed, iteration, file) do
+          {:ok, content} ->
+            emit_diff_or_json(
+              json?,
+              iteration_id,
+              change_path(change),
+              change_type(change),
+              content
+            )
 
-              {:error, reason} ->
-                bail(reason, parsed)
-            end
+            :ok
 
           {:error, reason} ->
             bail(reason, parsed)
         end
+
+      {:error, reason} ->
+        bail(reason, parsed)
     end
+  end
+
+  defp emit_diff_or_json(true, iteration_id, path, type, content) do
+    IO.puts(
+      JSON.encode!(%{
+        ok: true,
+        iteration: iteration_id,
+        path: path,
+        change_type: type,
+        diff: content
+      })
+    )
+  end
+
+  defp emit_diff_or_json(false, _iteration_id, _path, _type, content) do
+    IO.puts(content)
   end
 
   # --unified: emit the full diff between source and target commits.
@@ -863,7 +877,6 @@ defmodule AdoCli.CLI.PullRequests do
     if !base || !target do
       {:error, "Iteration is missing sourceRefCommit or targetRefCommit"}
     else
-      # Get the list of changed files, then fetch each one's diff
       changes_path = "/#{project}/_apis/git/repositories/#{repo_id}/diffs/commits"
 
       params = %{
@@ -875,28 +888,29 @@ defmodule AdoCli.CLI.PullRequests do
 
       case Client.get(changes_path, params) do
         {:ok, %{"changes" => changes}} when is_list(changes) ->
-          diffs =
-            Enum.map(changes, fn ch ->
-              path = get_in(ch, ["item", "path"])
-              _old_id = get_in(ch, ["item", "originalObjectId"])
-              _new_id = get_in(ch, ["item", "objectId"])
-
-              with {:ok, old_content} <- fetch_file_content(project, repo_id, path, base),
-                   {:ok, new_content} <- fetch_file_content(project, repo_id, path, target) do
-                format_unified_diff(path, old_content, new_content, base, target)
-              else
-                _ -> nil
-              end
-            end)
-            |> Enum.reject(&is_nil/1)
-            |> Enum.join("\n")
-
+          diffs = collect_diffs(changes, project, repo_id, base, target)
           {:ok, diffs}
 
         _ ->
           {:error, "No changes found"}
       end
     end
+  end
+
+  defp collect_diffs(changes, project, repo_id, base, target) do
+    changes
+    |> Enum.map(fn ch ->
+      path = get_in(ch, ["item", "path"])
+
+      with {:ok, old_content} <- fetch_file_content(project, repo_id, path, base),
+           {:ok, new_content} <- fetch_file_content(project, repo_id, path, target) do
+        format_unified_diff(path, old_content, new_content, base, target)
+      else
+        _ -> nil
+      end
+    end)
+    |> Enum.reject(&is_nil/1)
+    |> Enum.join("\n")
   end
 
   defp fetch_file_content(project, repo_id, path, commit_id) do
