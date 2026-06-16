@@ -1,6 +1,6 @@
 {
   "name": "@gilbertwong1996/ado-darwin-x64",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "description": "ado binary for macOS Intel (x86_64)",
   "license": "Apache-2.0",
   "repository": {
