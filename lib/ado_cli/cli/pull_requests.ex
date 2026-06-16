@@ -426,33 +426,54 @@ defmodule AdoCli.CLI.PullRequests do
     repo_id = parsed.arguments.repo_id
     pr_id = parsed.arguments.pr_id
 
-    body = %{
-      "status" => "completed",
-      "deleteSourceBranch" => Map.get(parsed.options, :delete_source, false)
-    }
-
-    body =
-      put_if_key(merge_strategy(Map.get(parsed.options, :merge_strategy)), body, "mergeStrategy")
-
     path =
       "/#{URI.encode(project)}/_apis/git/repositories/#{URI.encode(repo_id)}/pullrequests/#{pr_id}"
 
-    case Client.patch(path, body) do
-      {:ok, pr} ->
-        success("Pull request ##{pr["pullRequestId"]} completed (merged).\n")
-        halt_success("")
+    # Azure DevOps requires the lastMergeSourceCommit.commitId when
+    # completing a PR. We fetch the PR details first, extract the
+    # SHA, then PATCH with the complete body.
+    case Client.get(path) do
+      {:ok, pr_data} ->
+        case get_in(pr_data, ["lastMergeSourceCommit", "commitId"]) do
+          nil ->
+            halt_error(
+              "Cannot complete PR ##{pr_id}: no lastMergeSourceCommit.commitId in the PR data."
+            )
 
-      {:error, %{status: 404}} ->
-        halt_error("Pull request ##{pr_id} not found")
+          last_commit_id ->
+            body = build_complete_body(parsed, last_commit_id)
 
-      {:error, %{status: status, body: body}} ->
-        halt_error(
-          "Cannot complete PR ##{pr_id}: #{inspect(body["message"] || "HTTP #{status}")}"
-        )
+            case Client.patch(path, body) do
+              {:ok, pr} ->
+                success("Pull request ##{pr["pullRequestId"]} completed (merged).\n")
+                halt_success("")
+
+              {:error, %{status: 404}} ->
+                halt_error("Pull request ##{pr_id} not found")
+
+              {:error, %{status: status, body: body}} ->
+                halt_error(
+                  "Cannot complete PR ##{pr_id}: #{inspect(body["message"] || "HTTP #{status}")}"
+                )
+
+              error ->
+                Helpers.handle_api_result(error, parsed, fn _ -> :ok end)
+            end
+        end
 
       error ->
         Helpers.handle_api_result(error, parsed, fn _ -> :ok end)
     end
+  end
+
+  defp build_complete_body(parsed, last_commit_id) do
+    body = %{
+      "status" => "completed",
+      "lastMergeSourceCommit" => %{"commitId" => last_commit_id},
+      "deleteSourceBranch" => Map.get(parsed.options, :delete_source, false)
+    }
+
+    put_if_key(merge_strategy(Map.get(parsed.options, :merge_strategy)), body, "mergeStrategy")
   end
 
   @doc """
@@ -866,12 +887,29 @@ defmodule AdoCli.CLI.PullRequests do
   end
 
   defp resolve_reviewer_id(project, repo_id, pr_id) do
-    case Client.list(
-           "/#{URI.encode(project)}/_apis/git/repositories/#{URI.encode(repo_id)}/pullrequests/#{pr_id}/reviewers"
-         ) do
-      {:ok, reviewers} when is_list(reviewers) and reviewers != [] ->
-        Enum.find_value(reviewers, & &1["id"]) ||
-          halt_error("Cannot determine reviewer ID for PR ##{pr_id}")
+    # Fetch the authenticated user's identity GUID from the
+    # Azure DevOps connection data (cached on first call).
+    # Then scan the PR reviewer list for a reviewer whose
+    # `identity.id` matches that GUID. Only the user's own
+    # reviewer slot can be voted on — trying to PUT a vote
+    # to a different reviewer's slot returns:
+    #   "You cannot record a vote for someone else."
+    with {:ok, user_id} <- AdoCli.Auth.current_user_id(),
+         {:ok, reviewers} when is_list(reviewers) and reviewers != [] <-
+           Client.list(
+             "/#{URI.encode(project)}/_apis/git/repositories/#{URI.encode(repo_id)}/pullrequests/#{pr_id}/reviewers"
+           ) do
+      Enum.find_value(reviewers, fn r ->
+        if get_in(r, ["identity", "id"]) == user_id, do: r["id"]
+      end) ||
+        halt_error("""
+        Cannot vote on PR ##{pr_id}: your identity (#{user_id}) is not in
+        the reviewer list. Are you a reviewer on this PR? Open the PR
+        in the browser first, or ask someone to add you as a reviewer.
+        """)
+    else
+      {:error, reason} ->
+        halt_error("Cannot determine user identity: #{reason}")
 
       _ ->
         halt_error(

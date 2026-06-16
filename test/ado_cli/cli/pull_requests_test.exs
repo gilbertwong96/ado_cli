@@ -145,12 +145,27 @@ defmodule AdoCli.CLI.PullRequestsTest do
   end
 
   describe "complete_pr" do
-    test "halts 0 on successful patch", %{server: server} do
+    test "halts 0 on successful complete (GET pr + PATCH)", %{server: server} do
+      # Register the GET expectation first (to fetch lastMergeSourceCommit)
+      pr_data = %{
+        "pullRequestId" => 1,
+        "status" => "active",
+        "lastMergeSourceCommit" => %{"commitId" => "abc123def456"}
+      }
+
+      TestServer.expect(
+        server,
+        "GET",
+        "/testorg/MyProject/_apis/git/repositories/test/pullrequests/1",
+        fn conn -> Plug.Conn.resp(conn, 200, JSON.encode!(pr_data)) end
+      )
+
+      # Then the PATCH to complete it
       expect_patch_success(
         server,
-        "/testorg/_apis/git/repositories/test/pullrequests/1",
+        "/MyProject/_apis/git/repositories/test/pullrequests/1",
         "",
-        "{\"id\":1}",
+        JSON.encode!(%{"pullRequestId" => 1, "status" => "completed"}),
         fn ->
           apply(AdoCli.CLI.PullRequests, :complete_pr, [
             %{
@@ -163,18 +178,33 @@ defmodule AdoCli.CLI.PullRequestsTest do
                 bypass_policy: false,
                 transition_work_items: false
               },
-              arguments: %{project: "testorg", repo_id: "test", pr_id: 1}
+              arguments: %{project: "MyProject", repo_id: "test", pr_id: 1}
             }
           ])
         end
       )
     end
 
-    test "halts 1 on API error", %{server: _server} do
-      # complete_pr uses PATCH, not GET. The generic expect_api_error
-      # helper mocks GET so this test was incorrectly written. Skipping
-      # for now — the success path above exercises the code.
-      assert true
+    test "halts 1 when the PR has no lastMergeSourceCommit", %{server: server} do
+      pr_data = %{"pullRequestId" => 1, "status" => "active"}
+
+      TestServer.expect(
+        server,
+        "GET",
+        "/testorg/MyProject/_apis/git/repositories/test/pullrequests/1",
+        fn conn -> Plug.Conn.resp(conn, 200, JSON.encode!(pr_data)) end
+      )
+
+      capture_io(fn ->
+        apply(AdoCli.CLI.PullRequests, :complete_pr, [
+          %{
+            options: %{json: false, delete_source: false, merge_strategy: nil},
+            arguments: %{project: "MyProject", repo_id: "test", pr_id: 1}
+          }
+        ])
+      end)
+
+      assert_receive {:cli_mate_shell, :halt, 1}, 500
     end
   end
 
