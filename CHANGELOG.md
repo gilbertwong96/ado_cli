@@ -5,6 +5,25 @@ All notable changes to `ado` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.4] - 2026-06-16
+
+### Fixed
+
+- **`ado ci watch` log streaming was silently broken.** The same
+  API-response destructuring bug that was fixed for timeline
+  diff rendering in v0.2.3 (commit `0be521c`) also affected the
+  log-streaming path (`stream_active_logs/2`). The Azure DevOps
+  timeline API returns `%{"records" => [...]}`, not a bare list,
+  so the `Enum.filter/2` over records was iterating over a
+  map's key/value pairs (tuples like `{"records", [...]}`)
+  instead of the actual record maps — `r["state"]` and
+  `r["log"]` were always nil, and no logs were ever streamed.
+  Fix: destructure with `%{"records" => records}`.
+
+  Both call sites of `fetch_timeline/3` are now correct:
+    * `render_timeline_diff/2` (fixed in `0be521c`)
+    * `stream_active_logs/2` (this fix)
+
 ## [0.2.3] - 2026-06-16
 
 ### Fixed
@@ -391,7 +410,8 @@ the embedded skills can be installed into any LLM agent's skill directory.
   are filtered by the `mix ci.dialyzer` task.
 - ExUnit test count: 234 (across 30+ test files). All pass.
 
-[Unreleased]: https://github.com/gilbertwong96/ado_cli/compare/v0.2.3...HEAD
+[Unreleased]: https://github.com/gilbertwong96/ado_cli/compare/v0.2.4...HEAD
+[0.2.4]: https://github.com/gilbertwong96/ado_cli/compare/v0.2.3...v0.2.4
 [0.2.3]: https://github.com/gilbertwong96/ado_cli/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/gilbertwong96/ado_cli/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/gilbertwong96/ado_cli/compare/v0.2.0...v0.2.1
