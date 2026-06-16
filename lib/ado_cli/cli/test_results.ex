@@ -101,21 +101,7 @@ defmodule AdoCli.CLI.TestResults do
 
           writeln(String.duplicate("─", 90))
 
-          Enum.each(runs, fn run ->
-            id = to_string(run["id"] || "")
-            name = String.slice(run["name"] || "", 0, 39)
-            state = run["state"] || "?"
-
-            stats = run["runStatistics"] || []
-            total = find_stat(stats, "TotalTests") || "?"
-            passed = find_stat(stats, "Passed") || "0"
-            failed = find_stat(stats, "Failed") || "0"
-
-            writeln(
-              "#{String.pad_trailing(id, 8)} #{String.pad_trailing(name, 40)} " <>
-                "#{String.pad_trailing(state, 12)} #{total} / #{passed} / #{failed}"
-            )
-          end)
+          Enum.each(runs, &print_run_row/1)
 
           writeln("")
         end)
@@ -157,6 +143,22 @@ defmodule AdoCli.CLI.TestResults do
   defp find_stat(stats, label) do
     stat = Enum.find(stats, &(&1["outcome"] == label || &1["state"] == label))
     stat && stat["count"]
+  end
+
+  defp print_run_row(run) do
+    id = to_string(run["id"] || "")
+    name = String.slice(run["name"] || "", 0, 39)
+    state = run["state"] || "?"
+
+    stats = run["runStatistics"] || []
+    total = find_stat(stats, "TotalTests") || "?"
+    passed = find_stat(stats, "Passed") || "0"
+    failed = find_stat(stats, "Failed") || "0"
+
+    writeln(
+      "#{String.pad_trailing(id, 8)} #{String.pad_trailing(name, 40)} " <>
+        "#{String.pad_trailing(state, 12)} #{total} / #{passed} / #{failed}"
+    )
   end
 
   # ── show ────────────────────────────────────────────────────────────
@@ -259,11 +261,7 @@ defmodule AdoCli.CLI.TestResults do
       end
 
     path = "/#{project}/_apis/test/runs"
-
-    case Client.post(path, body) do
-      {:ok, run} -> {:ok, run}
-      {:error, reason} -> {:error, reason}
-    end
+    Client.post(path, body)
   end
 
   defp attach_file(project, run_id, file_path, _content) do
