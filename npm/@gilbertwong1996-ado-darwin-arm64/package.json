@@ -1,6 +1,6 @@
 {
   "name": "@gilbertwong1996/ado-darwin-arm64",
-  "version": "0.2.4",
+  "version": "0.3.0",
   "description": "ado binary for macOS Apple Silicon (arm64)",
   "license": "Apache-2.0",
   "repository": {
