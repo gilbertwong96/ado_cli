@@ -312,17 +312,23 @@ defmodule AdoCli.CLI.PullRequestsTest do
     end
 
     test "fetches the full diff with --file", %{server: server} do
-      iterations_body = ~s({"value":[{"id":1}]})
-
-      changes_body =
+      iterations_body =
         JSON.encode!(%{
           "value" => [
-            %{"changeId" => 101, "changeType" => 2, "item" => %{"path" => "/src/foo.ex"}}
+            %{
+              "id" => 1,
+              "sourceRefCommit" => %{"commitId" => "src"},
+              "targetRefCommit" => %{"commitId" => "tgt"}
+            }
           ]
         })
 
-      diff_content =
-        "@@ -1,3 +1,5 @@\\n defmodule Foo do\\n+  @moduledoc\\n+  New doc\\n   def hello\\n end\\n"
+      changes_body =
+        JSON.encode!(%{
+          "changeEntries" => [
+            %{"changeId" => 101, "changeType" => 2, "item" => %{"path" => "/src/foo.ex"}}
+          ]
+        })
 
       TestServer.expect(
         server,
@@ -338,11 +344,34 @@ defmodule AdoCli.CLI.PullRequestsTest do
         fn conn -> Plug.Conn.resp(conn, 200, changes_body) end
       )
 
+      # fetch_iteration_data calls iterations again
       TestServer.expect(
         server,
         "GET",
-        api("/testorg/_apis/git/repositories/test/pullRequests/1/iterations/1/changes/101"),
-        fn conn -> Plug.Conn.resp(conn, 200, diff_content) end
+        api("/testorg/_apis/git/repositories/test/pullRequests/1/iterations"),
+        fn conn -> Plug.Conn.resp(conn, 200, iterations_body) end
+      )
+
+      # Old file content (targetRefCommit)
+      TestServer.expect(
+        server,
+        "GET",
+        api("/testorg/_apis/git/repositories/test/items"),
+        fn conn -> Plug.Conn.resp(conn, 200, "defmodule Foo do\n  def hello\nend\n") end
+      )
+
+      # New file content (sourceRefCommit)
+      TestServer.expect(
+        server,
+        "GET",
+        api("/testorg/_apis/git/repositories/test/items"),
+        fn conn ->
+          Plug.Conn.resp(
+            conn,
+            200,
+            "defmodule Foo do\n  @moduledoc\n  New doc\n  def hello\nend\n"
+          )
+        end
       )
 
       output =
@@ -356,16 +385,25 @@ defmodule AdoCli.CLI.PullRequestsTest do
         end)
 
       assert_receive {:cli_mate_shell, :halt, 0}, 500
+      assert output =~ "+++ b/src/foo.ex"
       assert output =~ "@moduledoc"
-      assert output =~ "New doc"
     end
 
     test "strips leading slash when matching --file", %{server: server} do
-      iterations_body = ~s({"value":[{"id":1}]})
+      iterations_body =
+        JSON.encode!(%{
+          "value" => [
+            %{
+              "id" => 1,
+              "sourceRefCommit" => %{"commitId" => "src"},
+              "targetRefCommit" => %{"commitId" => "tgt"}
+            }
+          ]
+        })
 
       changes_body =
         JSON.encode!(%{
-          "value" => [
+          "changeEntries" => [
             %{"changeId" => 101, "changeType" => 2, "item" => %{"path" => "/src/foo.ex"}}
           ]
         })
@@ -387,8 +425,22 @@ defmodule AdoCli.CLI.PullRequestsTest do
       TestServer.expect(
         server,
         "GET",
-        api("/testorg/_apis/git/repositories/test/pullRequests/1/iterations/1/changes/101"),
-        fn conn -> Plug.Conn.resp(conn, 200, "DIFF_CONTENT") end
+        api("/testorg/_apis/git/repositories/test/pullRequests/1/iterations"),
+        fn conn -> Plug.Conn.resp(conn, 200, iterations_body) end
+      )
+
+      TestServer.expect(
+        server,
+        "GET",
+        api("/testorg/_apis/git/repositories/test/items"),
+        fn conn -> Plug.Conn.resp(conn, 200, "old") end
+      )
+
+      TestServer.expect(
+        server,
+        "GET",
+        api("/testorg/_apis/git/repositories/test/items"),
+        fn conn -> Plug.Conn.resp(conn, 200, "new") end
       )
 
       output =
@@ -402,7 +454,7 @@ defmodule AdoCli.CLI.PullRequestsTest do
         end)
 
       assert_receive {:cli_mate_shell, :halt, 0}, 500
-      assert output =~ "DIFF_CONTENT"
+      assert output =~ "diff --git"
     end
 
     test "halts 1 with a clear error when --file matches no change", %{server: server} do
@@ -459,14 +511,31 @@ defmodule AdoCli.CLI.PullRequestsTest do
     end
 
     test "uses --iteration N when provided", %{server: server} do
-      # No /iterations GET expected (we passed --iteration
-      # explicitly), just the /changes for iteration 3.
-      changes_body =
+      iterations_body =
         JSON.encode!(%{
           "value" => [
+            %{
+              "id" => 3,
+              "sourceRefCommit" => %{"commitId" => "src"},
+              "targetRefCommit" => %{"commitId" => "tgt"}
+            }
+          ]
+        })
+
+      changes_body =
+        JSON.encode!(%{
+          "changeEntries" => [
             %{"changeId" => 301, "changeType" => 2, "item" => %{"path" => "/x.ex"}}
           ]
         })
+
+      # resolve_iteration with explicit id
+      TestServer.expect(
+        server,
+        "GET",
+        api("/testorg/_apis/git/repositories/test/pullRequests/1/iterations"),
+        fn conn -> Plug.Conn.resp(conn, 200, iterations_body) end
+      )
 
       TestServer.expect(
         server,
@@ -488,13 +557,30 @@ defmodule AdoCli.CLI.PullRequestsTest do
     end
 
     test "--unified emits all file diffs concatenated", %{server: server} do
-      iterations_body = ~s({"value":[{"id":1}]})
+      iterations_body =
+        JSON.encode!(%{
+          "value" => [
+            %{
+              "id" => 1,
+              "sourceRefCommit" => %{"commitId" => "src"},
+              "targetRefCommit" => %{"commitId" => "tgt"}
+            }
+          ]
+        })
 
       changes_body =
         JSON.encode!(%{
-          "value" => [
+          "changeEntries" => [
             %{"changeId" => 401, "changeType" => 2, "item" => %{"path" => "/a.ex"}},
             %{"changeId" => 402, "changeType" => 2, "item" => %{"path" => "/b.ex"}}
+          ]
+        })
+
+      diffs_body =
+        JSON.encode!(%{
+          "changes" => [
+            %{"item" => %{"path" => "/a.ex", "objectId" => "a1", "originalObjectId" => "a0"}},
+            %{"item" => %{"path" => "/b.ex", "objectId" => "b1", "originalObjectId" => "b0"}}
           ]
         })
 
@@ -512,18 +598,49 @@ defmodule AdoCli.CLI.PullRequestsTest do
         fn conn -> Plug.Conn.resp(conn, 200, changes_body) end
       )
 
+      # fetch_iteration_data re-fetches iterations
       TestServer.expect(
         server,
         "GET",
-        api("/testorg/_apis/git/repositories/test/pullRequests/1/iterations/1/changes/401"),
-        fn conn -> Plug.Conn.resp(conn, 200, "DIFF_A") end
+        api("/testorg/_apis/git/repositories/test/pullRequests/1/iterations"),
+        fn conn -> Plug.Conn.resp(conn, 200, iterations_body) end
       )
 
       TestServer.expect(
         server,
         "GET",
-        api("/testorg/_apis/git/repositories/test/pullRequests/1/iterations/1/changes/402"),
-        fn conn -> Plug.Conn.resp(conn, 200, "DIFF_B") end
+        api("/testorg/_apis/git/repositories/test/diffs/commits"),
+        fn conn -> Plug.Conn.resp(conn, 200, diffs_body) end
+      )
+
+      # Old/new content for a.ex
+      TestServer.expect(
+        server,
+        "GET",
+        api("/testorg/_apis/git/repositories/test/items"),
+        fn conn -> Plug.Conn.resp(conn, 200, "old content\n") end
+      )
+
+      TestServer.expect(
+        server,
+        "GET",
+        api("/testorg/_apis/git/repositories/test/items"),
+        fn conn -> Plug.Conn.resp(conn, 200, "old content\nnew line\n") end
+      )
+
+      # Old/new content for b.ex
+      TestServer.expect(
+        server,
+        "GET",
+        api("/testorg/_apis/git/repositories/test/items"),
+        fn conn -> Plug.Conn.resp(conn, 200, "b old\n") end
+      )
+
+      TestServer.expect(
+        server,
+        "GET",
+        api("/testorg/_apis/git/repositories/test/items"),
+        fn conn -> Plug.Conn.resp(conn, 200, "b new\n") end
       )
 
       output =
@@ -537,8 +654,9 @@ defmodule AdoCli.CLI.PullRequestsTest do
         end)
 
       assert_receive {:cli_mate_shell, :halt, 0}, 500
-      assert output =~ "DIFF_A"
-      assert output =~ "DIFF_B"
+      assert output =~ "diff --git"
+      assert output =~ "+++ b/a.ex"
+      assert output =~ "+++ b/b.ex"
     end
 
     test "halts 1 when the PR has no iterations", %{server: server} do

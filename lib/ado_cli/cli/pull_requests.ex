@@ -926,6 +926,8 @@ defmodule AdoCli.CLI.PullRequests do
   end
 
   defp format_unified_diff(path, old_content, new_content, base_sha, target_sha) do
+    # Ensure path has a leading "/" for consistency
+    path = if String.starts_with?(path, "/"), do: path, else: "/#{path}"
     _short_base = String.slice(base_sha, 0, 7)
     _short_target = String.slice(target_sha, 0, 7)
 
