@@ -129,7 +129,7 @@ defmodule AdoCli.Frontmatter do
             # this line to its value.
             case Map.fetch(acc, "commands") do
               {:ok, _} ->
-                Map.update!(acc, "commands", &(&1 <> "\n" <> line))
+                Map.update!(acc, "commands", &Enum.join([&1, line], "\n"))
 
               :error ->
                 acc

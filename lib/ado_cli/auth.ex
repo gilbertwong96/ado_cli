@@ -389,7 +389,12 @@ defmodule AdoCli.Auth do
   defp safe_call(fun) do
     fun.()
   rescue
-    _ -> nil
+    # Bare rescue replaced with explicit exception types (reach).
+    # :persistent_term.get/1 raises ArgumentError for missing keys;
+    # Application.get_env/1 raises on missing app; both are safe to
+    # treat as 'not configured'.
+    ArgumentError -> nil
+    KeyError -> nil
   end
 
   defp basic_auth_headers(pat), do: [{"Authorization", "Basic #{Base.encode64(":#{pat}")}"}]
@@ -658,6 +663,14 @@ defmodule AdoCli.Auth do
     :gen_tcp.close(client)
     result
   rescue
+    # reach flagged this as a bare rescue. The exact exception
+    # types are heterogeneous (`:closed` from gen_tcp; posix
+    # errors returned as tuples; `:gen_tcp.timeout` thrown as a
+    # value rather than raised). The handler collapses ALL of
+    # them into the same user-facing error, so enumerating them
+    # adds no value. The bare rescue is intentional — this is
+    # the canonical "I want to ignore any error and report
+    # timeout to the user" pattern.
     _ -> {:error, "Browser login timed out or was cancelled."}
   end
 
@@ -692,7 +705,7 @@ defmodule AdoCli.Auth do
 
   defp parse_request_line(data) do
     data
-    |> String.split("\r\n")
+    |> String.split("\r\n", parts: 2)
     |> hd()
     |> String.split(" ")
     |> case do
@@ -709,7 +722,7 @@ defmodule AdoCli.Auth do
             {pos, _} ->
               data
               |> String.slice(pos..-1//1)
-              |> String.split("\r\n")
+              |> String.split("\r\n", parts: 2)
               |> hd()
               |> String.replace("Content-Length: ", "")
               |> parse_int()

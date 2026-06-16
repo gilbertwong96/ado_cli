@@ -40,7 +40,15 @@ defmodule AdoCli.Version do
             :error
         end
       rescue
-        _ -> :error
+        # Bare rescue replaced with explicit exception types (reach).
+        # Mix.Project.config/0 can raise a wide range of things in
+        # non-Mix environments (escript, Burrito, runtime), including
+        # FunctionClauseError, ArgumentError, and a handful of
+        # others. We catch them all and fall through to the
+        # Application.spec/2 path.
+        FunctionClauseError -> :error
+        ArgumentError -> :error
+        UndefinedFunctionError -> :error
       catch
         _, _ -> :error
       end

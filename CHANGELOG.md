@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.2] - 2026-06-16
 
+### Changed
+
+- **Code style cleanups addressing `mix ex_dna` and `mix reach`**
+  warnings. Includes:
+    * Extracted `confirm_delete/2` and `print_id_name_type_table/1`
+      into `AdoCli.CLI.Helpers` (was duplicated in `projects.ex` +
+      `repos.ex` and `connections.ex` + `wikis.ex` respectively)
+    * `mix ci` now runs `ex_dna` as its 8th quality step
+    * Replaced `String.split/2 |> hd/1` with `String.split/3, parts: 2`
+      in 4 places (`auth.ex`, `skills.ex`)
+    * Refactored `skills.ex` file listing to iterate the map as
+      `{key, value}` pairs instead of `Map.keys/1 |> Enum.filter`
+    * Replaced guard `when content == "-"` with pattern
+      `def resolve_content("-")` in `pull_requests.ex`
+    * Replaced `<>` inside `Enum.reduce/3` with `Enum.join/2` in
+      `frontmatter.ex`
+    * Replaced 5 bare `rescue _` clauses with explicit exception
+      types in `schema.ex`, `auth.ex`, `version.ex`
+
+  The remaining 11 reach findings (10 dead-code false positives on
+  the `handle_api_result` test pattern + 1 already-explained bare
+  rescue in `auth.ex` + 2 map-shape suggestions) are noted in
+  the commit but intentionally left for a future refactor; the
+  dead-code warnings are about CLI test helpers that halt, the
+  map-shape suggestions would require introducing two new
+  structs across `skills.ex` and `pull_requests.ex`.
+
 ### Fixed
 
 - **`ado ci watch` was completely non-functional in v0.2.1** due
