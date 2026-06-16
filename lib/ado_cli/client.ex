@@ -70,8 +70,14 @@ defmodule AdoCli.Client do
   @doc """
   Makes a PUT request.
   """
-  def put(path, body, params \\ %{}) do
-    handle_response(do_request(:put, path, body, params))
+  def put(path, body, params \\ %{}), do: put(path, body, params, [])
+
+  @doc """
+  PUT with extra HTTP headers (e.g. If-Match for optimistic concurrency).
+  `extra_headers` is merged with the default auth headers.
+  """
+  def put(path, body, params, extra_headers) do
+    handle_response(do_request(:put, path, body, params, extra_headers))
   end
 
   # ── Private ──────────────────────────────────────────────────────────
@@ -95,21 +101,21 @@ defmodule AdoCli.Client do
 
   defp safe_decode(body), do: body
 
-  defp do_request(method, path, body, params, attempt \\ 0)
+  defp do_request(method, path, body, params, extra_headers \\ [], attempt \\ 0)
 
-  defp do_request(_method, _path, _body, _params, 3),
+  defp do_request(_method, _path, _body, _params, _extra_headers, 3),
     do: {:error, %{status: 302, body: "Too many redirects"}}
 
-  defp do_request(method, path, body, params, attempt) do
+  defp do_request(method, path, body, params, extra_headers, attempt) do
     with {:ok, org, auth_headers} <- AdoCli.Auth.resolve_auth() do
-      do_request_with_auth(method, path, body, params, attempt, org, auth_headers)
+      do_request_with_auth(method, path, body, params, attempt, org, auth_headers, extra_headers)
     end
   end
 
-  defp do_request_with_auth(method, path, body, params, attempt, org, auth_headers) do
+  defp do_request_with_auth(method, path, body, params, attempt, org, auth_headers, extra_headers) do
     url = build_url(path, params)
     full_url = inject_org(url, org)
-    headers = [{"Content-Type", "application/json"} | auth_headers]
+    headers = [{"Content-Type", "application/json"} | auth_headers] ++ extra_headers
     encoded = if body, do: JSON.encode!(body)
 
     case Finch.request(Finch.build(method, full_url, headers, encoded), AdoCli.Finch) do
