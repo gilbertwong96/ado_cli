@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **`ado skills install --target=all` now prints a hint about copilot**:
+  copilot is per-repo, not per-user, so it can't be included in
+  `--target=all`. The output now notes this and tells the user
+  how to install to copilot (`cd <repo> && ado skills install
+  --target copilot`). Help text also clarifies copilot's
+  per-repo nature.
 - **Code style cleanups addressing `mix ex_dna` and `mix reach`**
   warnings. Includes:
     * Extracted `confirm_delete/2` and `print_id_name_type_table/1`

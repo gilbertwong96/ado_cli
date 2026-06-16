@@ -309,6 +309,30 @@ name: ado-cli")
       target_names = decoded["result"]["targets"] |> Enum.map(& &1["name"]) |> Enum.sort()
       assert target_names == ["claude", "codex", "cursor", "pi"]
     end
+
+    test "--target=all output mentions copilot workaround (it's per-repo, not in 'all')", %{
+      repo_dir: _repo_dir
+    } do
+      Skills.install_skills(%{
+        options: %{target: "all", force: false, json: false, skill: nil},
+        arguments: %{}
+      })
+
+      # Drain the writeln/info messages until we find the one that
+      # mentions copilot. The print order is: blank line, header,
+      # target list, copilot hint, blank line, summary.
+      hint = drain_info_until(fn m -> m =~ "ado skills install" end)
+      assert hint =~ "copilot"
+    end
+  end
+
+  # Recursively pull :cli_mate_shell :info messages off the test
+  # process mailbox and return the first one that matches the
+  # given predicate. Asserts (and thus fails the test) if the
+  # mailbox is exhausted before a match.
+  defp drain_info_until(predicate) do
+    assert_receive {:cli_mate_shell, :info, msg}, 1000
+    if predicate.(msg), do: msg, else: drain_info_until(predicate)
   end
 
   describe "install_skills/1 with --target codex" do
