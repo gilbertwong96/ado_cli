@@ -196,7 +196,7 @@ defmodule AdoCli.CLI.Projects do
     project_id = parsed.arguments.project_id
 
     unless Map.get(parsed.options, :force) do
-      confirm_delete("project", project_id)
+      AdoCli.CLI.Helpers.confirm_delete("project", project_id)
     end
 
     case Client.delete("/_apis/projects/#{URI.encode(project_id)}") do
@@ -231,16 +231,6 @@ defmodule AdoCli.CLI.Projects do
   defp process_template_id("basic"), do: "b8a3a935-7e91-48b8-a94c-606d37c3e9f2"
   defp process_template_id("cmmi"), do: "27450541-8e31-4150-9947-dc59f998fc01"
   defp process_template_id(unknown), do: unknown
-
-  defp confirm_delete(kind, id) do
-    write("Delete #{kind} '#{id}'? This cannot be undone. [y/N] ")
-
-    if String.downcase(String.trim(IO.gets(""))) == "y" do
-      :ok
-    else
-      halt_error("Aborted.")
-    end
-  end
 
   # ── Formatting ────────────────────────────────────────────────────────
 

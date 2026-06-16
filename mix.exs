@@ -155,7 +155,8 @@ defmodule AdoCli.MixProject do
         "deps.audit",
         "xref graph --label compile-connected --fail-above 0",
         "ci.dialyzer",
-        "test --cover"
+        "test --cover",
+        "ex_dna"
       ],
       quality: [
         "compile --all-warnings --warnings-as-errors",
