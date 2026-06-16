@@ -37,14 +37,14 @@ defmodule AdoCli.CI.Watcher do
   ## Options
 
     * `:poll_ms` — how often to poll (default 2000ms, min 250ms)
-    * `:print_callback` — function for output (default: &IO.write/2).
-      Tests inject a collector here.
+    * `:print_callback` — 1-arity function for output (default:
+      `&IO.write(:stdio, &1)`). Tests inject a collector here.
   """
   @spec watch(integer(), String.t(), String.t() | nil, keyword()) ::
           :ok | {:error, term()}
   def watch(build_id, project, org, opts \\ []) do
     poll_ms = max(Keyword.get(opts, :poll_ms, 2000), 250)
-    print = Keyword.get(opts, :print_callback, &IO.write/2)
+    print = Keyword.get(opts, :print_callback, &IO.write(:stdio, &1))
 
     state = %{
       build_id: build_id,
@@ -99,7 +99,9 @@ defmodule AdoCli.CI.Watcher do
 
   # ── status rendering ────────────────────────────────────────────────
 
-  defp render_status(build, started_at, print) do
+  # Public for unit testing. Not part of the user-facing API; the
+  # only caller is the watcher loop in this module.
+  def render_status(build, started_at, print) do
     elapsed_ms = System.monotonic_time(:millisecond) - started_at
     elapsed = format_duration(elapsed_ms)
 
@@ -124,7 +126,8 @@ defmodule AdoCli.CI.Watcher do
     print.(line <> "\n")
   end
 
-  defp render_final(build, print) do
+  # Public for unit testing. Not part of the user-facing API.
+  def render_final(build, print) do
     case build do
       %{"result" => "succeeded"} ->
         print.("\n  Build succeeded.\n")

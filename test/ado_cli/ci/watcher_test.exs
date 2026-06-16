@@ -38,6 +38,41 @@ defmodule AdoCli.CI.WatcherTest do
     end
   end
 
+  describe "render_status/3 (regression: BadArityError on print callback)" do
+    # In v0.2.1/v0.2.2 the default :print_callback was &IO.write/2
+    # (a 2-arity function), but render_status/3 calls it as
+    # `print.(line)` — 1-arity. That raised BadArityError on every
+    # status update. The fix changed the default to a 1-arity
+    # wrapper: `&IO.write(:stdio, &1)`.
+    #
+    # This test exercises render_status/3 directly with a simple
+    # 1-arity print collector and asserts the printed output. It
+    # would also have caught the original bug (it would have raised
+    # BadArityError at `print.(line)`).
+    test "prints status line via a 1-arity print callback" do
+      build = %{
+        "id" => 9655,
+        "status" => "inProgress",
+        "result" => nil,
+        "definition" => %{"name" => "my-pipeline"},
+        "sourceBranch" => "refs/heads/main"
+      }
+
+      parent = self()
+      print = fn line -> send(parent, {:printed, line}) end
+
+      started_at = System.monotonic_time(:millisecond)
+      Watcher.render_status(build, started_at, print)
+
+      assert_receive {:printed, line}, 500
+      assert line =~ "Build 9655"
+      assert line =~ "my-pipeline"
+      assert line =~ "refs/heads/main"
+      assert line =~ "running for"
+      assert line =~ "\n"
+    end
+  end
+
   describe "stream_log (with mock client)" do
     test "prints new log lines" do
       output = run_with_mocked_log(build_id: 123, log_id: 7, lines: ["line one", "line two"])
