@@ -155,7 +155,6 @@ defmodule AdoCli.MixProject do
         "deps.audit",
         "xref graph --label compile-connected --fail-above 0",
         "ci.dialyzer",
-        "test --cover",
         "ex_dna"
       ],
       quality: [
@@ -169,10 +168,6 @@ defmodule AdoCli.MixProject do
       inspect: ["reach.map"],
       health: ["reach.check --dead-code --smells"]
     ]
-  end
-
-  def cli do
-    [preferred_envs: [test: :test, "test --cover": :test, "test.cover": :test, "coveralls.json": :test]]
   end
 
   defp escript_config do
