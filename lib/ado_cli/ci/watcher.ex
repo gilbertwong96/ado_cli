@@ -204,7 +204,11 @@ defmodule AdoCli.CI.Watcher do
     # `last_line + 1` so the response contains only NEW lines.
     # We use `get_raw` (returns the body as a binary) so we can
     # print it directly to stdout without JSON parsing.
-    path = "/_apis/build/builds/#{state.build_id}/logs/#{log_id}"
+    # The URL must be project-scoped: /{project}/_apis/build/builds/{id}/logs/{logId}.
+    # Previous versions dropped the project, producing
+    # /_apis/build/builds/{id}/logs/{logId} which the API
+    # rejected with "No project was specified."
+    path = "/#{state.project}/_apis/build/builds/#{state.build_id}/logs/#{log_id}"
     params = %{"id" => last_line + 1}
 
     case Client.get_raw(path, params) do
@@ -234,12 +238,18 @@ defmodule AdoCli.CI.Watcher do
 
   # ── API fetches ─────────────────────────────────────────────────────
 
-  defp fetch_build(build_id, _project, _org) do
-    Client.get("/_apis/build/builds/#{build_id}")
+  # Build/timeline URLs are project-scoped:
+  #   /{project}/_apis/build/builds/{id}
+  #   /{project}/_apis/build/builds/{id}/timeline
+  # Previous versions of these helpers dropped the project, so
+  # the API returned "VS800075: The project with id 'No project
+  # was specified.'". Org is injected by AdoCli.Client.
+  defp fetch_build(build_id, project, _org) do
+    Client.get("/#{project}/_apis/build/builds/#{build_id}")
   end
 
-  defp fetch_timeline(build_id, _project, _org) do
-    Client.get("/_apis/build/builds/#{build_id}/timeline")
+  defp fetch_timeline(build_id, project, _org) do
+    Client.get("/#{project}/_apis/build/builds/#{build_id}/timeline")
   end
 
   # ── formatting ──────────────────────────────────────────────────────
