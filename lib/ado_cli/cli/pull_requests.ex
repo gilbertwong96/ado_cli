@@ -443,22 +443,7 @@ defmodule AdoCli.CLI.PullRequests do
           last_commit_id ->
             body = build_complete_body(parsed, last_commit_id)
 
-            case Client.patch(path, body) do
-              {:ok, pr} ->
-                success("Pull request ##{pr["pullRequestId"]} completed (merged).\n")
-                halt_success("")
-
-              {:error, %{status: 404}} ->
-                halt_error("Pull request ##{pr_id} not found")
-
-              {:error, %{status: status, body: body}} ->
-                halt_error(
-                  "Cannot complete PR ##{pr_id}: #{inspect(body["message"] || "HTTP #{status}")}"
-                )
-
-              error ->
-                Helpers.handle_api_result(error, parsed, fn _ -> :ok end)
-            end
+            do_complete_patch(path, body, pr_id, parsed)
         end
 
       error ->
@@ -474,6 +459,26 @@ defmodule AdoCli.CLI.PullRequests do
     }
 
     put_if_key(merge_strategy(Map.get(parsed.options, :merge_strategy)), body, "mergeStrategy")
+  end
+
+  # Extracted from complete_pr/1 to reduce nesting depth.
+  defp do_complete_patch(path, body, pr_id, parsed) do
+    case Client.patch(path, body) do
+      {:ok, pr} ->
+        success("Pull request ##{pr["pullRequestId"]} completed (merged).\n")
+        halt_success("")
+
+      {:error, %{status: 404}} ->
+        halt_error("Pull request ##{pr_id} not found")
+
+      {:error, %{status: status, body: body}} ->
+        halt_error(
+          "Cannot complete PR ##{pr_id}: #{inspect(body["message"] || "HTTP #{status}")}"
+        )
+
+      error ->
+        Helpers.handle_api_result(error, parsed, fn _ -> :ok end)
+    end
   end
 
   @doc """
@@ -887,10 +892,6 @@ defmodule AdoCli.CLI.PullRequests do
   end
 
   defp resolve_reviewer_id(project, repo_id, pr_id) do
-    # Fetch the authenticated user's identity GUID from the
-    # Azure DevOps connection data (cached on first call).
-    # Then scan the PR reviewer list for a reviewer whose
-    # `identity.id` matches that GUID. Only the user's own
     # reviewer slot can be voted on — trying to PUT a vote
     # to a different reviewer's slot returns:
     #   "You cannot record a vote for someone else."

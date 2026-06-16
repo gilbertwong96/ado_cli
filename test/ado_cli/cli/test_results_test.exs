@@ -1,7 +1,7 @@
 defmodule AdoCli.CLI.TestResultsTest do
   use AdoCli.CLI.TestHelper
-  alias AdoCli.CLI.TestResults
   alias AdoCli.CLI.TestCoverage
+  alias AdoCli.CLI.TestResults
 
   describe "test-results list" do
     test "halts 0 on success with runs", %{server: server} do

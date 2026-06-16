@@ -57,45 +57,38 @@ defmodule AdoCli.CLI.TestCoverage do
           writeln("")
           writeln("Code Coverage for Build ##{build_id}")
           writeln(String.duplicate("─", 70))
-
-          Enum.each(covers, fn cov ->
-            config = cov["coverageStats"] || []
-
-            Enum.each(config, fn s ->
-              label = String.pad_trailing(s["label"] || "?", 20)
-              total = s["total"] || 0
-              covered = s["covered"] || 0
-
-              pct =
-                if total > 0,
-                  do: Float.round(covered / total * 100, 1),
-                  else: 0.0
-
-              bar = coverage_bar(pct)
-              writeln("  #{label} #{String.pad_leading("#{pct}%", 8)} #{bar}")
-            end)
-          end)
-
+          Enum.each(covers, &print_coverage_stats/1)
           writeln("")
         end)
 
         halt_success("Done.")
 
-      {:ok, %{"value" => []}} ->
-        writeln("")
-        writeln("No coverage data for build ##{build_id}.")
-        writeln("")
-        halt_success("Done.")
-
-      {:ok, _empty} ->
-        writeln("")
-        writeln("No coverage data for build ##{build_id}.")
-        writeln("")
-        halt_success("Done.")
+      {:ok, _empty_or_no_data} ->
+        show_no_coverage(build_id)
 
       error ->
         Helpers.handle_api_result(error, parsed, fn _ -> :ok end)
     end
+  end
+
+  defp show_no_coverage(build_id) do
+    writeln("")
+    writeln("No coverage data for build ##{build_id}.")
+    writeln("")
+    halt_success("Done.")
+  end
+
+  defp print_coverage_stats(cov) do
+    config = cov["coverageStats"] || []
+
+    Enum.each(config, fn s ->
+      label = String.pad_trailing(s["label"] || "?", 20)
+      total = s["total"] || 0
+      covered = s["covered"] || 0
+      pct = if total > 0, do: Float.round(covered / total * 100, 1), else: 0.0
+      bar = coverage_bar(pct)
+      writeln("  #{label} #{String.pad_leading("#{pct}%", 8)} #{bar}")
+    end)
   end
 
   defp coverage_bar(pct) do
