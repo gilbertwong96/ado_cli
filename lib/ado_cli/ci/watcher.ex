@@ -188,7 +188,7 @@ defmodule AdoCli.CI.Watcher do
   # progress and have a log, and streams new log content for each.
   defp stream_active_logs(state, print) do
     case fetch_timeline(state.build_id, state.project, state.org) do
-      {:ok, records} ->
+      {:ok, %{"records" => records}} ->
         records
         |> Enum.filter(fn r -> r["state"] == "inProgress" and r["log"] end)
         |> Enum.reduce(state, fn rec, state ->
