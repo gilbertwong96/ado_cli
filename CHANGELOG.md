@@ -5,6 +5,33 @@ All notable changes to `ado` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.2] - 2026-06-16
+
+### Fixed
+
+- **`ado ci watch` was completely non-functional in v0.2.1** due
+  to two bugs that prevented any invocation from working:
+    * **URLs missing the project segment.** Both
+      `AdoCli.CLI.CI.build_path/3` and the Watcher helpers
+      (`fetch_build/3`, `fetch_timeline/3`, the `stream_log`
+      path construction) dropped the project from the URL,
+      producing `/_apis/build/builds/{id}` instead of
+      `/{project}/_apis/build/builds/{id}`. Azure DevOps
+      rejected every request with `VS800075: The project with
+      id 'No project was specified.'`
+    * **KeyError on `--latest`.** `resolve_build_id/3` used
+      dot-access (`parsed.arguments.build_id`) which raised
+      `KeyError` when the optional `build_id` argument was
+      absent (i.e. when using `--latest`). CliMate omits absent
+      optional arguments from the map entirely. Fix: use
+      `Map.get/2` with the same key.
+
+  Both bugs are covered by 2 new regression tests in
+  `test/ado_cli/cli/ci_test.exs` that pin the project-scoped
+  URL and the no-crash behavior on `--latest`. Each test
+  FAILS if either bug is reintroduced (verified by temporarily
+  breaking the helpers and re-running).
+
 ## [0.2.1] - 2026-06-15
 
 Re-publish of v0.2.0 with the npm packaging bugs fixed. The Elixir
@@ -306,7 +333,8 @@ the embedded skills can be installed into any LLM agent's skill directory.
   are filtered by the `mix ci.dialyzer` task.
 - ExUnit test count: 234 (across 30+ test files). All pass.
 
-[Unreleased]: https://github.com/gilbertwong96/ado_cli/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/gilbertwong96/ado_cli/compare/v0.2.2...HEAD
+[0.2.2]: https://github.com/gilbertwong96/ado_cli/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/gilbertwong96/ado_cli/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/gilbertwong96/ado_cli/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/gilbertwong96/ado_cli/releases/tag/v0.1.0
