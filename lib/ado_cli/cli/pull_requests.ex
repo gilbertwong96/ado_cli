@@ -841,38 +841,30 @@ defmodule AdoCli.CLI.PullRequests do
   defp fetch_file_diff(parsed, iteration, file) do
     project = URI.encode(parsed.arguments.project)
     repo_id = URI.encode(parsed.arguments.repo_id)
-    # base = target (main branch), target = source (feature branch)
     base = get_in(iteration, ["targetRefCommit", "commitId"])
     target = get_in(iteration, ["sourceRefCommit", "commitId"])
 
     if !base || !target do
       {:error, "Iteration is missing sourceRefCommit or targetRefCommit"}
     else
-      path = "/#{project}/_apis/git/repositories/#{repo_id}/diffs/commits"
-
-      params = %{
-        "baseVersionType" => "commit",
-        "baseVersion" => base,
-        "targetVersionType" => "commit",
-        "targetVersion" => target,
-        "path" => file
-      }
-
-      Client.get_raw(path, params)
+      with {:ok, old_content} <- fetch_file_content(project, repo_id, file, base),
+           {:ok, new_content} <- fetch_file_content(project, repo_id, file, target) do
+        {:ok, format_unified_diff(file, old_content, new_content, base, target)}
+      end
     end
   end
 
   defp fetch_full_diff(parsed, iteration) do
     project = URI.encode(parsed.arguments.project)
     repo_id = URI.encode(parsed.arguments.repo_id)
-    # base = target (main branch), target = source (feature branch)
     base = get_in(iteration, ["targetRefCommit", "commitId"])
     target = get_in(iteration, ["sourceRefCommit", "commitId"])
 
     if !base || !target do
       {:error, "Iteration is missing sourceRefCommit or targetRefCommit"}
     else
-      path = "/#{project}/_apis/git/repositories/#{repo_id}/diffs/commits"
+      # Get the list of changed files, then fetch each one's diff
+      changes_path = "/#{project}/_apis/git/repositories/#{repo_id}/diffs/commits"
 
       params = %{
         "baseVersionType" => "commit",
@@ -881,8 +873,90 @@ defmodule AdoCli.CLI.PullRequests do
         "targetVersion" => target
       }
 
-      Client.get_raw(path, params)
+      case Client.get(changes_path, params) do
+        {:ok, %{"changes" => changes}} when is_list(changes) ->
+          diffs =
+            Enum.map(changes, fn ch ->
+              path = get_in(ch, ["item", "path"])
+              _old_id = get_in(ch, ["item", "originalObjectId"])
+              _new_id = get_in(ch, ["item", "objectId"])
+
+              with {:ok, old_content} <- fetch_file_content(project, repo_id, path, base),
+                   {:ok, new_content} <- fetch_file_content(project, repo_id, path, target) do
+                format_unified_diff(path, old_content, new_content, base, target)
+              else
+                _ -> nil
+              end
+            end)
+            |> Enum.reject(&is_nil/1)
+            |> Enum.join("\n")
+
+          {:ok, diffs}
+
+        _ ->
+          {:error, "No changes found"}
+      end
     end
+  end
+
+  defp fetch_file_content(project, repo_id, path, commit_id) do
+    content_path = "/#{project}/_apis/git/repositories/#{repo_id}/items"
+
+    params = %{
+      "path" => path,
+      "versionType" => "commit",
+      "version" => commit_id
+    }
+
+    Client.get_raw(content_path, params)
+  end
+
+  defp format_unified_diff(path, old_content, new_content, base_sha, target_sha) do
+    _short_base = String.slice(base_sha, 0, 7)
+    _short_target = String.slice(target_sha, 0, 7)
+
+    header = """
+    diff --git a#{path} b#{path}
+    --- a#{path}
+    +++ b#{path}
+    """
+
+    old_lines = String.split(old_content, "\n")
+    new_lines = String.split(new_content, "\n")
+
+    changes = compute_hunk(old_lines, new_lines)
+    "#{header}#{changes}"
+  end
+
+  # Simple line-by-line diff. Produces unified hunk output.
+  defp compute_hunk(old_lines, new_lines) do
+    diff = List.myers_difference(old_lines, new_lines)
+
+    additions = count(diff, :ins)
+    deletions = count(diff, :del)
+
+    if additions == 0 and deletions == 0 do
+      ""
+    else
+      header = "@@ -1,#{length(old_lines)} +1,#{length(new_lines)} @@\n"
+      body = format_diff_lines(diff)
+      "#{header}#{body}"
+    end
+  end
+
+  defp count(list, kind), do: Enum.count(list, &match?({^kind, _}, &1))
+
+  defp format_diff_lines(diff) do
+    Enum.map_join(diff, fn
+      {:eq, lines} ->
+        Enum.map_join(lines, fn l -> " #{l}\n" end)
+
+      {:ins, lines} ->
+        Enum.map_join(lines, fn l -> "+#{l}\n" end)
+
+      {:del, lines} ->
+        Enum.map_join(lines, fn l -> "-#{l}\n" end)
+    end)
   end
 
   defp find_change_for_file(changes, target) do
