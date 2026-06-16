@@ -1325,8 +1325,7 @@ defmodule AdoCli.CLI.PullRequests do
   """
   def resolve_content(""), do: {:ok, ""}
 
-  def resolve_content(content) when content == "-",
-    do: {:ok, read_stdin_content()}
+  def resolve_content("-"), do: {:ok, read_stdin_content()}
 
   # `--content @<path>` reads from a file. A bare `@` (no path)
   # is also treated as a read-from-file — the path would be "",

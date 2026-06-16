@@ -143,7 +143,12 @@ defmodule AdoCli.CLI.Schema do
   defp safe_command_def(mod, fallback) do
     if Code.ensure_loaded?(mod), do: mod.command(), else: fallback
   rescue
-    _ -> fallback
+    # Bare rescue replaced with explicit exception types (reach).
+    # Mod.command/0 can raise UndefinedFunctionError if the module
+    # doesn't implement the CliMate behaviour, or ArgumentError for
+    # other arity mismatches.
+    UndefinedFunctionError -> fallback
+    ArgumentError -> fallback
   end
 
   # If the user asked for a path like "pipelines list", check whether
@@ -179,7 +184,8 @@ defmodule AdoCli.CLI.Schema do
           try do
             if Code.ensure_loaded?(mod), do: mod.command(), else: [name: sub_name]
           rescue
-            _ -> [name: sub_name]
+            UndefinedFunctionError -> [name: sub_name]
+            ArgumentError -> [name: sub_name]
           end
 
         full_name = "#{parent_name} #{sub_name}"
@@ -312,7 +318,8 @@ defmodule AdoCli.CLI.Schema do
         try do
           if Code.ensure_loaded?(mod), do: mod.command(), else: [name: sub_name]
         rescue
-          _ -> [name: sub_name]
+          UndefinedFunctionError -> [name: sub_name]
+          ArgumentError -> [name: sub_name]
         end
 
       true ->

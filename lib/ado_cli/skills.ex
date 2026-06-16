@@ -230,13 +230,12 @@ defmodule AdoCli.Skills do
 
       entries =
         files
-        |> Map.keys()
-        |> Enum.filter(&String.starts_with?(&1, prefix))
-        |> Enum.uniq_by(fn path ->
+        |> Enum.filter(fn {path, _v} -> String.starts_with?(path, prefix) end)
+        |> Enum.uniq_by(fn {path, _v} ->
           rest = String.trim_leading(path, prefix)
-          hd(String.split(rest, "/"))
+          hd(String.split(rest, "/", parts: 2))
         end)
-        |> Enum.map(fn path ->
+        |> Enum.map(fn {path, _v} ->
           %{path: path, is_dir: not String.contains?(path, ".")}
         end)
         |> Enum.sort_by(& &1.path)
