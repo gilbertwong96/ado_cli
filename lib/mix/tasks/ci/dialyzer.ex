@@ -50,6 +50,7 @@ defmodule Mix.Tasks.Ci.Dialyzer do
       String.contains?(line, ":call ") or
       String.contains?(line, "Finch.build") or
       String.contains?(line, "lib/mix/tasks/") or
+      String.contains?(line, "no_return") or
       String.contains?(line, "Mix.Project.config") or
       String.contains?(line, "Mix.Project")
   end
