@@ -566,7 +566,7 @@ defmodule AdoCli.CLI.PullRequests do
           halt_error(msg)
 
         {:error, reason} ->
-          Helpers.handle_api_result({:error, reason}, parsed, nil) |> then(fn _ -> :ok end)
+          bail(reason, parsed)
       end
     end
   end
@@ -691,7 +691,7 @@ defmodule AdoCli.CLI.PullRequests do
             :ok
 
           {:error, reason} ->
-            Helpers.handle_api_result({:error, reason}, parsed, nil) |> then(fn _ -> :ok end)
+            bail(reason, parsed)
         end
     end
   end
@@ -725,7 +725,7 @@ defmodule AdoCli.CLI.PullRequests do
         :ok
 
       {:error, reason} ->
-        Helpers.handle_api_result({:error, reason}, parsed, nil) |> then(fn _ -> :ok end)
+        bail(reason, parsed)
     end
   end
 
@@ -957,7 +957,7 @@ defmodule AdoCli.CLI.PullRequests do
         end)
 
       {:error, reason} ->
-        Helpers.handle_api_result({:error, reason}, parsed, nil) |> then(fn _ -> :ok end)
+        bail(reason, parsed)
     end
 
     halt_success("Done.")
@@ -1226,7 +1226,7 @@ defmodule AdoCli.CLI.PullRequests do
         render_fn.(nil, result)
 
       {:error, reason} ->
-        Helpers.handle_api_result({:error, reason}, parsed, nil) |> then(fn _ -> :ok end)
+        bail(reason, parsed)
     end
   end
 
@@ -1454,7 +1454,7 @@ defmodule AdoCli.CLI.PullRequests do
         render_add_result(result, "Reply added to thread #{thread_id}.", json?)
 
       {:error, reason} ->
-        Helpers.handle_api_result({:error, reason}, parsed, nil) |> then(fn _ -> :ok end)
+        bail(reason, parsed)
     end
   end
 
@@ -1486,7 +1486,7 @@ defmodule AdoCli.CLI.PullRequests do
         render_add_result(result, "Comment added to #{file_path}:#{line}.", json?)
 
       {:error, reason} ->
-        Helpers.handle_api_result({:error, reason}, parsed, nil) |> then(fn _ -> :ok end)
+        bail(reason, parsed)
     end
   end
 
@@ -1513,7 +1513,7 @@ defmodule AdoCli.CLI.PullRequests do
         render_add_result(result, "Comment added.", json?)
 
       {:error, reason} ->
-        Helpers.handle_api_result({:error, reason}, parsed, nil) |> then(fn _ -> :ok end)
+        bail(reason, parsed)
     end
   end
 
@@ -1574,5 +1574,14 @@ defmodule AdoCli.CLI.PullRequests do
     thread_id = parsed.arguments.thread_id
 
     "/#{project}/_apis/git/repositories/#{repo_id}/pullRequests/#{pr_id}/threads/#{thread_id}"
+  end
+
+  # Local helper for the unreachable error path. Centralizes the
+  # call to Helpers.handle_api_result/3 so the case branches stay
+  # tidy. Returns whatever handle_api_result returns (always
+  # :no_return() in practice since it halts on error), so the
+  # call site still effectively aborts the surrounding function.
+  defp bail(reason, parsed) do
+    Helpers.handle_api_result({:error, reason}, parsed, nil)
   end
 end

@@ -462,7 +462,7 @@ defmodule AdoCli.CLI.Completion do
         # form is cleaner here: three parts (prefix, joined names,
         # suffix) wrapped in a list and flattened, avoiding the
         # quadratic concatenation chain that reach warns about.
-        names -> ["@('", Enum.join(names, "', '"), "')"] |> IO.iodata_to_binary()
+        names -> IO.iodata_to_binary(["@('", Enum.join(names, "', '"), "')"])
       end
 
     """
