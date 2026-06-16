@@ -322,6 +322,68 @@ defmodule AdoCli.CLI.PullRequests do
               execute: &add_comment/1
             ]
           ]
+        ],
+        reviewers: [
+          name: "ado prs reviewers",
+          doc: "Manage pull request reviewers.",
+          subcommands: [
+            list: [
+              name: "ado prs reviewers list",
+              doc: "List reviewers on a pull request.",
+              arguments: [
+                project: [type: :string, doc: "Project name or ID"],
+                repo_id: [type: :string, doc: "Repository name or ID"],
+                pr_id: [type: :integer, doc: "Pull request ID"]
+              ],
+              options: [
+                json: [type: :boolean, default: false, doc: "Output as JSON envelope"]
+              ],
+              execute: &list_reviewers/1
+            ],
+            add: [
+              name: "ado prs reviewers add",
+              doc: "Add a reviewer to a pull request.",
+              arguments: [
+                project: [type: :string, doc: "Project name or ID"],
+                repo_id: [type: :string, doc: "Repository name or ID"],
+                pr_id: [type: :integer, doc: "Pull request ID"]
+              ],
+              options: [
+                reviewer: [
+                  type: :string,
+                  required: true,
+                  doc: "Reviewer email or user GUID",
+                  doc_arg: "USER"
+                ],
+                required: [
+                  type: :boolean,
+                  default: false,
+                  doc: "Mark reviewer as required (default: optional)"
+                ],
+                json: [type: :boolean, default: false, doc: "Output as JSON envelope"]
+              ],
+              execute: &add_reviewer/1
+            ],
+            remove: [
+              name: "ado prs reviewers remove",
+              doc: "Remove a reviewer from a pull request.",
+              arguments: [
+                project: [type: :string, doc: "Project name or ID"],
+                repo_id: [type: :string, doc: "Repository name or ID"],
+                pr_id: [type: :integer, doc: "Pull request ID"]
+              ],
+              options: [
+                reviewer: [
+                  type: :string,
+                  required: true,
+                  doc: "Reviewer email or user GUID",
+                  doc_arg: "USER"
+                ],
+                json: [type: :boolean, default: false, doc: "Output as JSON envelope"]
+              ],
+              execute: &remove_reviewer/1
+            ]
+          ]
         ]
       ]
     ]
@@ -919,6 +981,104 @@ defmodule AdoCli.CLI.PullRequests do
   defp vote_label(-5), do: "-5 (waiting for author)"
   defp vote_label(-10), do: "-10 (rejected)"
   defp vote_label(n), do: "#{n}"
+
+  # ── Reviewers ────────────────────────────────────────────────────────
+
+  def list_reviewers(parsed) do
+    project = parsed.arguments.project
+    repo_id = parsed.arguments.repo_id
+    pr_id = parsed.arguments.pr_id
+
+    path =
+      "/#{URI.encode(project)}/_apis/git/repositories/#{URI.encode(repo_id)}/pullrequests/#{pr_id}/reviewers"
+
+    case Client.get(path) do
+      {:ok, %{"value" => reviewers}} ->
+        Helpers.json_or_format(reviewers, parsed, fn reviewers ->
+          writeln("")
+
+          if reviewers == [] do
+            writeln("No reviewers.")
+          else
+            writeln(
+              String.pad_trailing("Display Name", 30) <>
+                " " <>
+                String.pad_trailing("Email", 35) <>
+                " " <>
+                String.pad_trailing("Vote", 6) <> "Required"
+            )
+
+            writeln(String.duplicate("─", 85))
+
+            Enum.each(reviewers, fn r ->
+              name = String.pad_trailing(r["displayName"] || "?", 30)
+              email = String.pad_trailing(r["uniqueName"] || "?", 35)
+              vote = String.pad_trailing(to_string(r["vote"] || 0), 6)
+              required = if r["isRequired"], do: "yes", else: "no"
+              writeln("#{name} #{email} #{vote} #{required}")
+            end)
+          end
+
+          writeln("")
+        end)
+
+        halt_success("Done.")
+
+      {:error, reason} ->
+        bail(reason, parsed)
+    end
+  end
+
+  def add_reviewer(parsed) do
+    project = parsed.arguments.project
+    repo_id = parsed.arguments.repo_id
+    pr_id = parsed.arguments.pr_id
+    reviewer = Map.fetch!(parsed.options, :reviewer)
+    required? = Map.get(parsed.options, :required, false)
+
+    reviewer_path =
+      "/#{URI.encode(project)}/_apis/git/repositories/#{URI.encode(repo_id)}/pullrequests/#{pr_id}/reviewers/#{URI.encode(reviewer)}"
+
+    body = %{"id" => reviewer}
+    body = if required?, do: Map.put(body, "isRequired", true), else: body
+
+    case Client.put(reviewer_path, body) do
+      {:ok, _} ->
+        label = if required?, do: "(required)", else: "(optional)"
+        success("Reviewer #{reviewer} added #{label}.\n")
+        halt_success("")
+
+      {:error, %{status: 404}} ->
+        halt_error("Reviewer not found: #{reviewer}. Use the user's GUID from Azure DevOps.")
+
+      {:error, reason} ->
+        bail(reason, parsed)
+    end
+  end
+
+  def remove_reviewer(parsed) do
+    project = parsed.arguments.project
+    repo_id = parsed.arguments.repo_id
+    pr_id = parsed.arguments.pr_id
+    reviewer = Map.fetch!(parsed.options, :reviewer)
+
+    reviewer_path =
+      "/#{URI.encode(project)}/_apis/git/repositories/#{URI.encode(repo_id)}/pullrequests/#{pr_id}/reviewers/#{URI.encode(reviewer)}"
+
+    case Client.delete(reviewer_path) do
+      :ok ->
+        success("Reviewer #{reviewer} removed.\n")
+        halt_success("")
+
+      {:error, %{status: 404}} ->
+        halt_error("Reviewer not found: #{reviewer}")
+
+      {:error, reason} ->
+        writeln("")
+        writeln("xx  Remove failed: #{inspect(reason)}")
+        halt_error("")
+    end
+  end
 
   # ── Formatting ────────────────────────────────────────────────────────
 
