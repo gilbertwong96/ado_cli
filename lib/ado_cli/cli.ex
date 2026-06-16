@@ -50,6 +50,8 @@ defmodule AdoCli.CLI do
   alias AdoCli.CLI.Security
   alias AdoCli.CLI.Skills
   alias AdoCli.CLI.Teams
+  alias AdoCli.CLI.TestCoverage
+  alias AdoCli.CLI.TestResults
   alias AdoCli.CLI.Users
   alias AdoCli.CLI.Version
   alias AdoCli.CLI.Whoami
@@ -111,6 +113,8 @@ defmodule AdoCli.CLI do
       security: Security,
       skills: Skills,
       teams: Teams,
+      "test-results": TestResults,
+      "test-coverage": TestCoverage,
       users: Users,
       wikis: Wikis,
       workitems: WorkItems
