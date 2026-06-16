@@ -103,15 +103,17 @@ defmodule AdoCli.CLI.Skills do
                 "Where to install: 'pi' (~/.pi/agent/skills/), " <>
                   "'claude' (~/.claude/skills/), 'cursor' (~/.cursor/skills/), " <>
                   "'codex' (~/.codex/skills/), " <>
-                  "'copilot' (requires --repo, writes to <repo>/.github/ado-cli/), " <>
-                  "or a custom absolute path. " <>
-                  "Default: 'all' (installs to every known per-user target)."
+                  "'copilot' (per-repo, requires --repo or cwd to be a git repo; " <>
+                  "writes to <repo>/.github/ado-cli/). " <>
+                  "Default: 'all' (installs to every per-user target above; " <>
+                  "copilot is NOT included because it needs a repo)."
             ],
             repo: [
               type: :string,
               doc:
-                "Path to a local git repository. Required when --target=copilot; " <>
-                  "default: current working directory. Ignored for other targets."
+                "Path to a local git repository. Used by --target=copilot " <>
+                  "(writes to <repo>/.github/ado-cli/); default: current " <>
+                  "working directory. Ignored for other targets."
             ],
             skill: [
               type: :string,
@@ -440,6 +442,17 @@ defmodule AdoCli.CLI.Skills do
     Enum.each(target_dirs, fn {name, path} ->
       writeln("    - #{name}: #{path}")
     end)
+
+    # Copilot is intentionally not in --target=all because it
+    # installs per-repository (to <repo>/.github/ado-cli/), not
+    # per-user. When --target=all is the default and the user
+    # didn't explicitly ask for copilot, print a one-liner
+    # telling them how to install to it.
+    if Enum.all?(target_dirs, fn {name, _} -> name != "copilot" end) do
+      writeln("")
+      writeln("  Note: copilot installs per-repo (to <repo>/.github/ado-cli/).")
+      writeln("        Run from inside your repo: ado skills install --target copilot")
+    end
 
     writeln("")
 
