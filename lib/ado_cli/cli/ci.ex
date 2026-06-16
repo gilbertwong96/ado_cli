@@ -132,8 +132,13 @@ defmodule AdoCli.CLI.CI do
 
   # If a build_id was passed, use it. Otherwise, with --latest, fetch
   # the most recent build (optionally filtered by definition/branch).
+  #
+  # Note: we use Map.get/2 instead of dot-access (`parsed.arguments.build_id`)
+  # because CliMate omits absent optional arguments from the map entirely
+  # rather than inserting them as `nil`. Dot access on a missing key
+  # raises KeyError and crashes the watcher.
   defp resolve_build_id(parsed, project, org) do
-    case parsed.arguments.build_id do
+    case Map.get(parsed.arguments, :build_id) do
       id when is_integer(id) and id > 0 ->
         {:ok, id}
 
@@ -173,5 +178,14 @@ defmodule AdoCli.CLI.CI do
   # The Client module already injects the org, so we only need to pass
   # the project-scoped path. This helper exists to make the call
   # site readable.
-  defp build_path(_project, path, _org), do: path
+  #
+  # Azure DevOps build endpoints are scoped to a project:
+  #   /{project}/_apis/build/builds
+  #   /{project}/_apis/build/builds/{id}
+  #   /{project}/_apis/build/builds/{id}/logs
+  # The org gets injected by the Client module. The previous version
+  # of this helper dropped both project and org, producing URLs like
+  # /_apis/build/builds/{id} which the API rejected with
+  # "VS800075: The project with id 'No project was specified.'".
+  defp build_path(project, path, _org), do: "/#{project}#{path}"
 end
