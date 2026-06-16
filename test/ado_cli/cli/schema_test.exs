@@ -2,7 +2,6 @@ defmodule AdoCli.CLI.SchemaTest do
   use ExUnit.Case, async: false
   import ExUnit.CaptureIO
 
-  import CliMate.CLI
   alias AdoCli.CLI.Schema
 
   describe "build_tree/0" do

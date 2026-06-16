@@ -1,6 +1,5 @@
 defmodule AdoCli.CLI.TeamsTest do
   use AdoCli.CLI.TestHelper
-  alias AdoCli.CLI.Teams
 
   describe "list_teams" do
     test "halts 0 on successful get", %{server: server} do

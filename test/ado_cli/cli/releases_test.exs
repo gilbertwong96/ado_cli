@@ -1,6 +1,5 @@
 defmodule AdoCli.CLI.ReleasesTest do
   use AdoCli.CLI.TestHelper
-  alias AdoCli.CLI.Releases
 
   describe "list_releases" do
     test "halts 0 on successful get", %{server: server} do

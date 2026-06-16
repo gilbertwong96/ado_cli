@@ -152,7 +152,7 @@ defmodule AdoCli.CI.Watcher do
   # Each record represents a job, task, or phase in the pipeline.
   defp render_timeline_diff(state, print) do
     case fetch_timeline(state.build_id, state.project, state.org) do
-      {:ok, records} ->
+      {:ok, %{"records" => records}} ->
         Enum.each(new_records(state.last_timeline, records), fn rec ->
           print_record(rec, print)
         end)
