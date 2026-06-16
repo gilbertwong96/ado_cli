@@ -70,7 +70,7 @@ commands:
   - ado skills install                                         # embed all skills to LLM agents
   - ado test-results list PROJECT
   - ado test-results show PROJECT RUN_ID
-  - ado test-results publish PROJECT --name N --file coverage.xml
+  - ado test-results publish PROJECT --name N --file coverage.xml [--build-id ID]
   - ado test-coverage show PROJECT BUILD_ID
 ---
 
@@ -223,6 +223,30 @@ ado schema --json | jq '.schema.subcommands | length'
 ado completion bash | eval
 ado completion zsh > "${fpath[1]}/_ado"
 ```
+
+## Coverage & Test Results
+
+Fetch and publish test results and code coverage from Azure DevOps:
+
+```bash
+# List recent test runs (with pass/fail counts)
+ado test-results list MyProject
+
+# Filter by build ID and limit results
+ado test-results list MyProject --build-id 99 --top 10
+
+# Show a specific test run with outcome breakdowns
+ado test-results show MyProject 42
+
+# Show code coverage for a build (visual bar chart)
+ado test-coverage show MyProject 99
+
+# Publish Cobertura XML / JUnit results to a build
+ado test-results publish MyProject --name "CI Tests" \
+  --file coverage.cobertura.xml --build-id 99
+```
+
+Use `--json` on any command for machine-readable output.
 
 ## Help
 
