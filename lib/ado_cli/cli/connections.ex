@@ -81,11 +81,7 @@ defmodule AdoCli.CLI.Connections do
       writeln("#{String.pad_trailing("ID", 40)} #{String.pad_trailing("Name", 30)} Type")
       writeln(String.duplicate("─", 85))
 
-      Enum.each(conns, fn c ->
-        writeln(
-          "#{String.pad_trailing(c["id"] || "", 40)} #{String.pad_trailing(c["name"] || "", 30)} #{c["type"] || ""}"
-        )
-      end)
+      AdoCli.CLI.Helpers.print_id_name_type_table(conns)
 
       writeln("")
       writeln("#{length(conns)} connection(s)")

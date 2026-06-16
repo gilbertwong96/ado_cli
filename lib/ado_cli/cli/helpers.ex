@@ -10,6 +10,7 @@ defmodule AdoCli.CLI.Helpers do
   shape); otherwise it's human-readable formatted text.
   """
 
+  import CliMate.CLI
   alias AdoCli.CLI.Output
 
   @doc """
@@ -166,4 +167,63 @@ defmodule AdoCli.CLI.Helpers do
 
   defp network_error_classification(reason),
     do: {"network_error", "Request failed: #{inspect(reason, limit: 200)}"}
+
+  @doc """
+  Prompts the user to confirm a destructive action.
+
+  Prints `Delete {kind} '{id}'? This cannot be undone. [y/N] ` and
+  waits for input on stdin. Returns `:ok` if the user types `y` (or
+  `Y`); otherwise calls `halt_error/1` with "Aborted." and does not
+  return.
+
+  Used by the delete subcommands of `ado projects` and `ado repos`
+  (and any other command that needs a y/n confirmation before
+  destructive actions). Extracted from two near-identical copies
+  that ex_dna flagged as code clones.
+
+  Examples:
+
+      case confirm_delete("project", "MyProject") do
+        :ok -> Client.delete(...)
+      end
+  """
+  @spec confirm_delete(String.t(), String.t()) :: :ok | no_return()
+  def confirm_delete(kind, id) do
+    write("Delete #{kind} '#{id}'? This cannot be undone. [y/N] ")
+
+    if String.downcase(String.trim(IO.gets(""))) == "y" do
+      :ok
+    else
+      halt_error("Aborted.")
+    end
+  end
+
+  @doc """
+  Prints a 3-column table of `id / name / type` for a list of maps.
+
+  Each item in `rows` is expected to be a map (or struct) with
+  string fields `"id"`, `"name"`, and `"type"`. The column widths
+  (40 and 30) are fixed — chosen to match the existing
+  `ado connections list` and `ado wikis list` output styles. Missing
+  fields render as empty strings (not "nil").
+
+  Used by the `list` subcommands of `ado connections` and `ado wikis`
+  (extracted from two near-identical copies that ex_dna flagged as
+  code clones).
+
+  Example:
+
+      rows = [%{"id" => "abc", "name" => "My Connection", "type" => "github"}]
+      print_id_name_type_table(rows)
+  """
+  @spec print_id_name_type_table([map()]) :: :ok
+  def print_id_name_type_table(rows) do
+    Enum.each(rows, fn row ->
+      writeln(
+        "#{String.pad_trailing(row["id"] || "", 40)} " <>
+          "#{String.pad_trailing(row["name"] || "", 30)} " <>
+          "#{row["type"] || ""}"
+      )
+    end)
+  end
 end

@@ -222,11 +222,7 @@ defmodule AdoCli.CLI.Wikis do
       writeln("#{String.pad_trailing("ID", 40)} #{String.pad_trailing("Name", 30)} Type")
       writeln(String.duplicate("─", 85))
 
-      Enum.each(wikis, fn w ->
-        writeln(
-          "#{String.pad_trailing(w["id"] || "", 40)} #{String.pad_trailing(w["name"] || "", 30)} #{w["type"] || ""}"
-        )
-      end)
+      AdoCli.CLI.Helpers.print_id_name_type_table(wikis)
 
       writeln("")
       writeln("#{length(wikis)} wiki(s)")

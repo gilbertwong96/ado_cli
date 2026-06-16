@@ -199,7 +199,7 @@ defmodule AdoCli.CLI.Repos do
     repo_id = parsed.arguments.repo_id
 
     unless Map.get(parsed.options, :force) do
-      confirm_delete("repository", "#{project}/#{repo_id}")
+      AdoCli.CLI.Helpers.confirm_delete("repository", "#{project}/#{repo_id}")
     end
 
     case Client.delete("/#{URI.encode(project)}/_apis/git/repositories/#{URI.encode(repo_id)}") do
@@ -216,16 +216,6 @@ defmodule AdoCli.CLI.Repos do
   end
 
   # ── Helpers ───────────────────────────────────────────────────────────
-
-  defp confirm_delete(kind, id) do
-    write("Delete #{kind} '#{id}'? This cannot be undone. [y/N] ")
-
-    if String.downcase(String.trim(IO.gets(""))) == "y" do
-      :ok
-    else
-      halt_error("Aborted.")
-    end
-  end
 
   # ── Formatting ────────────────────────────────────────────────────────
 
