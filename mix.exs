@@ -172,7 +172,7 @@ defmodule AdoCli.MixProject do
   end
 
   def cli do
-    [preferred_envs: [test: :test, "test.cover": :test, "coveralls.json": :test]]
+    [preferred_envs: [test: :test, "test --cover": :test, "test.cover": :test, "coveralls.json": :test]]
   end
 
   defp escript_config do
