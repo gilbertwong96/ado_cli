@@ -663,15 +663,7 @@ defmodule AdoCli.Auth do
     :gen_tcp.close(client)
     result
   rescue
-    # reach flagged this as a bare rescue. The exact exception
-    # types are heterogeneous (`:closed` from gen_tcp; posix
-    # errors returned as tuples; `:gen_tcp.timeout` thrown as a
-    # value rather than raised). The handler collapses ALL of
-    # them into the same user-facing error, so enumerating them
-    # adds no value. The bare rescue is intentional — this is
-    # the canonical "I want to ignore any error and report
-    # timeout to the user" pattern.
-    _ -> {:error, "Browser login timed out or was cancelled."}
+    ErlangError -> {:error, "Browser login timed out or was cancelled."}
   end
 
   defp recv_all(socket, acc) do

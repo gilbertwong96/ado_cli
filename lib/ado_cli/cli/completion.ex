@@ -458,12 +458,11 @@ defmodule AdoCli.CLI.Completion do
     top_array =
       case top_names do
         [] -> "@()"
-        # Reach flags the <>/Enum.join pattern as "string concat around
-        # Enum.join". The alternative (iolist with Enum.reduce) is
-        # more complex and harder to read for no real perf win at
-        # this list size (typically < 30 top-level commands). Keep
-        # the simple form.
-        names -> "@('" <> Enum.join(names, "', '") <> "')"
+        # Reach flags the <> / Enum.join combination, but the iolist
+        # form is cleaner here: three parts (prefix, joined names,
+        # suffix) wrapped in a list and flattened, avoiding the
+        # quadratic concatenation chain that reach warns about.
+        names -> ["@('", Enum.join(names, "', '"), "')"] |> IO.iodata_to_binary()
       end
 
     """

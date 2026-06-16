@@ -562,8 +562,11 @@ defmodule AdoCli.CLI.PullRequests do
            :ok <- render_diff(parsed, changes, iteration_id, file, unified?, json?) do
         halt(0)
       else
-        {:error, msg} when is_binary(msg) -> halt_error(msg)
-        {:error, reason} -> Helpers.handle_api_result({:error, reason}, parsed, nil)
+        {:error, msg} when is_binary(msg) ->
+          halt_error(msg)
+
+        {:error, reason} ->
+          Helpers.handle_api_result({:error, reason}, parsed, nil) |> then(fn _ -> :ok end)
       end
     end
   end
@@ -688,7 +691,7 @@ defmodule AdoCli.CLI.PullRequests do
             :ok
 
           {:error, reason} ->
-            Helpers.handle_api_result({:error, reason}, parsed, nil)
+            Helpers.handle_api_result({:error, reason}, parsed, nil) |> then(fn _ -> :ok end)
         end
     end
   end
@@ -722,7 +725,7 @@ defmodule AdoCli.CLI.PullRequests do
         :ok
 
       {:error, reason} ->
-        Helpers.handle_api_result({:error, reason}, parsed, nil)
+        Helpers.handle_api_result({:error, reason}, parsed, nil) |> then(fn _ -> :ok end)
     end
   end
 
@@ -954,7 +957,7 @@ defmodule AdoCli.CLI.PullRequests do
         end)
 
       {:error, reason} ->
-        Helpers.handle_api_result({:error, reason}, parsed, nil)
+        Helpers.handle_api_result({:error, reason}, parsed, nil) |> then(fn _ -> :ok end)
     end
 
     halt_success("Done.")
@@ -1219,8 +1222,11 @@ defmodule AdoCli.CLI.PullRequests do
   # function's cyclomatic complexity under 8.
   defp patch_only(parsed, path, body, render_fn) do
     case Client.patch(path, body) do
-      {:ok, result} -> render_fn.(nil, result)
-      {:error, reason} -> Helpers.handle_api_result({:error, reason}, parsed, nil)
+      {:ok, result} ->
+        render_fn.(nil, result)
+
+      {:error, reason} ->
+        Helpers.handle_api_result({:error, reason}, parsed, nil) |> then(fn _ -> :ok end)
     end
   end
 
@@ -1448,7 +1454,7 @@ defmodule AdoCli.CLI.PullRequests do
         render_add_result(result, "Reply added to thread #{thread_id}.", json?)
 
       {:error, reason} ->
-        Helpers.handle_api_result({:error, reason}, parsed, nil)
+        Helpers.handle_api_result({:error, reason}, parsed, nil) |> then(fn _ -> :ok end)
     end
   end
 
@@ -1480,7 +1486,7 @@ defmodule AdoCli.CLI.PullRequests do
         render_add_result(result, "Comment added to #{file_path}:#{line}.", json?)
 
       {:error, reason} ->
-        Helpers.handle_api_result({:error, reason}, parsed, nil)
+        Helpers.handle_api_result({:error, reason}, parsed, nil) |> then(fn _ -> :ok end)
     end
   end
 
@@ -1507,7 +1513,7 @@ defmodule AdoCli.CLI.PullRequests do
         render_add_result(result, "Comment added.", json?)
 
       {:error, reason} ->
-        Helpers.handle_api_result({:error, reason}, parsed, nil)
+        Helpers.handle_api_result({:error, reason}, parsed, nil) |> then(fn _ -> :ok end)
     end
   end
 

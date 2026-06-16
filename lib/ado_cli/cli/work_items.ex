@@ -429,7 +429,7 @@ defmodule AdoCli.CLI.WorkItems do
         writeln("No comments found.")
 
       {:error, reason} ->
-        Helpers.handle_api_result({:error, reason}, parsed, nil)
+        Helpers.handle_api_result({:error, reason}, parsed, nil) |> then(fn _ -> :ok end)
     end
 
     halt_success("Done.")
@@ -453,7 +453,7 @@ defmodule AdoCli.CLI.WorkItems do
         success("Comment added to work item ##{id}.\n\n")
 
       {:error, reason} ->
-        Helpers.handle_api_result({:error, reason}, parsed, nil)
+        Helpers.handle_api_result({:error, reason}, parsed, nil) |> then(fn _ -> :ok end)
     end
 
     halt_success("Done.")
@@ -477,7 +477,7 @@ defmodule AdoCli.CLI.WorkItems do
         success("Comment updated on work item ##{id}.\n\n")
 
       {:error, reason} ->
-        Helpers.handle_api_result({:error, reason}, parsed, nil)
+        Helpers.handle_api_result({:error, reason}, parsed, nil) |> then(fn _ -> :ok end)
     end
 
     halt_success("Done.")
@@ -518,7 +518,7 @@ defmodule AdoCli.CLI.WorkItems do
         writeln("No attachments found.")
 
       {:error, reason} ->
-        Helpers.handle_api_result({:error, reason}, parsed, nil)
+        Helpers.handle_api_result({:error, reason}, parsed, nil) |> then(fn _ -> :ok end)
     end
 
     halt_success("Done.")
@@ -528,7 +528,6 @@ defmodule AdoCli.CLI.WorkItems do
   Downloads an attachment from a work item to a local file.
   """
   def download_attachment(parsed) do
-    _id = parsed.arguments.id
     attachment_id = parsed.arguments.attachment_id
 
     path = "/_apis/wit/attachments/#{attachment_id}"
@@ -549,11 +548,11 @@ defmodule AdoCli.CLI.WorkItems do
             success("Downloaded #{byte_size(body)} bytes to #{file_name}\n\n")
 
           {:error, reason} ->
-            Helpers.handle_api_result({:error, reason}, parsed, nil)
+            Helpers.handle_api_result({:error, reason}, parsed, nil) |> then(fn _ -> :ok end)
         end
 
       {:error, reason} ->
-        Helpers.handle_api_result({:error, reason}, parsed, nil)
+        Helpers.handle_api_result({:error, reason}, parsed, nil) |> then(fn _ -> :ok end)
     end
 
     halt_success("Done.")
