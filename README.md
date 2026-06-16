@@ -66,7 +66,7 @@ put it on your `$PATH`:
 
 ```bash
 # Example for Apple Silicon Mac (pick the right binary for your platform)
-curl -L -o ado https://github.com/gilbertwong96/ado_cli/releases/latest/download/ado-0.3.0-macos-aarch64
+curl -L -o ado https://github.com/gilbertwong96/ado_cli/releases/latest/download/ado-0.4.0-macos-aarch64
 chmod +x ado && sudo mv ado /usr/local/bin/
 ```
 
@@ -708,7 +708,7 @@ before they go public.
 
 ```bash
 # 1. Bump version in mix.exs, commit, tag
-$EDITOR mix.exs                          # bump version: "0.2.0" -> "0.3.0"
+$EDITOR mix.exs                          # bump version: "0.2.0" -> "0.4.0"
 git add -u && git commit -m "v0.2.0"
 git tag -a v0.2.0 -m "Release 0.2.0"
 git push github main v0.2.0

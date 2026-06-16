@@ -50,6 +50,7 @@ defmodule AdoCli.CLI.PullRequests do
   alias AdoCli.Client
 
   @impl true
+  # credo:disable-for-next-line Credo.Check.Refactor.ABCSize
   def command do
     [
       name: "ado prs",
@@ -1010,13 +1011,7 @@ defmodule AdoCli.CLI.PullRequests do
 
             writeln(String.duplicate("─", 85))
 
-            Enum.each(reviewers, fn r ->
-              name = String.pad_trailing(r["displayName"] || "?", 30)
-              email = String.pad_trailing(r["uniqueName"] || "?", 35)
-              vote = String.pad_trailing(to_string(r["vote"] || 0), 6)
-              required = if r["isRequired"], do: "yes", else: "no"
-              writeln("#{name} #{email} #{vote} #{required}")
-            end)
+            Enum.each(reviewers, &print_reviewer_row/1)
           end
 
           writeln("")
@@ -1078,6 +1073,14 @@ defmodule AdoCli.CLI.PullRequests do
         writeln("xx  Remove failed: #{inspect(reason)}")
         halt_error("")
     end
+  end
+
+  defp print_reviewer_row(r) do
+    name = String.pad_trailing(r["displayName"] || "?", 30)
+    email = String.pad_trailing(r["uniqueName"] || "?", 35)
+    vote = String.pad_trailing(to_string(r["vote"] || 0), 6)
+    required = if r["isRequired"], do: "yes", else: "no"
+    writeln("#{name} #{email} #{vote} #{required}")
   end
 
   # ── Formatting ────────────────────────────────────────────────────────
