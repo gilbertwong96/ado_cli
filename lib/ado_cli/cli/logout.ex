@@ -3,6 +3,12 @@ defmodule AdoCli.CLI.Logout do
 
   @behaviour CliMate.CLI.Command
 
+  # reach: '3 modules expose the same 3 public callbacks' — correct.
+  # Logout, Version, Whoami all implement `@behaviour CliMate.CLI.Command`
+  # (command/0, execute/1, run/1). They are NOT interchangeable
+  # modules and shouldn't be unified behind a custom behaviour;
+  # the CliMate behaviour IS the shared contract.
+
   import CliMate.CLI
 
   alias AdoCli.CLI.Output

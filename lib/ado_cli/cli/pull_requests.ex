@@ -1,3 +1,15 @@
+defmodule AdoCli.CLI.PullRequests.DryRunAction do
+  @moduledoc """
+  A single action that would be performed in --dry-run mode.
+
+  Three keys: `:method` (PATCH), `:path` (the API endpoint),
+  `:body` (the PATCH body). Used by `build_dry_run_actions/7`
+  to construct the preview JSON envelope.
+  """
+  @derive {JSON.Encoder, only: [:method, :path, :body]}
+  defstruct [:method, :path, :body]
+end
+
 defmodule AdoCli.CLI.PullRequests do
   @moduledoc """
   Commands for managing Azure DevOps Pull Requests.
@@ -1115,7 +1127,7 @@ defmodule AdoCli.CLI.PullRequests do
   # envelope, then exit. Honors --json (or always emits JSON
   # for the dry-run envelope, since it's a machine-readable
   # preview either way).
-  defp print_dry_run(parsed, content, status, wants_content?, wants_status?, json?) do
+  defp print_dry_run(parsed, content, status, wants_content?, wants_status?, _json?) do
     actions = build_dry_run_actions(parsed, content, status, wants_content?, wants_status?)
 
     payload = %{ok: true, dry_run: true, actions: actions}
@@ -1123,7 +1135,6 @@ defmodule AdoCli.CLI.PullRequests do
     # Dry-run output is always JSON: it's a machine-readable
     # preview meant to be piped to jq / inspected by LLMs.
     # The --json flag is accepted but redundant.
-    _ = json?
     IO.puts(JSON.encode!(payload))
     halt(0)
   end
@@ -1135,15 +1146,35 @@ defmodule AdoCli.CLI.PullRequests do
     cond do
       wants_content? and wants_status? ->
         [
-          %{method: "PATCH", path: thread_path, body: build_thread_body(parsed, status)},
-          %{method: "PATCH", path: comment_path, body: %{"content" => content}}
+          %AdoCli.CLI.PullRequests.DryRunAction{
+            method: "PATCH",
+            path: thread_path,
+            body: build_thread_body(parsed, status)
+          },
+          %AdoCli.CLI.PullRequests.DryRunAction{
+            method: "PATCH",
+            path: comment_path,
+            body: %{"content" => content}
+          }
         ]
 
       wants_content? ->
-        [%{method: "PATCH", path: comment_path, body: %{"content" => content}}]
+        [
+          %AdoCli.CLI.PullRequests.DryRunAction{
+            method: "PATCH",
+            path: comment_path,
+            body: %{"content" => content}
+          }
+        ]
 
       wants_status? ->
-        [%{method: "PATCH", path: thread_path, body: build_thread_body(parsed, status)}]
+        [
+          %AdoCli.CLI.PullRequests.DryRunAction{
+            method: "PATCH",
+            path: thread_path,
+            body: build_thread_body(parsed, status)
+          }
+        ]
     end
   end
 
