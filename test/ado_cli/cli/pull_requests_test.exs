@@ -1,7 +1,6 @@
 defmodule AdoCli.CLI.PullRequestsTest do
   use AdoCli.CLI.TestHelper
   import ExUnit.CaptureIO
-  alias AdoCli.CLI.PullRequests
 
   describe "list_prs" do
     test "halts 0 on successful get", %{server: server} do
@@ -171,7 +170,7 @@ defmodule AdoCli.CLI.PullRequestsTest do
       )
     end
 
-    test "halts 1 on API error", %{server: server} do
+    test "halts 1 on API error", %{server: _server} do
       # complete_pr uses PATCH, not GET. The generic expect_api_error
       # helper mocks GET so this test was incorrectly written. Skipping
       # for now — the success path above exercises the code.
@@ -414,7 +413,7 @@ defmodule AdoCli.CLI.PullRequestsTest do
       assert msg =~ "No change matches --file 'src/does_not_exist.ex'"
     end
 
-    test "halts 1 with --file and --unified set together", %{server: server} do
+    test "halts 1 with --file and --unified set together", %{server: _server} do
       capture_io(fn ->
         apply(AdoCli.CLI.PullRequests, :diff_pr, [
           %{
@@ -686,7 +685,7 @@ defmodule AdoCli.CLI.PullRequestsTest do
       )
     end
 
-    test "halts 1 with a clear error on invalid --status", %{server: server} do
+    test "halts 1 with a clear error on invalid --status", %{server: _server} do
       # No expectation registered: the function must halt BEFORE
       # the HTTP call. If the function ever hits the network,
       # the test fails with "no expectation matched".
@@ -796,7 +795,7 @@ defmodule AdoCli.CLI.PullRequestsTest do
     end
 
     test "halts 1 with a clear error when --content @<missing-file> cannot be read",
-         %{server: server} do
+         %{server: _server} do
       missing = "/tmp/ado-missing-#{System.unique_integer([:positive])}.md"
 
       capture_io(fn ->
@@ -1010,7 +1009,7 @@ defmodule AdoCli.CLI.PullRequestsTest do
   # ── update_comment (prs comments update) ─────────────────────────
 
   describe "update_comment (prs comments update)" do
-    test "halts 1 when neither --content nor --status is given", %{server: server} do
+    test "halts 1 when neither --content nor --status is given", %{server: _server} do
       capture_io(fn ->
         apply(AdoCli.CLI.PullRequests, :update_comment, [
           %{
@@ -1115,7 +1114,7 @@ defmodule AdoCli.CLI.PullRequestsTest do
       assert_receive {:cli_mate_shell, :halt, 0}, 500
     end
 
-    test "halts 1 with a clear error on invalid --status", %{server: server} do
+    test "halts 1 with a clear error on invalid --status", %{server: _server} do
       capture_io(fn ->
         apply(AdoCli.CLI.PullRequests, :update_comment, [
           %{
@@ -1199,7 +1198,7 @@ defmodule AdoCli.CLI.PullRequestsTest do
     end
 
     test "--dry-run with --content prints the would-be PATCH and halts 0 (no API call)",
-         %{server: server} do
+         %{server: _server} do
       output =
         capture_io(fn ->
           apply(AdoCli.CLI.PullRequests, :update_comment, [
@@ -1232,7 +1231,7 @@ defmodule AdoCli.CLI.PullRequestsTest do
       assert action["body"] == %{"content" => "new text"}
     end
 
-    test "--dry-run with --status prints the would-be thread PATCH", %{server: server} do
+    test "--dry-run with --status prints the would-be thread PATCH", %{server: _server} do
       output =
         capture_io(fn ->
           apply(AdoCli.CLI.PullRequests, :update_comment, [

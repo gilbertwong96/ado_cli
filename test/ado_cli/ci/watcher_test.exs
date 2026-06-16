@@ -124,8 +124,8 @@ defmodule AdoCli.CI.WatcherTest do
   # integration test in the docs.
   defp run_with_mocked_log(opts) do
     parent = self()
-    log_id = opts[:log_id]
-    build_id = opts[:build_id]
+    _log_id = opts[:log_id]
+    _build_id = opts[:build_id]
     lines = opts[:lines]
     body = Enum.join(lines, "\n") <> "\n"
 

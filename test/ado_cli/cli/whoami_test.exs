@@ -1,6 +1,5 @@
 defmodule AdoCli.CLI.WhoamiTest do
   use AdoCli.CLI.TestHelper
-  alias AdoCli.CLI.Whoami
 
   describe "run" do
     test "halts 0 on success" do

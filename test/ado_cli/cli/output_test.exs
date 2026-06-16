@@ -2,7 +2,6 @@ defmodule AdoCli.CLI.OutputTest do
   use ExUnit.Case, async: false
 
   import ExUnit.CaptureIO
-  import CliMate.CLI
   alias AdoCli.CLI.Output
 
   setup do
