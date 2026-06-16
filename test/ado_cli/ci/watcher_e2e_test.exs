@@ -28,9 +28,14 @@ defmodule AdoCli.CI.WatcherE2ETest do
       Plug.Conn.resp(conn, 200, Jason.encode!(build_status))
     end)
 
-    TestServer.expect(server, "GET", "/testorg/MyProject/_apis/build/builds/9655/timeline", fn conn ->
-      Plug.Conn.resp(conn, 200, Jason.encode!(%{"records" => []}))
-    end)
+    TestServer.expect(
+      server,
+      "GET",
+      "/testorg/MyProject/_apis/build/builds/9655/timeline",
+      fn conn ->
+        Plug.Conn.resp(conn, 200, Jason.encode!(%{"records" => []}))
+      end
+    )
 
     # Trap exits so we can report the crash reason if the watcher dies
     Process.flag(:trap_exit, true)
@@ -82,18 +87,27 @@ defmodule AdoCli.CI.WatcherE2ETest do
     # 1-arity. This test runs the watcher with NO print_callback
     # (using the default) and asserts it doesn't crash.
     TestServer.expect(server, "GET", "/testorg/MyProject/_apis/build/builds/9655", fn conn ->
-      Plug.Conn.resp(conn, 200, Jason.encode!(%{
-        "id" => 9655,
-        "status" => "inProgress",
-        "result" => nil,
-        "definition" => %{"name" => "ci"},
-        "sourceBranch" => "refs/heads/main"
-      }))
+      Plug.Conn.resp(
+        conn,
+        200,
+        Jason.encode!(%{
+          "id" => 9655,
+          "status" => "inProgress",
+          "result" => nil,
+          "definition" => %{"name" => "ci"},
+          "sourceBranch" => "refs/heads/main"
+        })
+      )
     end)
 
-    TestServer.expect(server, "GET", "/testorg/MyProject/_apis/build/builds/9655/timeline", fn conn ->
-      Plug.Conn.resp(conn, 200, Jason.encode!(%{"records" => []}))
-    end)
+    TestServer.expect(
+      server,
+      "GET",
+      "/testorg/MyProject/_apis/build/builds/9655/timeline",
+      fn conn ->
+        Plug.Conn.resp(conn, 200, Jason.encode!(%{"records" => []}))
+      end
+    )
 
     # Trap exits so we can report the crash reason
     Process.flag(:trap_exit, true)
