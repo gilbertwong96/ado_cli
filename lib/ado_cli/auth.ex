@@ -124,9 +124,9 @@ defmodule AdoCli.Auth do
       {:ok, device_code, user_code, verification_uri, interval} ->
         CLI.writeln("")
         CLI.writeln("To sign in, use a web browser to open:")
-        CLI.writeln("  #{CLI.color(verification_uri, :cyan)}")
+        CLI.writeln(["  ", CLI.color(verification_uri, :cyan)])
         CLI.writeln("")
-        CLI.writeln("And enter the code: #{CLI.color(user_code, :green)}")
+        CLI.writeln(["And enter the code: ", CLI.color(user_code, :green)])
         CLI.writeln("")
 
         case poll_for_token(org, device_code, interval, 0) do
@@ -442,7 +442,7 @@ defmodule AdoCli.Auth do
     with {:ok, %Finch.Response{status: 200, body: resp_body}} <-
            Finch.request(request, AdoCli.Finch),
          {:ok,
-          %{"device_code" => dc, "user_code" => uc, "verification_uri" => vu, "interval" => iv}} <-
+          %{"device_code" => dc, "user_code" => uc, "verification_url" => vu, "interval" => iv}} <-
            JSON.decode(resp_body) do
       {:ok, dc, uc, vu, iv}
     else
