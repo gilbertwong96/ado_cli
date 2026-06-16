@@ -3,6 +3,10 @@ name: ado-cli
 description: Main ado skill — setup, authentication, and complete command reference for all 24 service areas
 version: "0.4.0"
 commands:
+  - ado --version
+  - ado version
+  - ado schema
+  - ado completion bash
   - ado login --org ORG
   - ado login --method pat --org ORG --pat TOKEN
   - ado logout
@@ -37,6 +41,9 @@ commands:
   - ado prs complete PROJECT REPO ID --merge-strategy squash
   - ado prs approve PROJECT REPO ID
   - ado prs comments list PROJECT REPO PR_ID
+  - ado prs comments add PROJECT REPO PR_ID --content TEXT
+  - ado prs comments update PROJECT REPO PR_ID THREAD COMMENT --content TEXT
+  - ado prs diff PROJECT REPO PR_ID
   - ado releases list PROJECT
   - ado releases show PROJECT ID
   - ado iterations list PROJECT
@@ -60,6 +67,7 @@ commands:
   - ado skills describe NAME                                   # skill frontmatter + command index
   - ado skills read NAME                                       # full skill content
   - ado skills search "QUERY"                                  # find skill by topic
+  - ado skills install                                         # embed all skills to LLM agents
 ---
 
 # ado
@@ -98,6 +106,9 @@ The CLI auto-detects the org from the token if `--org` is omitted.
 | Group | Subcommands |
 |-------|-------------|
 | `login`, `logout`, `whoami` | Authentication & status |
+| `version` | Print the CLI version (`--version` flag also works) |
+| `schema` | Dump the full command tree as JSON for LLM discovery |
+| `completion` | Shell completion: bash, zsh, fish, powershell |
 | `projects` | list, show, create, update, delete |
 | `repos` | list, show, create, delete |
 | `branch-policies` | list, show, create, update, delete |
@@ -108,7 +119,9 @@ The CLI auto-detects the org from the token if `--org` is omitted.
 | `pipelines-builds` | Classic builds: list, show, queue, cancel, tags, definitions |
 | `pipelines-folders` | Folders: list, create, delete |
 | `pipelines-artifacts` | Run artifacts: list, download |
-| `prs` | list, show, create, complete, abandon, approve, vote, comments |
+| `ci` | CI pipeline watching: `ci watch` (live status + streaming logs) |
+| `prs` | list, show, create, complete, abandon, approve, vote, diff, comments |
+| `prs comments` | Threads: add (new/reply), list (with --all), update (content/status) |
 | `releases` | list, show, create, update |
 | `iterations` | Sprints: list, show, create, update, delete |
 | `areas` | Area paths: list, show, create, update, delete |
@@ -122,7 +135,7 @@ The CLI auto-detects the org from the token if `--org` is omitted.
 | `security permissions` | ACLs: list, namespaces |
 | `banners` | Org-wide notifications: show, set, delete |
 | `packages` | Universal Packages: list, versions, show |
-| `skills` | list, read |
+| `skills` | list, describe, read, search, install (embed for LLM agents) |
 
 ## Conventions
 
@@ -160,6 +173,16 @@ ado workitems create MyProject --type Bug --title "Fix login page"
 # Create a PR
 ado prs create MyProject MyRepo --title "Add feature" --source dev --target main
 
+# View PR changes (3 modes: file list, per-file, unified diff)
+ado prs diff MyProject MyRepo 42
+ado prs diff MyProject MyRepo 42 --file src/app.ex
+ado prs diff MyProject MyRepo 42 --unified | delta
+
+# Review PR comments
+ado prs comments add MyProject MyRepo 42 --content "LGTM!"
+ado prs comments list MyProject MyRepo 42 --all
+ado prs comments update MyProject MyRepo 42 7 5 --content "updated" --status fixed
+
 # Trigger a pipeline with variables
 ado pipelines run MyProject 42 --branch main --variables "ENV=staging,DEBUG=true"
 
@@ -176,6 +199,17 @@ ado projects list
 
 # Check auth status
 ado whoami
+
+# Print version (or use --version flag)
+ado version
+ado --version
+
+# Dump the full command tree for LLM agents
+ado schema --json | jq '.schema.subcommands | length'
+
+# Install shell completion (bash/zsh/fish/powershell)
+ado completion bash | eval
+ado completion zsh > "${fpath[1]}/_ado"
 ```
 
 ## Help
