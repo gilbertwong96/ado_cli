@@ -4,7 +4,7 @@ defmodule AdoCli.MixProject do
   def project do
     [
       app: :ado_cli,
-      version: "0.2.4",
+      version: "0.2.5",
       elixir: "~> 1.20",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
