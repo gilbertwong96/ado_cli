@@ -13,7 +13,13 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# Opt into Node.js 24 (default after June 16, 2026).
+# mlugg/setup-zig@v2.2.1 runs on Node.js 20 which is deprecated.
+# This env var silences the deprecation warning and forces the
+# action to run on Node.js 24.
 env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
   MIX_ENV: test
   OTP_VERSION: "29.0"
   ELIXIR_VERSION: "1.20.1"
