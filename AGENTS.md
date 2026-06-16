@@ -163,6 +163,7 @@ For a quick test on a Linux server without a desktop:
 
     If you only edited one file or area, you can scope the formatter:
     `mix format path/to/file.ex path/to/other.ex`. Never commit unformatted code — item 2 (the CI check) will block the merge anyway, so it's strictly faster to format locally first.
+11. **Use pi-elixir for Elixir refactoring**: Always use `elixir_eval`, `elixir_ast_search`, and `elixir_ast_replace` (part of the pi-bridge ecosystem) for Elixir code introspection and structural refactoring. Avoid raw Python/Perl/shell scripts for source migrations, API renames, or protocol changes. Fall back to targeted `edit` calls only when the AST tools cannot match a pattern (e.g., for newly-inserted code that hasn't been compiled yet). Never use blind global string replacement for protocol/API field renames.
 
 ## Dialyzer & Finch
 
