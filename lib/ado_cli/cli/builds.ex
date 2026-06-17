@@ -11,17 +11,23 @@ defmodule AdoCli.CLI.Builds do
   def command do
     [
       name: "ado pipelines builds",
-      doc: "Manage Azure Pipelines classic builds.",
+      doc:
+        "Manage Azure Pipelines classic (XAML) builds. Most modern pipelines use YAML and should use the `ado pipelines` commands instead; this command group is for legacy build definitions.",
       subcommands: [
         list: [
           name: "ado pipelines builds list",
-          doc: "List builds in a project.",
+          doc:
+            "List recent builds in a project as a table (ID, Definition, Status, Result, Branch). Use --definitions to filter to specific definitions (comma-separated IDs). Default page size is 50; use --top to change.",
           arguments: [project: [type: :string, doc: "Project name or ID"]],
           options: [
-            top: [type: :integer, doc: "Maximum number to return", doc_arg: "N"],
+            top: [
+              type: :integer,
+              doc: "Maximum number of builds to return. Default 50, max 1000.",
+              doc_arg: "N"
+            ],
             definitions: [
               type: :string,
-              doc: "Filter by definition IDs (comma-separated)",
+              doc: "Filter to specific definition IDs (comma-separated, e.g. '5,12,18')",
               doc_arg: "IDS"
             ]
           ],
@@ -29,62 +35,74 @@ defmodule AdoCli.CLI.Builds do
         ],
         show: [
           name: "ado pipelines builds show",
-          doc: "Show details of a specific build.",
+          doc:
+            "Show details of a specific build: ID, definition, status (inProgress/completed/cancelling/etc.), result (succeeded/failed/partiallySucceeded), branch, requester, queue time, and web URL.",
           arguments: [
             project: [type: :string, doc: "Project name or ID"],
-            build_id: [type: :integer, doc: "Build ID"]
+            build_id: [type: :integer, doc: "Numeric build ID"]
           ],
           execute: &show_build/1
         ],
         queue: [
           name: "ado pipelines builds queue",
-          doc: "Queue a new build.",
+          doc:
+            "Queue a new classic build. The build is added to the queue and starts as soon as an agent is available. Returns the new build ID and a link to monitor it.",
           arguments: [project: [type: :string, doc: "Project name or ID"]],
           options: [
             definition: [
               type: :integer,
               required: true,
-              doc: "Build definition ID",
+              doc:
+                "Numeric ID of the classic build definition to run (use `ado pipelines builds definitions list` to find it)",
               doc_arg: "ID"
             ],
-            branch: [type: :string, doc: "Source branch (default: main)", doc_arg: "BRANCH"]
+            branch: [
+              type: :string,
+              doc:
+                "Source branch to build. Pass the short name (e.g. 'main'); 'refs/heads/' is added automatically. Default: main.",
+              doc_arg: "BRANCH"
+            ]
           ],
           execute: &queue_build/1
         ],
         cancel: [
           name: "ado pipelines builds cancel",
-          doc: "Cancel a build.",
+          doc:
+            "Cancel a running or queued build. Sets status to 'cancelling'; the build will stop after the current step completes.",
           arguments: [
             project: [type: :string, doc: "Project name or ID"],
-            build_id: [type: :integer, doc: "Build ID"]
+            build_id: [type: :integer, doc: "Numeric build ID"]
           ],
           execute: &cancel_build/1
         ],
         tags: [
           name: "ado pipelines builds tags",
-          doc: "Manage build tags.",
+          doc:
+            "Manage tags on a build. Tags are free-form labels useful for marking release builds, hotfixes, or environment deployments.",
           subcommands: [
             list: [
               name: "ado pipelines builds tags list",
-              doc: "List tags on a build.",
+              doc:
+                "List all tags on a build. Output is a comma-separated list of tag names (or 'No tags.' if none).",
               arguments: [
                 project: [type: :string, doc: "Project name or ID"],
-                build_id: [type: :integer, doc: "Build ID"]
+                build_id: [type: :integer, doc: "Numeric build ID"]
               ],
               execute: &list_tags/1
             ],
             add: [
               name: "ado pipelines builds tags add",
-              doc: "Add tags to a build.",
+              doc:
+                "Add one or more tags to a build. Comma-separated values, e.g. --tags 'release,prod,v1.2.3'. Existing tags are preserved (this is additive, not a replace).",
               arguments: [
                 project: [type: :string, doc: "Project name or ID"],
-                build_id: [type: :integer, doc: "Build ID"]
+                build_id: [type: :integer, doc: "Numeric build ID"]
               ],
               options: [
                 tags: [
                   type: :string,
                   required: true,
-                  doc: "Tags (comma-separated)",
+                  doc: "Tags to add (comma-separated)",
                   doc_arg: "TAGS"
                 ]
               ],
@@ -94,11 +112,13 @@ defmodule AdoCli.CLI.Builds do
         ],
         definitions: [
           name: "ado pipelines builds definitions",
-          doc: "Manage classic build definitions.",
+          doc:
+            "Manage classic (XAML) build definitions. For modern YAML pipelines, use `ado pipelines` instead.",
           subcommands: [
             list: [
               name: "ado pipelines builds definitions list",
-              doc: "List classic build definitions.",
+              doc:
+                "List classic build definitions in a project. Output is a table (ID, Name, Queue). Use the IDs with `queue --definition` to start a build.",
               arguments: [project: [type: :string, doc: "Project name or ID"]],
               execute: &list_definitions/1
             ]

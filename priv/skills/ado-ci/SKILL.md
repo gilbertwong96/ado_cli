@@ -1,7 +1,7 @@
 ---
 name: ado-ci
-description: Using ado in CI/CD — authentication, pipeline triggers, PR automation, package publishing
-version: "0.4.0"
+description: Use ado in CI/CD: auth setup, pipeline triggers, PR automation, package publishing, work item creation on failure
+version: "0.4.3"
 commands:
   - ado projects list
   - ado pipelines list PROJECT
@@ -16,8 +16,8 @@ commands:
   - ado workitems create PROJECT --type Bug --title TEXT
   - ado workitems update ID --state Resolved
   - ado imports create PROJECT REPO --url URL --user U --password P
-  - ado ci watch PROJECT BUILD_ID                              # stream live build logs
-  - export ADO_ORG=org ADO_PAT=token                          # PAT in env (CI pattern)
+  - ado ci watch PROJECT BUILD_ID
+  - export ADO_ORG=org ADO_PAT=token
 ---
 
 # CI/CD Usage
@@ -26,9 +26,20 @@ How to use `ado` in continuous integration and deployment workflows. The CLI
 is self-contained (no `az` dependency) and cross-compiled to single-file
 binaries for Linux, macOS, and Windows.
 
+## When to use this skill
+
+- Setting up a CI pipeline that interacts with Azure DevOps
+- Automating PR creation, approval, and merging from a bot
+- Creating work items on pipeline failure
+- Triggering downstream pipelines from a parent pipeline
+- Publishing test results / coverage to Azure DevOps from CI
+
+For authentication methods and troubleshooting, see the [ado-auth skill](ado-auth).
+For the full command reference, see the [ado-cli skill](ado-cli).
+
 ## CI Authentication
 
-Use PAT with environment variables — no browser needed:
+Use PAT with environment variables — no browser needed, nothing persisted to disk:
 
 ```bash
 export ADO_ORG=myorg
@@ -37,21 +48,50 @@ export ADO_PAT=$(cat /run/secrets/ado_pat)
 ado projects list
 ```
 
-> Store the PAT in a CI secret manager (GitHub Actions Secrets, GitLab CI
-> variables, Azure Key Vault, etc.). Never commit PATs to source control.
+> Store the PAT in a CI secret manager (GitHub Secrets, GitLab CI variables,
+> Azure Key Vault, etc.). Never commit PATs to source control.
 
-For PAT scopes:
-- `vso.work` — work items
-- `vso.code` — repos, PRs
-- `vso.project` — projects, teams
-- `vso.build` — pipelines
-- `vso.release` — releases
-- Or select "Full access" for everything
+### Required PAT scopes
 
-## Pipeline Triggers
+| Operation | Minimum scope |
+|-----------|---------------|
+| Read projects, repos, work items | `vso.work_read`, `vso.code_read` |
+| Create/update work items | `vso.work` |
+| Manage pipelines (run, cancel) | `vso.build` |
+| Create/complete/approve PRs | `vso.code` |
+| Publish packages and releases | `vso.release` |
+| User administration | `vso.project` |
+| Everything | Full access |
+
+## Downloading the binary
 
 ```bash
-# Trigger a YAML pipeline run
+# macOS arm64 (Apple Silicon)
+curl -L -o ado https://github.com/gilbertwong96/ado_cli/releases/latest/download/ado-0.4.3-macos-aarch64
+chmod +x ado && sudo mv ado /usr/local/bin/
+
+# Linux x86_64
+curl -L -o ado https://github.com/gilbertwong96/ado_cli/releases/latest/download/ado-0.4.3-linux-x86_64
+chmod +x ado && sudo mv ado /usr/local/bin/
+
+# Linux aarch64 (ARM servers, Raspberry Pi 4/5)
+curl -L -o ado https://github.com/gilbertwong96/ado_cli/releases/latest/download/ado-0.4.3-linux-aarch64
+chmod +x ado && sudo mv ado /usr/local/bin/
+
+# macOS x86_64 (Intel)
+curl -L -o ado https://github.com/gilbertwong96/ado_cli/releases/latest/download/ado-0.4.3-macos-x86_64
+
+# Windows x86_64
+# Download from https://github.com/gilbertwong96/ado_cli/releases/latest
+# ado-0.4.3-windows-x86_64.exe
+```
+
+Or install via npm: `npm install -g @gilbertwong1996/ado`
+
+## Pipeline triggers
+
+```bash
+# Trigger a YAML pipeline
 ado pipelines run MyProject 42 --branch main
 
 # With per-run variables
@@ -62,9 +102,13 @@ ado pipelines-builds queue MyProject --definition 5 --branch main
 
 # Cancel a running build
 ado pipelines-builds cancel MyProject 99
+
+# Watch live logs (streaming)
+ado ci watch MyProject 99
+ado ci watch MyProject --latest --definition 42 --branch main
 ```
 
-## Variable Groups (CI Secrets)
+## Variable groups (CI secrets)
 
 ```bash
 # Create a group with a secret variable
@@ -74,31 +118,26 @@ ado pipelines vars create MyProject \
   --variables "DB_HOST=prod-db,DB_USER=app,DB_PASS=hunter2" \
   --secret DB_PASS
 
-# Show a group (secret values are hidden)
+# Show (secret values are hidden in output)
 ado pipelines vars show MyProject 5
-# Variables:
-#   DB_HOST
-#   DB_USER
-#   DB_PASS [secret]
 
 # Update
 ado pipelines vars update MyProject 5 --variables "DB_HOST=new-prod-db"
 ```
 
-## Per-Pipeline Variables
+## Per-pipeline variables
 
 ```bash
-# Add a variable to a specific pipeline
 ado pipelines variables create MyProject 42 \
   --key DEPLOY_TOKEN \
   --value "ghp_xxx" \
   --secret
 ```
 
-## PR Automation
+## PR automation
 
 ```bash
-# Create a PR from CI
+# Create a release PR
 ado prs create MyProject MyRepo \
   --title "Release v1.2.3" \
   --source release/v1.2.3 \
@@ -108,29 +147,34 @@ ado prs create MyProject MyRepo \
 # Complete (merge) with squash
 ado prs complete MyProject MyRepo 99 --merge-strategy squash --delete-source
 
-# Approve a PR
+# Approve a PR (the CLI auto-adds the authenticated user as reviewer)
 ado prs approve MyProject MyRepo 42
+
+# Add review comments
+ado prs comments add MyProject MyRepo 42 \
+  --content "Automated code review passed. All tests green. LGTM!"
+
+# List reviewers
+ado prs reviewers list MyProject MyRepo 42
 ```
 
-## Work Item Automation
+## Work item automation
 
 ```bash
-# Create a work item from CI alerts
+# Create a work item on CI failure
 ado workitems create MyProject --type Bug \
   --title "CI failure: build #42" \
-  --description "Pipeline failed at test stage. Check logs." \
-  --tags "ci,automated"
+  --description "Pipeline failed at test stage. See logs for details." \
+  --tags "ci,automated" \
+  --priority 1
 
-# Update work item state
+# Update state on fix deployment
 ado workitems update 123 --state Resolved
 ```
 
-## Repo Migration
-
-Import a Git repository (e.g. from GitHub) into Azure DevOps:
+## Repo migration
 
 ```bash
-# Start an import
 ado imports create MyProject my-new-repo \
   --url https://github.com/some-org/some-repo.git \
   --user $GITHUB_USER \
@@ -140,51 +184,48 @@ ado imports create MyProject my-new-repo \
 ado imports show MyProject {import_id}
 ```
 
-## Universal Package Publishing
-
-Publish a release artifact as a Universal Package:
+## Publish test results
 
 ```bash
-# List existing packages in a feed
-ado packages list MyProject MyFeed
+# Publish coverage from CI
+ado test-results publish MyProject \
+  --name "CI Suite" \
+  --file coverage.cobertura.xml \
+  --build-id $BUILD_ID
 
-# Show a specific version
-ado packages show MyProject MyFeed my-package 1.0.0
+# Show coverage
+ado test-coverage show MyProject $BUILD_ID
 ```
 
-(Upload via `twine` or the Azure Artifacts client; the CLI manages metadata only.)
-
-## Organization Notifications
-
-Set a banner for all users during a maintenance window:
+## Org notifications
 
 ```bash
-ado banners set --message "Maintenance in progress. Builds may fail." --type warning
+# Set a maintenance banner
+ado banners set --message "CI pipeline maintenance: builds paused until 3pm UTC" --type warning
 ado banners delete
 ```
 
-## JSON Output for Scripting
+## JSON output for scripting
 
 ```bash
-# Machine-readable output (--json is global)
+# Machine-readable output
 ado --json projects list | jq '.[].name'
 ado --json workitems show 42 | jq '.fields."System.Title"'
 
-# Suppress non-error output
-ado projects list 2>/dev/null
+# Use in scripts
+result=$(ado --json projects list)
+echo "$result" | jq -r '.[].name'
 ```
 
-## GitHub Actions Example
+## GitHub Actions example
 
 ```yaml
-- name: Set up ado
+- name: Download ado binary
   run: |
-    # Pre-built binary available from burrito_out/ in releases
     curl -L -o ado https://github.com/gilbertwong96/ado_cli/releases/latest/download/ado_linux
-    chmod +x ado
-    sudo mv ado /usr/local/bin/
+    chmod +x ado && sudo mv ado /usr/local/bin/
 
-- name: Create Azure DevOps work item on failure
+- name: Create work item on failure
   if: failure()
   env:
     ADO_ORG: ${{ secrets.ADO_ORG }}
@@ -192,7 +233,8 @@ ado projects list 2>/dev/null
   run: |
     ado workitems create MyProject --type Bug \
       --title "CI failed: ${{ github.workflow }}" \
-      --description "Run: ${{ github.run_id }}"
+      --description "Run: ${{ github.run_id }}" \
+      --tags "ci,automated"
 
 - name: Trigger downstream pipeline
   env:
@@ -202,12 +244,15 @@ ado projects list 2>/dev/null
     ado pipelines run MyProject 99 --branch main --variables "SHA=${{ github.sha }}"
 ```
 
-## GitLab CI Example
+## GitLab CI example
 
 ```yaml
 trigger_deploy:
   stage: deploy
-  image: ghcr.io/gilbertwong96/ado_cli:latest
+  image: alpine:latest
+  before_script:
+    - curl -L -o ado https://github.com/gilbertwong96/ado_cli/releases/latest/download/ado_linux
+    - chmod +x ado && mv ado /usr/local/bin/
   script:
     - ado pipelines run MyProject 42 --branch $CI_COMMIT_REF_NAME
   variables:
@@ -215,11 +260,30 @@ trigger_deploy:
     ADO_PAT: $ADO_PAT
 ```
 
-## Exit Codes
+## Common pitfalls
 
-- 0   Success
-- 1   Generic / unexpected error
-- 2   API error (4xx/5xx from DevOps)
-- 3   Auth not configured
+1. **"Not authenticated" on CI** → `ADO_ORG`/`ADO_PAT` env vars not set. Check your CI secrets.
+2. **"API redirected to sign-in page" (302)** → Token expired or wrong org. Generate a new PAT.
+3. **401/403 on pipeline operations** → PAT missing `vso.build` scope. Add it or use Full access.
+4. **"Cannot record a vote for someone else"** → Fixed in v0.4.3. Upgrade the binary.
+5. **Long pipeline logs time out** → `ado ci watch` streams indefinitely. If it hangs, the build may be stuck.
+6. **Work item creation fails with "invalid field"** → The `--type` name must match the process template (Bug, User Story, Task vs Issue, Epic). Check the project's process.
+7. **Multi-line content gets truncated** → Use `--content @file` to read from a file, or `--content -` to read from stdin.
+8. **Race conditions on shared state** → Each `ado` invocation is stateless (no persistent connections). Safe to parallelize. Two commands editing the same PR simultaneously may conflict; the second caller gets a 409.
 
-Use `set -euo pipefail` and check `$?` to fail fast on errors.
+## Exit codes
+
+| Code | Meaning |
+|------|---------|
+| 0    | Success |
+| 1    | Generic error |
+| 2    | API error (4xx/5xx) |
+| 3    | Auth not configured |
+
+Use `set -euo pipefail` in shell scripts. Non-zero always means failure.
+
+## See also
+
+- [ado-auth skill](ado-auth) — authentication methods and troubleshooting
+- [ado-cli skill](ado-cli) — full command reference
+- [Project homepage](https://gilbertwong96.github.io/ado_cli/)

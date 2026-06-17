@@ -17,17 +17,20 @@ defmodule AdoCli.CLI.Users do
   def command do
     [
       name: "ado users",
-      doc: "Manage user entitlements.",
+      doc:
+        "Manage user access levels and entitlements (licenses, extensions, project memberships). Requires Project Collection Administrator permissions.",
       subcommands: [
         list: [
           name: "ado users list",
-          doc: "List users in the organization.",
+          doc:
+            "List all users in the organization with their access level, last login, and project memberships. Output is a table by default; use --json for raw data. Use --top to limit.",
           options: [top: [type: :integer, doc: "Maximum number to return", doc_arg: "N"]],
           execute: &list_users/1
         ],
         show: [
           name: "ado users show",
-          doc: "Show details of a user.",
+          doc:
+            "Show details of a single user: email, display name, access level (Stakeholder/Basic/Basic+Test Plans/VS Enterprise), date created, last accessed, and project/group memberships.",
           arguments: [user_id: [type: :string, doc: "User ID or email"]],
           execute: &show_user/1
         ],
@@ -38,7 +41,8 @@ defmodule AdoCli.CLI.Users do
             email: [type: :string, required: true, doc: "User email address", doc_arg: "EMAIL"],
             license: [
               type: :string,
-              doc: "License type (express, professional, stakeholder)",
+              doc:
+                "Access level: express (Basic, 5 free users), professional (Basic, paid), stakeholder (free, limited). Default: express.",
               doc_arg: "LICENSE"
             ]
           ],
@@ -46,7 +50,8 @@ defmodule AdoCli.CLI.Users do
         ],
         remove: [
           name: "ado users remove",
-          doc: "Remove a user from the organization.",
+          doc:
+            "Remove a user from the organization entirely. Revokes all licenses and memberships. The user is immediately blocked from accessing any project. Requires confirmation unless --force.",
           arguments: [user_id: [type: :string, doc: "User ID or email"]],
           execute: &remove_user/1
         ]

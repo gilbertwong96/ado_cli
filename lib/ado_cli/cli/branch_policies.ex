@@ -12,31 +12,42 @@ defmodule AdoCli.CLI.BranchPolicies do
   def command do
     [
       name: "ado repos policies",
-      doc: "Manage branch policies (pull request, build, status, etc.).",
+      doc:
+        "Manage branch policies that gate pull requests (build validation, required reviewers, status checks, etc.). A policy is a configuration object scoped to a specific branch and repository.",
       subcommands: [
         list: [
           name: "ado repos policies list",
-          doc: "List branch policies in a repository.",
+          doc:
+            "List branch policies in a repository as a table (ID, Type, Branch, Blocking, Enabled). Use --branch to filter to a single branch (e.g. main). Pass --json for the raw array.",
           arguments: [
             project: [type: :string, doc: "Project name or ID"],
             repo_id: [type: :string, doc: "Repository name or ID"]
           ],
-          options: [branch: [type: :string, doc: "Filter by branch name", doc_arg: "BRANCH"]],
+          options: [
+            branch: [
+              type: :string,
+              doc:
+                "Filter by branch name. Pass the full ref like 'refs/heads/main', or just 'main' (substring match)",
+              doc_arg: "BRANCH"
+            ]
+          ],
           execute: &list_policies/1
         ],
         show: [
           name: "ado repos policies show",
-          doc: "Show details of a policy.",
+          doc:
+            "Show details of a single policy (ID, type, branch, repo, blocking, enabled, created date). Use `list` first to discover the policy ID.",
           arguments: [
             project: [type: :string, doc: "Project name or ID"],
             repo_id: [type: :string, doc: "Repository name or ID"],
-            policy_id: [type: :integer, doc: "Policy configuration ID"]
+            policy_id: [type: :integer, doc: "Numeric policy configuration ID (from `list`)"]
           ],
           execute: &show_policy/1
         ],
         create: [
           name: "ado repos policies create",
-          doc: "Create a branch policy.",
+          doc:
+            "Create a new branch policy. The policy type is identified by a UUID; common ones are: fa4e907d-c16b-4a4c-9dfa-4906e5d171dd (Build validation), fd2167ab-9d2a-4d8b-b2c9-1cdfbb6d4c34 (Required reviewers), 0609b952-1397-4640-95ec-e121a052fb4b (Status check).",
           arguments: [
             project: [type: :string, doc: "Project name or ID"],
             repo_id: [type: :string, doc: "Repository name or ID"]
@@ -45,40 +56,55 @@ defmodule AdoCli.CLI.BranchPolicies do
             type: [
               type: :string,
               required: true,
-              doc: "Policy type id (UUID)",
+              doc:
+                "Policy type UUID. Find these in the Azure DevOps UI under Project Settings > Repos > Policies > any policy > URL contains 'policyType='.",
               doc_arg: "TYPE_ID"
             ],
             branch: [
               type: :string,
               required: true,
-              doc: "Target branch (e.g. refs/heads/main)",
+              doc:
+                "Target branch as a ref (e.g. 'refs/heads/main', 'refs/heads/feature/*' for wildcards)",
               doc_arg: "BRANCH"
             ],
-            blocking: [type: :boolean, default: true, doc: "Block pull request on policy failure"]
+            blocking: [
+              type: :boolean,
+              default: true,
+              doc:
+                "When true (default), PRs cannot be completed until the policy passes. When false, the policy is informational only."
+            ]
           ],
           execute: &create_policy/1
         ],
         update: [
           name: "ado repos policies update",
-          doc: "Update a branch policy.",
+          doc:
+            "Modify an existing policy's blocking flag or enabled state. The policy type and scope are preserved from the existing policy.",
           arguments: [
             project: [type: :string, doc: "Project name or ID"],
             repo_id: [type: :string, doc: "Repository name or ID"],
-            policy_id: [type: :integer, doc: "Policy configuration ID"]
+            policy_id: [type: :integer, doc: "Numeric policy configuration ID"]
           ],
           options: [
-            blocking: [type: :boolean, doc: "Block pull request on policy failure"],
-            enabled: [type: :boolean, doc: "Enable or disable the policy"]
+            blocking: [
+              type: :boolean,
+              doc: "Set whether the policy blocks PR completion. Omit to keep current value."
+            ],
+            enabled: [
+              type: :boolean,
+              doc: "Set whether the policy is active. Omit to keep current value."
+            ]
           ],
           execute: &update_policy/1
         ],
         delete: [
           name: "ado repos policies delete",
-          doc: "Delete a branch policy.",
+          doc:
+            "Permanently remove a branch policy. The policy is removed from all branches it was scoped to (usually just one).",
           arguments: [
             project: [type: :string, doc: "Project name or ID"],
             repo_id: [type: :string, doc: "Repository name or ID"],
-            policy_id: [type: :integer, doc: "Policy configuration ID"]
+            policy_id: [type: :integer, doc: "Numeric policy configuration ID"]
           ],
           execute: &delete_policy/1
         ]

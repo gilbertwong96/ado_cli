@@ -20,26 +20,31 @@ defmodule AdoCli.CLI.AuthCommands do
   def command do
     [
       name: "ado login",
-      doc: "Authenticate with Azure DevOps.",
+      doc:
+        "Authenticate with Azure DevOps. Default (no --method) opens your browser for interactive OAuth sign-in. For CI or headless environments, use --method pat with a Personal Access Token. Use --method device to print a code+URL for signing in on any device. After login, credentials are stored in ~/.ado_cli/config.json with 0600 permissions.",
       options: [
         method: [
           type: :string,
-          doc: "Auth method: browser (default), pat, device",
+          doc:
+            "Auth method. Valid: browser (default — interactive OAuth, supports AAD and MSA orgs), pat (Personal Access Token; required for CI), device (device code flow; visit URL on any device).",
           doc_arg: "METHOD"
         ],
         org: [
           type: :string,
-          doc: "Azure DevOps organization / collection name",
+          doc:
+            "Azure DevOps organization name. Optional for browser/device login (the org is auto-detected from the token). Required for PAT login. Can also be set via ADO_ORG env var.",
           doc_arg: "ORG"
         ],
         server: [
           type: :string,
-          doc: "Server URL for self-hosted Azure DevOps Server",
+          doc:
+            "Server URL for self-hosted Azure DevOps Server (e.g. https://ado.example.com). Cloud users can omit this. Can also be set via ADO_SERVER env var.",
           doc_arg: "URL"
         ],
         pat: [
           type: :string,
-          doc: "Personal Access Token (for method=pat)",
+          doc:
+            "Personal Access Token. Only used with --method pat. Generate at https://dev.azure.com/{org}/_usersSettings/tokens. Required scopes depend on usage: vso.work (work items), vso.code (repos, PRs), vso.project (projects/teams), vso.build (pipelines), vso.release (releases). Use 'Full access' for broadest coverage.",
           doc_arg: "TOKEN"
         ]
       ],

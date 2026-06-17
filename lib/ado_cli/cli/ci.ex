@@ -33,44 +33,52 @@ defmodule AdoCli.CLI.CI do
   def command do
     [
       name: "ado ci",
-      doc: "Watch Azure DevOps pipelines in real-time.",
+      doc:
+        "Watch Azure DevOps pipelines in real-time. Streams live build status (job/step progress) and per-line log output to your terminal, like `gh run watch` or `kubectl logs -f`. Exits when the build completes or on Ctrl+C.",
       subcommands: [
         watch: [
           name: "ado ci watch",
-          doc: "Stream live status and log output for an Azure DevOps build.",
+          doc:
+            "Stream live status and per-line log output for an Azure DevOps build. The build status is polled every 2s (configurable via --poll-interval), and new log lines are printed as they appear. Exits with code 0 on success, 1 on build failure, 2 on cancellation.",
           arguments: [
             project: [type: :string, doc: "Project name or ID"],
             build_id: [
               type: :integer,
               required: false,
-              doc: "Build ID to watch (use --latest to pick the latest run)"
+              doc:
+                "Numeric build ID to watch. If omitted, you must pass --latest (optionally with --definition and --branch) to auto-pick the most recent build."
             ]
           ],
           options: [
             org: [
               type: :string,
-              doc: "Organization (defaults to $ADO_ORG or config)",
+              doc:
+                "Organization name. Falls back to $ADO_ORG env var, then to the value saved by `ado login`.",
               doc_arg: "ORG"
             ],
             latest: [
               type: :boolean,
               default: false,
-              doc: "Watch the latest build for the project (or for --definition)"
+              doc:
+                "Watch the most recent build instead of a specific ID. Combine with --definition and --branch to filter. Useful in CI scripts to follow the build that just started."
             ],
             definition: [
               type: :integer,
-              doc: "When using --latest, pick the latest build of this pipeline",
+              doc:
+                "With --latest, restrict to this pipeline definition ID. Without --latest, ignored.",
               doc_arg: "ID"
             ],
             branch: [
               type: :string,
-              doc: "When using --latest, restrict to this branch (e.g. refs/heads/main)",
+              doc:
+                "With --latest, restrict to this branch as a full ref (e.g. 'refs/heads/main'). Without --latest, ignored.",
               doc_arg: "REF"
             ],
             "poll-interval": [
               type: :integer,
               default: 2000,
-              doc: "How often to poll (milliseconds)",
+              doc:
+                "How often to poll the build status, in milliseconds. Default 2000 (2s). Values below 250 are clamped to 2000. Lower values update faster but use more API quota.",
               doc_arg: "MS"
             ]
           ],

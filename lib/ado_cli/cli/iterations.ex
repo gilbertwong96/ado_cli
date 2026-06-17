@@ -18,64 +18,95 @@ defmodule AdoCli.CLI.Iterations do
   def command do
     [
       name: "ado iterations",
-      doc: "Manage Azure DevOps iterations (sprints).",
+      doc:
+        "Manage Azure DevOps iterations (sprints). Iterations are time-boxed containers for work items used in Scrum-like workflows. They belong to a specific team (a project can have multiple teams with different sprint cadences).",
       subcommands: [
         list: [
           name: "ado iterations list",
-          doc: "List iterations for a team.",
+          doc:
+            "List all iterations (sprints) for a team. Output is a table (ID, Name, Start, Finish). Use --current to show only the active sprint.",
           arguments: [
             project: [type: :string, doc: "Project name or ID"],
-            team: [type: :string, doc: "Team name or ID"]
+            team: [
+              type: :string,
+              doc:
+                "Team name or ID. Iterations are team-scoped — each team can have different sprint cadences."
+            ]
           ],
-          options: [current: [type: :boolean, default: false, doc: "Only show current iteration"]],
+          options: [
+            current: [
+              type: :boolean,
+              default: false,
+              doc:
+                "If true, only return the iteration that is currently in-progress (matches today's date)."
+            ]
+          ],
           execute: &list_iterations/1
         ],
         show: [
           name: "ado iterations show",
-          doc: "Show details of an iteration.",
+          doc:
+            "Show details of a single iteration: ID, name, full path, start date, finish date.",
           arguments: [
             project: [type: :string, doc: "Project name or ID"],
             team: [type: :string, doc: "Team name or ID"],
-            iteration_id: [type: :string, doc: "Iteration ID"]
+            iteration_id: [type: :string, doc: "Iteration identifier (UUID)"]
           ],
           execute: &show_iteration/1
         ],
         create: [
           name: "ado iterations create",
-          doc: "Create a new iteration.",
+          doc:
+            "Create a new iteration (sprint) for a team. Without --start-date and --finish-date, the iteration has no time bounds (acts as a backlog bucket).",
           arguments: [
             project: [type: :string, doc: "Project name or ID"],
             team: [type: :string, doc: "Team name or ID"]
           ],
           options: [
-            name: [type: :string, required: true, doc: "Iteration name", doc_arg: "NAME"],
-            start_date: [type: :string, doc: "Start date (YYYY-MM-DD)", doc_arg: "DATE"],
-            finish_date: [type: :string, doc: "Finish date (YYYY-MM-DD)", doc_arg: "DATE"]
+            name: [
+              type: :string,
+              required: true,
+              doc: "Iteration name (e.g. 'Sprint 23', 'Q1 2026')",
+              doc_arg: "NAME"
+            ],
+            start_date: [
+              type: :string,
+              doc: "Sprint start date in ISO 8601 (YYYY-MM-DD, e.g. '2026-01-15')",
+              doc_arg: "DATE"
+            ],
+            finish_date: [
+              type: :string,
+              doc:
+                "Sprint end date in ISO 8601 (YYYY-MM-DD, e.g. '2026-01-29'). Should be after start_date.",
+              doc_arg: "DATE"
+            ]
           ],
           execute: &create_iteration/1
         ],
         update: [
           name: "ado iterations update",
-          doc: "Update an iteration.",
+          doc:
+            "Modify an existing iteration's name, start date, or finish date. Pass at least one option. Existing work-item assignments are preserved when the dates change.",
           arguments: [
             project: [type: :string, doc: "Project name or ID"],
             team: [type: :string, doc: "Team name or ID"],
-            iteration_id: [type: :string, doc: "Iteration ID"]
+            iteration_id: [type: :string, doc: "Iteration identifier (UUID)"]
           ],
           options: [
-            name: [type: :string, doc: "New name", doc_arg: "NAME"],
-            start_date: [type: :string, doc: "New start date", doc_arg: "DATE"],
-            finish_date: [type: :string, doc: "New finish date", doc_arg: "DATE"]
+            name: [type: :string, doc: "New iteration name", doc_arg: "NAME"],
+            start_date: [type: :string, doc: "New start date (YYYY-MM-DD)", doc_arg: "DATE"],
+            finish_date: [type: :string, doc: "New finish date (YYYY-MM-DD)", doc_arg: "DATE"]
           ],
           execute: &update_iteration/1
         ],
         delete: [
           name: "ado iterations delete",
-          doc: "Delete an iteration.",
+          doc:
+            "Delete an iteration. Fails if there are work items still assigned to it; reassign them to a different iteration first (use `ado workitems update --iteration`).",
           arguments: [
             project: [type: :string, doc: "Project name or ID"],
             team: [type: :string, doc: "Team name or ID"],
-            iteration_id: [type: :string, doc: "Iteration ID"]
+            iteration_id: [type: :string, doc: "Iteration identifier (UUID)"]
           ],
           execute: &delete_iteration/1
         ]

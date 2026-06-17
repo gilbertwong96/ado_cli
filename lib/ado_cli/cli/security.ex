@@ -18,21 +18,25 @@ defmodule AdoCli.CLI.Security do
   def command do
     [
       name: "ado security",
-      doc: "Manage security groups and permissions.",
+      doc:
+        "Manage Azure DevOps security groups and access control lists (ACLs). Groups control who has access; permissions control what they can do. Requires Project Administrator permissions.",
       subcommands: [
         groups: [
           name: "ado security groups",
-          doc: "Manage security groups.",
+          doc:
+            "Create, list, show, and delete security groups. Groups are collections of users and nested groups. Use members subcommand to add/remove members.",
           subcommands: [
             list: [
               name: "ado security groups list",
-              doc: "List security groups in a project.",
+              doc:
+                "List all security groups in a project. Output is a table (Name, Descriptor). Includes built-in groups (Readers, Contributors, Build Administrators) and custom groups. Use --json for raw data.",
               arguments: [project: [type: :string, doc: "Project name or ID"]],
               execute: &list_groups/1
             ],
             show: [
               name: "ado security groups show",
-              doc: "Show details of a security group.",
+              doc:
+                "Show a single security group: name, descriptor, and domain. The descriptor is the canonical identifier used by permissions APIs.",
               arguments: [
                 project: [type: :string, doc: "Project name or ID"],
                 group_id: [type: :string, doc: "Group ID"]
@@ -41,17 +45,29 @@ defmodule AdoCli.CLI.Security do
             ],
             create: [
               name: "ado security groups create",
-              doc: "Create a security group.",
+              doc:
+                "Create a new project-scoped security group. Returns the group descriptor, which you use for membership and permission operations. Groups are visible in the web UI under Project Settings > Permissions.",
               arguments: [project: [type: :string, doc: "Project name or ID"]],
               options: [
-                name: [type: :string, required: true, doc: "Group name", doc_arg: "NAME"],
-                description: [type: :string, doc: "Group description", doc_arg: "DESC"]
+                name: [
+                  type: :string,
+                  required: true,
+                  doc:
+                    "Display name for the group. Must be unique within the project. Use descriptive names like Release Managers or Code Reviewers.",
+                  doc_arg: "NAME"
+                ],
+                description: [
+                  type: :string,
+                  doc: "Optional description shown in the group list and settings.",
+                  doc_arg: "DESC"
+                ]
               ],
               execute: &create_group/1
             ],
             delete: [
               name: "ado security groups delete",
-              doc: "Delete a security group.",
+              doc:
+                "Permanently delete a security group. Members are not removed from the org, just the group is deleted. Requires confirmation.",
               arguments: [
                 project: [type: :string, doc: "Project name or ID"],
                 group_id: [type: :string, doc: "Group ID"]
@@ -60,7 +76,7 @@ defmodule AdoCli.CLI.Security do
             ],
             members: [
               name: "ado security groups members",
-              doc: "Manage group memberships.",
+              doc: "Manage group memberships (who is in a security group).",
               subcommands: [
                 list: [
                   name: "ado security groups members list",
@@ -77,18 +93,34 @@ defmodule AdoCli.CLI.Security do
         ],
         permissions: [
           name: "ado security permissions",
-          doc: "Manage access control permissions.",
+          doc:
+            "List permissions (ACL entries) for a security namespace. Permissions map identity descriptors to granted/denied permission bits. Editing ACLs is advanced; prefer the web UI.",
           subcommands: [
             list: [
               name: "ado security permissions list",
-              doc: "List permissions for a namespace.",
-              arguments: [namespace_id: [type: :string, doc: "Security namespace ID"]],
-              options: [token: [type: :string, doc: "Security token to filter", doc_arg: "TOKEN"]],
+              doc:
+                "Show all ACL entries for a given namespace and optional token. Output is a table (Identity descriptor, Allow bits, Deny bits). Use --token to scope to a specific resource (e.g. a repo).",
+              arguments: [
+                namespace_id: [
+                  type: :string,
+                  doc:
+                    "Security namespace GUID. Find these with the namespaces command. Common: Git Repositories namespace."
+                ]
+              ],
+              options: [
+                token: [
+                  type: :string,
+                  doc:
+                    "Resource-specific path for the ACL. For repo permissions: repoV2/<projectId>/<repoId>. Omit to list namespace-level permissions.",
+                  doc_arg: "TOKEN"
+                ]
+              ],
               execute: &list_permissions/1
             ],
             namespaces: [
               name: "ado security permissions namespaces",
-              doc: "List available security namespaces.",
+              doc:
+                "List all security namespaces in the organization (e.g. Git Repositories, Build, Release, Analytics). Each namespace has a GUID; use it with permissions list.",
               execute: &list_namespaces/1
             ]
           ]

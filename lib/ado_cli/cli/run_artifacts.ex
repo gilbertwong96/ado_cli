@@ -11,29 +11,44 @@ defmodule AdoCli.CLI.RunArtifacts do
   def command do
     [
       name: "ado pipelines artifacts",
-      doc: "Manage pipeline run artifacts (upload, list, download).",
+      doc:
+        "Manage pipeline run artifacts. Artifacts are files produced by a pipeline run (build outputs, test results, coverage reports, logs) that downstream pipelines or release definitions can consume.",
       subcommands: [
         list: [
           name: "ado pipelines artifacts list",
-          doc: "List artifacts for a pipeline run.",
+          doc:
+            "List all artifacts produced by a single pipeline run. Output is a table (Name, Size in bytes). Use this to discover artifact names before downloading.",
           arguments: [
             project: [type: :string, doc: "Project name or ID"],
-            pipeline_id: [type: :integer, doc: "Pipeline definition ID"],
-            run_id: [type: :integer, doc: "Run ID"]
+            pipeline_id: [type: :integer, doc: "Numeric pipeline definition ID"],
+            run_id: [
+              type: :integer,
+              doc:
+                "Numeric run ID (from `ci watch` output, the build number, or `pipelines runs` if available)"
+            ]
           ],
           execute: &list_artifacts/1
         ],
         download: [
           name: "ado pipelines artifacts download",
-          doc: "Download an artifact.",
+          doc:
+            "Download a single artifact to a local file. By default saves to './<artifact-name>.zip' in the current directory; pass --output to choose a different path. Useful for retrieving build outputs for inspection or local testing.",
           arguments: [
             project: [type: :string, doc: "Project name or ID"],
-            pipeline_id: [type: :integer, doc: "Pipeline definition ID"],
-            run_id: [type: :integer, doc: "Run ID"],
-            artifact_name: [type: :string, doc: "Artifact name"]
+            pipeline_id: [type: :integer, doc: "Numeric pipeline definition ID"],
+            run_id: [type: :integer, doc: "Numeric run ID"],
+            artifact_name: [
+              type: :string,
+              doc: "Exact artifact name (from `list`). Names are case-sensitive."
+            ]
           ],
           options: [
-            output: [type: :string, doc: "Output file path", doc_arg: "PATH"]
+            output: [
+              type: :string,
+              doc:
+                "Local file path to write to. Default: ./<artifact-name>.zip in the current directory. Parent directories are NOT auto-created.",
+              doc_arg: "PATH"
+            ]
           ],
           execute: &download_artifact/1
         ]

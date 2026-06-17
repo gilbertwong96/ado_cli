@@ -19,18 +19,21 @@ defmodule AdoCli.CLI.Teams do
   def command do
     [
       name: "ado teams",
-      doc: "Manage Azure DevOps teams.",
+      doc:
+        "Manage Azure DevOps teams (groups of members with shared area paths and iterations). Teams are the unit for sprint planning and work item assignment.",
       subcommands: [
         list: [
           name: "ado teams list",
-          doc: "List teams in a project.",
+          doc:
+            "List all teams in a project. Output is a table (ID, Name, Description). Use --top to limit.",
           arguments: [project: [type: :string, doc: "Project name or ID"]],
           options: [top: [type: :integer, doc: "Maximum number to return", doc_arg: "N"]],
           execute: &list_teams/1
         ],
         show: [
           name: "ado teams show",
-          doc: "Show details of a team.",
+          doc:
+            "Show a single team: ID, name, description, identity URL, and project context. Accepts name or GUID.",
           arguments: [
             project: [type: :string, doc: "Project name or ID"],
             team_id: [type: :string, doc: "Team name or ID"]
@@ -39,7 +42,8 @@ defmodule AdoCli.CLI.Teams do
         ],
         create: [
           name: "ado teams create",
-          doc: "Create a new team.",
+          doc:
+            "Create a new team in a project. The team inherits the project default area path and iteration. Members are added separately with the members subcommand.",
           arguments: [project: [type: :string, doc: "Project name or ID"]],
           options: [
             name: [type: :string, required: true, doc: "Team name", doc_arg: "NAME"],
@@ -62,7 +66,8 @@ defmodule AdoCli.CLI.Teams do
         ],
         delete: [
           name: "ado teams delete",
-          doc: "Delete a team.",
+          doc:
+            "Delete a team. Members are not removed from the org; just the team container is deleted.",
           arguments: [
             project: [type: :string, doc: "Project name or ID"],
             team_id: [type: :string, doc: "Team name or ID"]
@@ -71,11 +76,13 @@ defmodule AdoCli.CLI.Teams do
         ],
         members: [
           name: "ado teams members",
-          doc: "Manage team memberships.",
+          doc:
+            "Add/remove users to/from a team. Team membership is separate from project membership; users must be in the project first.",
           subcommands: [
             list: [
               name: "ado teams members list",
-              doc: "List members of a team.",
+              doc:
+                "List all members of a team. Output shows display name, unique name (email), and member ID.",
               arguments: [
                 project: [type: :string, doc: "Project name or ID"],
                 team_id: [type: :string, doc: "Team name or ID"]

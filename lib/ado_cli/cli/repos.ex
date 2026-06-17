@@ -20,37 +20,54 @@ defmodule AdoCli.CLI.Repos do
   def command do
     [
       name: "ado repos",
-      doc: "Manage Azure DevOps Git repositories.",
+      doc:
+        "Manage Azure DevOps Git repositories. A repository holds source code, branches, commits, tags, and pull requests. The CLI manages metadata and refs; clone/push/commit is left to the `git` command itself.",
       subcommands: [
         list: [
           name: "ado repos list",
-          doc: "List repositories in a project.",
+          doc:
+            "List all Git repositories in a project. Output is a table (ID, Name, Default Branch). Pass --include-links to also see web URLs. Pass --json for raw data.",
           arguments: [project: [type: :string, doc: "Project name or ID"]],
           options: [
-            include_links: [type: :boolean, default: false, doc: "Include reference links"]
+            include_links: [
+              type: :boolean,
+              default: false,
+              doc:
+                "Include reference links (web, ssh, remote URLs) in the output. Adds 3 columns to the table."
+            ]
           ],
           execute: &list_repos/1
         ],
         show: [
           name: "ado repos show",
-          doc: "Show details of a specific repository.",
+          doc:
+            "Show details of a specific repository: ID, name, default branch, size in bytes, project, and URLs (SSH + web). Use the repo name (not the GUID) as the argument.",
           arguments: [
             project: [type: :string, doc: "Project name or ID"],
-            repo_id: [type: :string, doc: "Repository name or ID"]
+            repo_id: [
+              type: :string,
+              doc: "Repository name (preferred) or GUID. Names are case-sensitive in the URL."
+            ]
           ],
           execute: &show_repo/1
         ],
         create: [
           name: "ado repos create",
-          doc: "Create a new Git repository.",
+          doc:
+            "Create a new empty Git repository. The repo is uninitialized (no commits) until you push to it. The default branch is created on first push.",
           arguments: [
             project: [type: :string, doc: "Project name or ID"],
-            name: [type: :string, doc: "Repository name"]
+            name: [
+              type: :string,
+              doc:
+                "Repository name. Must be unique within the project, 1-64 chars. Allowed: alphanumerics, hyphens, underscores, periods; no spaces."
+            ]
           ],
           options: [
             default_branch: [
               type: :string,
-              doc: "Default branch name (default: main)",
+              doc:
+                "Default branch NAME (short form, e.g. 'main' or 'master'). The 'refs/heads/' prefix is added automatically. Default: 'main'. The branch is NOT created until the first push — the setting is applied when the first commit lands on it.",
               doc_arg: "BRANCH"
             ]
           ],
@@ -58,23 +75,36 @@ defmodule AdoCli.CLI.Repos do
         ],
         delete: [
           name: "ado repos delete",
-          doc: "Delete a repository.",
+          doc:
+            "Permanently delete a repository. IRREVERSIBLE: all commits, branches, tags, PRs, and policies are erased. Use --force in scripts to skip the interactive confirmation prompt.",
           arguments: [
             project: [type: :string, doc: "Project name or ID"],
-            repo_id: [type: :string, doc: "Repository name or ID"]
+            repo_id: [type: :string, doc: "Repository name or GUID"]
           ],
-          options: [force: [type: :boolean, default: false, doc: "Skip confirmation"]],
+          options: [
+            force: [
+              type: :boolean,
+              default: false,
+              doc: "Skip the interactive confirmation prompt (use in scripts/CI)."
+            ]
+          ],
           execute: &delete_repo/1
         ],
         branches: [
           name: "ado repos branches",
-          doc: "List branches in a repository.",
+          doc:
+            "List branches in a repository. Output is a table (Name, Object ID / commit SHA). Use --filter to limit to branches whose names start with a substring (e.g. --filter feature).",
           arguments: [
             project: [type: :string, doc: "Project name or ID"],
-            repo_id: [type: :string, doc: "Repository name or ID"]
+            repo_id: [type: :string, doc: "Repository name or GUID"]
           ],
           options: [
-            filter: [type: :string, doc: "Filter branches by name pattern", doc_arg: "PATTERN"]
+            filter: [
+              type: :string,
+              doc:
+                "Substring to match against branch names. Default 'heads/' (all branches). Use 'feature' to match 'refs/heads/feature/*', 'users/alice/' for personal branches.",
+              doc_arg: "PATTERN"
+            ]
           ],
           execute: &list_branches/1
         ]

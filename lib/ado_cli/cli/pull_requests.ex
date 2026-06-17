@@ -54,11 +54,13 @@ defmodule AdoCli.CLI.PullRequests do
   def command do
     [
       name: "ado prs",
-      doc: "Manage Azure DevOps pull requests.",
+      doc:
+        "Manage Azure DevOps pull requests (PRs). A PR is a request to merge code from one branch (source) into another (target), with required reviewers, policies, and discussion threads.",
       subcommands: [
         list: [
           name: "ado prs list",
-          doc: "List pull requests in a repository.",
+          doc:
+            "List pull requests in a repository. Output is a table (ID, Title, Status, Source, Target, Creator). Use --status to filter (default: active). Pass --json for raw data.",
           arguments: [
             project: [type: :string, doc: "Project name or ID"],
             repo_id: [type: :string, doc: "Repository name or ID"]
@@ -66,69 +68,97 @@ defmodule AdoCli.CLI.PullRequests do
           options: [
             status: [
               type: :string,
-              doc: "Filter by status (active, completed, abandoned, all)",
+              doc:
+                "PR status filter. Valid: active (open, default — includes drafts), completed (merged or closed), abandoned (closed without merging), all (every status). For active PRs only, omit this flag.",
               doc_arg: "STATUS"
             ],
             creator: [
               type: :string,
-              doc: "Filter by creator email or display name",
+              doc:
+                "Filter by creator's email or display name (substring match, case-insensitive). Use the exact email for a single user.",
               doc_arg: "USER"
             ],
-            top: [type: :integer, doc: "Maximum number to return", doc_arg: "N"]
+            top: [
+              type: :integer,
+              doc: "Maximum number of PRs to return. Default 50, max 1000.",
+              doc_arg: "N"
+            ]
           ],
           execute: &list_prs/1
         ],
         show: [
           name: "ado prs show",
-          doc: "Show details of a specific pull request.",
+          doc:
+            "Show full details of a single pull request: title, description, source/target branches, creator, status, reviewers, labels, policies, merge status, and links. Pass --json for the raw API response (best for scripting).",
           arguments: [
             project: [type: :string, doc: "Project name or ID"],
             repo_id: [type: :string, doc: "Repository name or ID"],
-            pr_id: [type: :integer, doc: "Pull request ID"]
+            pr_id: [type: :integer, doc: "Numeric pull request ID"]
           ],
           execute: &show_pr/1
         ],
         create: [
           name: "ado prs create",
-          doc: "Create a new pull request.",
+          doc:
+            "Create a new pull request. The source and target branches must exist; the source must be different from the target. Returns the new PR ID and web URL.",
           arguments: [
             project: [type: :string, doc: "Project name or ID"],
             repo_id: [type: :string, doc: "Repository name or ID"]
           ],
           options: [
-            title: [type: :string, doc: "Pull request title", doc_arg: "TITLE"],
-            description: [type: :string, doc: "Pull request description", doc_arg: "DESC"],
+            title: [
+              type: :string,
+              doc:
+                "PR title (required). Shown in the PR list and as the merge commit subject (depending on merge strategy). Multi-word values do not need quoting.",
+              doc_arg: "TITLE"
+            ],
+            description: [
+              type: :string,
+              doc:
+                "PR description (markdown supported). Shown in the PR overview. Multi-word values do not need quoting.",
+              doc_arg: "DESC"
+            ],
             source: [
               type: :string,
-              doc: "Source branch name (e.g. refs/heads/feature)",
+              doc:
+                "Source branch as a full ref (e.g. 'refs/heads/feature/my-branch'). Use the short name ('my-branch') — 'refs/heads/' is added automatically.",
               doc_arg: "BRANCH"
             ],
             target: [
               type: :string,
-              doc: "Target branch name (e.g. refs/heads/main)",
+              doc:
+                "Target branch as a full ref (e.g. 'refs/heads/main') or short name ('main'). Default: the repo's default branch (usually 'main' or 'master').",
               doc_arg: "BRANCH"
             ],
-            draft: [type: :boolean, default: false, doc: "Create as draft PR"]
+            draft: [
+              type: :boolean,
+              default: false,
+              doc:
+                "Create as a draft PR. Drafts are visible in lists but cannot be completed (merged) until you click 'Ready for review' in the UI."
+            ]
           ],
           execute: &create_pr/1
         ],
         complete: [
           name: "ado prs complete",
-          doc: "Complete (merge) a pull request.",
+          doc:
+            "Complete (merge) a pull request. Fails if any required policies haven't passed (builds, required reviewers, branch policies). The merge is non-atomic: the API may return success but the actual merge can take seconds to minutes.",
           arguments: [
             project: [type: :string, doc: "Project name or ID"],
             repo_id: [type: :string, doc: "Repository name or ID"],
-            pr_id: [type: :integer, doc: "Pull request ID"]
+            pr_id: [type: :integer, doc: "Numeric PR ID"]
           ],
           options: [
             delete_source: [
               type: :boolean,
               default: false,
-              doc: "Delete source branch after merge"
+              doc:
+                "Delete the source branch after the merge succeeds. Useful for keeping the repo clean; if the merge fails, the branch is not deleted."
             ],
             merge_strategy: [
               type: :string,
-              doc: "Merge strategy (squash, rebase, noFastForward)",
+              doc:
+                "Merge strategy. Valid: 'squash' (combine all commits into one on target, default for most repos), 'rebase' (replay commits without merge), 'noFastForward' (preserve all commits with a merge commit). The strategy must be enabled in the repo's branch policies.",
               doc_arg: "STRATEGY"
             ]
           ],
@@ -136,28 +166,30 @@ defmodule AdoCli.CLI.PullRequests do
         ],
         approve: [
           name: "ado prs approve",
-          doc: "Approve a pull request (vote +10).",
+          doc:
+            "Approve a pull request (records a +10 vote on your behalf). If you're not already a reviewer, the API auto-adds you as one. The approval counts toward branch policies that require N approvals.",
           arguments: [
             project: [type: :string, doc: "Project name or ID"],
             repo_id: [type: :string, doc: "Repository name or ID"],
-            pr_id: [type: :integer, doc: "Pull request ID"]
+            pr_id: [type: :integer, doc: "Numeric PR ID"]
           ],
           execute: &approve_pr/1
         ],
         vote: [
           name: "ado prs vote",
-          doc: "Vote on a pull request.",
+          doc:
+            "Record a vote on a pull request with a specific value. Use `ado prs approve` as a shortcut for +10. To change or remove your vote, simply vote again with the new value.",
           arguments: [
             project: [type: :string, doc: "Project name or ID"],
             repo_id: [type: :string, doc: "Repository name or ID"],
-            pr_id: [type: :integer, doc: "Pull request ID"]
+            pr_id: [type: :integer, doc: "Numeric PR ID"]
           ],
           options: [
             vote: [
               type: :integer,
               required: true,
               doc:
-                "Vote: 10 (approve), 5 (approve with suggestions), 0 (reset), -5 (wait), -10 (reject)",
+                "Vote value. Valid: 10 (approve), 5 (approve with suggestions, still allows merge), 0 (reset/withdraw your vote), -5 (wait for author, blocks merge), -10 (reject, blocks merge).",
               doc_arg: "VOTE"
             ]
           ],
@@ -165,64 +197,76 @@ defmodule AdoCli.CLI.PullRequests do
         ],
         abandon: [
           name: "ado prs abandon",
-          doc: "Abandon a pull request.",
+          doc:
+            "Abandon a pull request (close without merging). The PR stays in the list with status 'abandoned'; the source branch is preserved. The action is reversible in the web UI but not from the CLI.",
           arguments: [
             project: [type: :string, doc: "Project name or ID"],
             repo_id: [type: :string, doc: "Repository name or ID"],
-            pr_id: [type: :integer, doc: "Pull request ID"]
+            pr_id: [type: :integer, doc: "Numeric PR ID"]
           ],
           execute: &abandon_pr/1
         ],
         diff: [
           name: "ado prs diff",
           doc:
-            "Show the diff for a pull request. " <>
-              "By default lists changed files (path, change type, +/- counts). " <>
-              "Pass --file to see the full unified diff for one path. " <>
-              "Pass --unified to emit a single unified diff stream (pipe to less/delta). " <>
-              "Pass --iteration to inspect an earlier iteration (default: latest).",
+            "Show the diff for a pull request in one of three modes. " <>
+              "Default: table of changed files (path, change type, +/- counts) — fast, no file content fetched. " <>
+              "--file PATH: full unified diff for one file (like `git diff <path>`). " <>
+              "--unified: single concatenated diff stream for all files (pipe to `less`, `delta`, `code --diff`). " <>
+              "--iteration N: inspect an earlier iteration (default: latest = N-1 for a non-draft PR).",
           arguments: [
             project: [type: :string, doc: "Project name or ID"],
             repo_id: [type: :string, doc: "Repository name or ID"],
-            pr_id: [type: :integer, doc: "Pull request ID"]
+            pr_id: [type: :integer, doc: "Numeric PR ID"]
           ],
           options: [
             file: [
               type: :string,
-              doc: "Show the full diff for a single path (relative to repo root)",
+              doc:
+                "Show the full unified diff for a single path (relative to repo root, with or without leading slash). Must match a file in the default view's path column.",
               doc_arg: "PATH"
             ],
             iteration: [
               type: :integer,
-              doc: "Iteration number to inspect (default: latest)",
+              doc:
+                "Iteration number to inspect (default: latest). Iteration 1 is the first push, 2 is the first 'push' after a review, etc. Useful for reviewing earlier versions after force-pushes.",
               doc_arg: "N"
             ],
             unified: [
               type: :boolean,
               default: false,
-              doc: "Output a single unified diff stream for all files"
+              doc:
+                "Output a single concatenated unified diff stream for ALL changed files (like `git diff` on the whole PR). Pipe to a pager or syntax highlighter."
             ],
-            json: [type: :boolean, default: false, doc: "Output as JSON envelope"]
+            json: [
+              type: :boolean,
+              default: false,
+              doc:
+                "Output the change list as a JSON envelope. Ignored in --file and --unified modes."
+            ]
           ],
           execute: &diff_pr/1
         ],
         comments: [
           name: "ado prs comments",
-          doc: "Manage pull request review comments.",
+          doc:
+            "Manage pull request review comments (inline code comments, file-level comments, and discussion threads). A 'thread' is the top-level comment; a 'comment' is a reply within a thread.",
           subcommands: [
             list: [
               name: "ado prs comments list",
-              doc: "List review threads on a pull request.",
+              doc:
+                "List review threads on a pull request. Default output is a compact table of thread headers (ID, status, file, line, author). Use --all to expand each thread with full comment content, file paths, and reply markers.",
               arguments: [
                 project: [type: :string, doc: "Project name or ID"],
                 repo_id: [type: :string, doc: "Repository name or ID"],
-                pr_id: [type: :integer, doc: "Pull request ID"]
+                pr_id: [type: :integer, doc: "Numeric PR ID"]
               ],
               options: [
                 all: [
                   type: :boolean,
                   default: false,
-                  doc: "Show full comment content and file context (not just thread headers)"
+                  doc:
+                    "Show full comment content, file paths, and reply markers for each thread (verbose mode). Default shows just thread headers."
                 ]
               ],
               execute: &list_comments/1
@@ -230,15 +274,18 @@ defmodule AdoCli.CLI.PullRequests do
             update: [
               name: "ado prs comments update",
               doc:
-                "Update a comment or thread. Pass --content to edit a comment, " <>
+                "Update a comment or thread. Pass --content to edit a comment's text, " <>
                   "--status to change a thread's resolution state, or both. " <>
                   "--content supports @<file> and - (stdin) for multi-line input.",
               arguments: [
                 project: [type: :string, doc: "Project name or ID"],
                 repo_id: [type: :string, doc: "Repository name or ID"],
-                pr_id: [type: :integer, doc: "Pull request ID"],
-                thread_id: [type: :integer, doc: "Thread ID"],
-                comment_id: [type: :integer, doc: "Comment ID"]
+                pr_id: [type: :integer, doc: "Numeric PR ID"],
+                thread_id: [type: :integer, doc: "Thread ID (from `comments list`)"],
+                comment_id: [
+                  type: :integer,
+                  doc: "Comment ID within the thread (from `comments list --all`)"
+                ]
               ],
               options: [
                 content: [
@@ -253,7 +300,7 @@ defmodule AdoCli.CLI.PullRequests do
                 status: [
                   type: :string,
                   doc:
-                    "New thread status: active, fixed, wontFix, closed, byDesign. Omit to update content only.",
+                    "New thread status. Valid: active (default — open thread), fixed (resolved, hides from active view), wontFix (acknowledged but won't fix), closed (admin-closed), byDesign (working as intended). Omit to update content only.",
                   doc_arg: "STATUS"
                 ],
                 resolved_by_me: [
@@ -269,7 +316,7 @@ defmodule AdoCli.CLI.PullRequests do
                   default: false,
                   doc:
                     "Print the API request(s) that would be made (method, path, body) " <>
-                      "as JSON, then exit. Makes no network calls."
+                      "as JSON, then exit. Makes no network calls. Useful for previewing the patch before applying."
                 ],
                 json: [type: :boolean, default: false, doc: "Output as JSON envelope"]
               ],
@@ -279,18 +326,19 @@ defmodule AdoCli.CLI.PullRequests do
               name: "ado prs comments add",
               doc:
                 "Add a review comment to a pull request. " <>
-                  "By default creates a new thread; pass --thread-id to reply to an existing one.",
+                  "By default creates a new thread; pass --thread-id to reply to an existing one. " <>
+                  "For an inline code comment, also pass --file-path and --line.",
               arguments: [
                 project: [type: :string, doc: "Project name or ID"],
                 repo_id: [type: :string, doc: "Repository name or ID"],
-                pr_id: [type: :integer, doc: "Pull request ID"]
+                pr_id: [type: :integer, doc: "Numeric PR ID"]
               ],
               options: [
                 content: [
                   type: :string,
                   required: true,
                   doc:
-                    "Comment text (markdown allowed). Multi-word values do NOT " <>
+                    "Comment text (markdown supported in the web UI). Multi-word values do NOT " <>
                       "need quoting — all subsequent args are joined until the " <>
                       "next flag. Use @<file> to read from a file or `-` to read " <>
                       "from stdin.",
@@ -298,30 +346,34 @@ defmodule AdoCli.CLI.PullRequests do
                 ],
                 file_path: [
                   type: :string,
-                  doc: "File path for an inline comment (e.g. 'src/foo.ex')",
+                  doc:
+                    "File path for an inline comment (e.g. 'src/foo.ex'). Omit for a general PR comment (not attached to a file).",
                   doc_arg: "PATH"
                 ],
                 line: [
                   type: :integer,
-                  doc: "Line number for an inline comment (requires --file-path)",
+                  doc:
+                    "Line number for an inline comment. Must be a line in the diff (right side for new files, left for deleted). Requires --file-path.",
                   doc_arg: "N"
                 ],
                 thread_id: [
                   type: :integer,
-                  doc: "Reply to an existing thread (the comment is added to this thread)",
+                  doc:
+                    "Reply to an existing thread (the comment is added as a new reply). Without this flag, a NEW thread is created.",
                   doc_arg: "THREAD_ID"
                 ],
                 comment_id: [
                   type: :integer,
                   doc:
                     "Parent comment to reply to (requires --thread-id). " <>
-                      "Use 0 to start a new comment in the thread.",
+                      "Use 0 to start a new top-level comment in the thread (default behavior if --thread-id is set but --comment-id is not).",
                   doc_arg: "COMMENT_ID"
                 ],
                 status: [
                   type: :string,
                   default: "active",
-                  doc: "Thread status when creating: active, fixed, wontFix, closed, byDesign",
+                  doc:
+                    "Thread status when creating a new thread. Valid: active (default), fixed, wontFix, closed, byDesign.",
                   doc_arg: "STATUS"
                 ],
                 json: [type: :boolean, default: false, doc: "Output as JSON envelope"]
@@ -332,15 +384,17 @@ defmodule AdoCli.CLI.PullRequests do
         ],
         reviewers: [
           name: "ado prs reviewers",
-          doc: "Manage pull request reviewers.",
+          doc:
+            "Manage pull request reviewers. Reviewers receive notifications, can vote (approve/reject/wait), and count toward branch policies that require N approvals.",
           subcommands: [
             list: [
               name: "ado prs reviewers list",
-              doc: "List reviewers on a pull request.",
+              doc:
+                "List reviewers on a pull request. Output is a table (Display Name, Email, Vote, Status). Vote values: 10 (approved), 5 (approved w/ suggestions), -5 (waiting), -10 (rejected), 0 (no vote, or reset).",
               arguments: [
                 project: [type: :string, doc: "Project name or ID"],
                 repo_id: [type: :string, doc: "Repository name or ID"],
-                pr_id: [type: :integer, doc: "Pull request ID"]
+                pr_id: [type: :integer, doc: "Numeric PR ID"]
               ],
               options: [
                 json: [type: :boolean, default: false, doc: "Output as JSON envelope"]
@@ -349,23 +403,26 @@ defmodule AdoCli.CLI.PullRequests do
             ],
             add: [
               name: "ado prs reviewers add",
-              doc: "Add a reviewer to a pull request.",
+              doc:
+                "Add a reviewer to a pull request. The reviewer receives a notification email and shows up in the PR's reviewer list. The --reviewer value can be either a user GUID (most reliable) or an email address (resolved to a GUID by the API).",
               arguments: [
                 project: [type: :string, doc: "Project name or ID"],
                 repo_id: [type: :string, doc: "Repository name or ID"],
-                pr_id: [type: :integer, doc: "Pull request ID"]
+                pr_id: [type: :integer, doc: "Numeric PR ID"]
               ],
               options: [
                 reviewer: [
                   type: :string,
                   required: true,
-                  doc: "Reviewer email or user GUID",
+                  doc:
+                    "Reviewer identifier. Accepts a user GUID (preferred — e.g. from `ado users show alice@example.com`) or an email address. GUIDs are case-insensitive.",
                   doc_arg: "USER"
                 ],
                 required: [
                   type: :boolean,
                   default: false,
-                  doc: "Mark reviewer as required (default: optional)"
+                  doc:
+                    "Mark as a required reviewer (default: optional). The PR cannot be completed until all required reviewers have voted (vote != 0)."
                 ],
                 json: [type: :boolean, default: false, doc: "Output as JSON envelope"]
               ],
@@ -373,17 +430,19 @@ defmodule AdoCli.CLI.PullRequests do
             ],
             remove: [
               name: "ado prs reviewers remove",
-              doc: "Remove a reviewer from a pull request.",
+              doc:
+                "Remove a reviewer from a pull request. The user's vote is discarded. Does NOT notify the user (unlike adding).",
               arguments: [
                 project: [type: :string, doc: "Project name or ID"],
                 repo_id: [type: :string, doc: "Repository name or ID"],
-                pr_id: [type: :integer, doc: "Pull request ID"]
+                pr_id: [type: :integer, doc: "Numeric PR ID"]
               ],
               options: [
                 reviewer: [
                   type: :string,
                   required: true,
-                  doc: "Reviewer email or user GUID",
+                  doc:
+                    "Reviewer identifier (GUID or email — see `add`). Use a GUID for unambiguous removal.",
                   doc_arg: "USER"
                 ],
                 json: [type: :boolean, default: false, doc: "Output as JSON envelope"]

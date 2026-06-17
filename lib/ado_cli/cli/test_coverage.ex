@@ -18,14 +18,16 @@ defmodule AdoCli.CLI.TestCoverage do
   def command do
     [
       name: "ado test-coverage",
-      doc: "Fetch code coverage data from Azure DevOps.",
+      doc:
+        "Fetch code coverage data from Azure DevOps. Coverage is reported per build; show it by build ID. Output is a bar chart (module name + visual bar + percentage). Pass --json for raw data.",
       subcommands: [
         show: [
           name: "ado test-coverage show",
-          doc: "Show code coverage summary for a build.",
+          doc:
+            "Show code coverage summary for a build: per-module coverage bars, total lines/covered lines, and overall percentage. Requires a build ID (the YAML pipeline or classic build that produced the coverage data).",
           arguments: [
-            project: [type: :string, doc: "Project name or ID"],
-            build_id: [type: :integer, doc: "Build ID"]
+            project: [type: :string, doc: "Project name or ID where the build ran"],
+            build_id: [type: :integer, doc: "Numeric build ID that has coverage data attached"]
           ],
           options: [
             json: [type: :boolean, default: false, doc: "Output as JSON envelope"]

@@ -1,16 +1,16 @@
 ---
 name: ado-auth
-description: How to authenticate ado — PAT, browser OAuth, device code, MSA support
-version: "0.4.0"
+description: Authenticate ado: PAT (CI-friendly), browser OAuth (AAD + MSA), device code (headless), env vars, self-hosted server
+version: "0.4.3"
 commands:
-  - ado login --method pat --org ORG --pat TOKEN                   # PAT, no browser, CI-friendly
-  - ado login --org ORG                                          # browser OAuth (AAD + MSA)
-  - ado login --method device --org ORG                         # device code, no browser
-  - ado login                                                    # auto-detect org from token
+  - ado login --method pat --org ORG --pat TOKEN
+  - ado login --org ORG
+  - ado login --method device --org ORG
+  - ado login
   - ado logout
   - ado whoami
-  - export ADO_ORG=org ADO_PAT=token                             # env-var auth (session-level)
-  - export ADO_SERVER=https://dev.azure.com                      # self-hosted server URL
+  - export ADO_ORG=org ADO_PAT=token
+  - export ADO_SERVER=https://dev.azure.com
 ---
 
 # Authentication
@@ -21,67 +21,92 @@ commands:
 2. **Environment variables** (`ADO_ORG`, `ADO_PAT`, `ADO_SERVER`) — session-level
 3. **Config file** (`~/.ado_cli/config.json`) — persistent, set via `ado login`
 
-There is **no `az` CLI dependency**. The CLI is self-contained.
+There is **no `az` CLI dependency**.
 
-## Choosing a method
+## Decision tree: which auth method?
 
-### PAT (Personal Access Token) — most reliable
-
-```bash
-# Create at: https://dev.azure.com/{org}/_usersSettings/tokens
-# Recommended scopes: vso.work, vso.code, vso.project, vso.build, vso.release
-# (or "Full access" for broadest coverage)
-
-ado login --method pat --org myorg --pat mytoken
-ado whoami     # verify
+```
+Are you in CI/headless (no browser)?
+  ├── Yes → Use PAT (method: pat)
+  │         ado login --method pat --org myorg --pat mytoken
+  │
+  └── No → Are you signing into a work/school (AAD) org?
+            ├── Yes → Browser OAuth (default)
+            │         ado login --org myorg
+            │
+            └── No (MSA/personal org, *.visualstudio.com)?
+                  ├── Browser works → Browser OAuth
+                  │   ado login --org myorg
+                  │
+                  └── Browser blocked (firewall/Zscaler) → Device code
+                      ado login --method device --org myorg
 ```
 
-**Works for ALL org types** (AAD, MSA personal, self-hosted). No browser needed.
-**Use this in CI/CD.**
+## Method details
 
-For one-off use without saving to config:
+### PAT (Personal Access Token) — most reliable, CI-friendly
+
 ```bash
+# Generate at: https://dev.azure.com/{org}/_usersSettings/tokens
+# Recommended scopes: vso.work, vso.code, vso.project, vso.build, vso.release
+# Or use "Full access" for broadest coverage
+
+# Save to config (persistent)
+ado login --method pat --org myorg --pat mytoken
+
+# One-off (never saved to disk)
 export ADO_ORG=myorg ADO_PAT=mytoken
 ado projects list
 ```
 
-### Browser OAuth — interactive login
+**Works for ALL org types** (AAD, MSA, self-hosted). No browser required.
+
+### Browser OAuth — default, interactive
 
 ```bash
-ado login --org myorg    # opens browser, sign in with Microsoft
-# Or just:
-ado login                # auto-detects the only org you have access to
+ado login --org myorg     # opens browser
+ado login                 # auto-detects org from token
 ```
 
-Works for **AAD (work/school)** orgs. Also works for **MSA personal**
-(`*.visualstudio.com`) orgs via the ARM-first OAuth flow. After successful
-login, the org is auto-detected from the token.
+Supports:
+- AAD (work/school) accounts
+- MSA (personal) accounts via ARM-first OAuth flow
+- Prompt=select_account for multi-account Microsoft sessions
 
-### Device Code — no browser (slower than PAT but works headless)
+Prerequisites:
+- Port 58585 must be free (localhost callback)
+- Default browser must be installed
+
+### Device Code — headless, no browser
 
 ```bash
 ado login --method device --org myorg
-# CLI prints a code and URL → visit the URL in any browser, enter the code
+# CLI prints a URL and code → visit https://login.microsoft.com/device
+# Enter the code → CLI polls for completion
 ```
+
+Use when:
+- Browser is blocked by firewall/Zscaler
+- Running on a headless server
+- The default browser OAuth port is unavailable
 
 ### Self-hosted Server
 
 ```bash
 ado login --method pat --server https://ado.example.com --org DefaultCollection --pat xxx
-# or per-command
+# Per-command:
 ado --server https://ado.example.com --org Coll --pat xxx projects list
 ```
 
-## MSA Personal Org Support
+## MSA (personal) org support
 
-MSA-backed orgs (`*.visualstudio.com`) are first-class. The CLI:
-1. Authenticates against Azure Resource Manager (ARM), which accepts MSA accounts
-2. Exchanges the ARM refresh token for a DevOps access token
-3. Auto-detects your org from the accounts API
-4. Uses the v1.0 token endpoint (`resource=` parameter) — same path as the
-   official `az devops` CLI
+`*.visualstudio.com` orgs are first-class:
+1. Authenticates via Azure Resource Manager (MSA-compatible)
+2. Exchanges ARM refresh token for DevOps access token
+3. Auto-detects org from accounts API
+4. Uses v1.0 token endpoint (`resource=` parameter)
 
-No `az login` or `az devops invoke` required.
+No special flags required.
 
 ## Checking status
 
@@ -96,40 +121,45 @@ ado whoami
 ## Logging out
 
 ```bash
-ado logout    # removes ~/.ado_cli/config.json
+ado logout    # deletes ~/.ado_cli/config.json
 ```
 
-Auth via CLI flags or env vars is unaffected.
-
-## CI / Headless Servers
-
-Use PAT with environment variables — never commit tokens to disk:
+## CI / headless servers
 
 ```bash
-# In a CI job
+# Env-var approach (preferred — nothing written to disk)
 export ADO_ORG=myorg
 export ADO_PAT=$(cat /run/secrets/ado_pat)
 ado projects list
+
+# Or: login at job setup
+ado login --method pat --org myorg --pat $ADO_PAT
+ado <command>  # uses saved config
 ```
 
-Or use `ado login --method pat` at job setup (writes `~/.ado_cli/config.json`),
-then `ado <command>` in subsequent steps.
-
-## Troubleshooting
+## Common pitfalls
 
 | Error | Cause | Fix |
 |-------|-------|-----|
-| `Not authenticated` | No auth configured | Set `ADO_ORG`+`ADO_PAT` or run `ado login` |
-| `API redirected to sign-in page` (302) | Token expired or org requires interactive sign-in first | Re-run `ado login` to refresh |
-| `401 / 403` | Token invalid or insufficient scopes | Check token at <https://dev.azure.com/_usersSettings/tokens> |
-| `Identity not materialized` (first use of new MSA org) | Org exists but user hasn't visited it in browser | Visit `https://dev.azure.com/{org}` once, then re-login |
-| `Organization not found` | Wrong org name (try the on-prem `DefaultCollection` form) | Check spelling; use `ado projects list` to see valid orgs |
-| Browser opens but auth fails | Behind Zscaler or strict corp firewall | Use PAT instead of browser OAuth |
+| `Not authenticated` | No auth configured | `ado login` or set `ADO_ORG`/`ADO_PAT` |
+| `API redirected to sign-in page` (302) | Token expired | Re-run `ado login` |
+| 401 / 403 | Token invalid or wrong scopes | Check token at https://dev.azure.com/{org}/_usersSettings/tokens |
+| `Identity not materialized` | New MSA org, user never visited in browser | Visit `https://dev.azure.com/{org}` once, then re-login |
+| `Organization not found` | Wrong org name | Check spelling; `ado whoami` to verify |
+| Browser OAuth times out | Firewall/Zscaler blocks | Use PAT or device code instead |
+| Device code login crashes with `WithClauseError` | API response uses `verification_url` (not `_uri`) | Fixed in v0.4.2+ |
+| Device code login prints garbled text | `CLI.color` returns IO list | Fixed in v0.4.2+ |
+| `connectionData` returns 400 with `api-version=7.1` | Some orgs reject versioned calls | Fixed in v0.4.2+ — now calls without version |
+| `Cannot record a vote for someone else` | PR created by someone else, user not in reviewer list | Fixed in v0.4.3 — CLI uses `current_user_id()` instead of `createdBy.id` |
 
 ## Security
 
-- PATs are never written to the config file. They are only accepted via
-  CLI flag or env var (both transient).
-- The config file stores browser OAuth bearer tokens and the org name.
-- File permissions on `~/.ado_cli/config.json` are 0600 (owner read/write only).
-- The `--pat` flag masks the value in error output.
+- PATs are never written to config file (CLI flag or env var only)
+- Config file stores bearer tokens and org name
+- File permissions: 0600 (owner read/write only)
+- `--pat` flag masked in error output
+
+## See also
+
+- [ado-cli skill](ado-cli) — full command reference
+- [ado-ci skill](ado-ci) — CI/CD patterns

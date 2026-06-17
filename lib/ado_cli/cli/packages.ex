@@ -11,35 +11,47 @@ defmodule AdoCli.CLI.Packages do
   def command do
     [
       name: "ado packages",
-      doc: "Manage Azure Artifacts universal packages.",
+      doc:
+        "Manage Azure Artifacts Universal Packages. Universal Packages are a generic artifact format for shipping any file blob (binaries, configs, build outputs) versioned by semver. The CLI manages metadata only; use `tw` or `az artifacts universal` to actually upload/download.",
       subcommands: [
         list: [
           name: "ado packages list",
-          doc: "List packages in a feed.",
+          doc:
+            "List all Universal Packages in a feed. Output is a table (Name, Protocol, Versions). Pass --json for raw data.",
           arguments: [
             project: [type: :string, doc: "Project name or ID"],
-            feed_id: [type: :string, doc: "Feed name or ID"]
+            feed_id: [
+              type: :string,
+              doc:
+                "Feed name or ID (find with `ado packages list` at the org level or via the Azure Artifacts UI)"
+            ]
           ],
           execute: &list_packages/1
         ],
         versions: [
           name: "ado packages versions",
-          doc: "List versions of a package.",
+          doc:
+            "List all versions of a single Universal Package. Output is a table (Version, Status, Publish Date). Status is 'latest' for the highest semver, 'deleted' for soft-deleted, 'normal' otherwise.",
           arguments: [
             project: [type: :string, doc: "Project name or ID"],
             feed_id: [type: :string, doc: "Feed name or ID"],
-            package_name: [type: :string, doc: "Package name"]
+            package_name: [type: :string, doc: "Package name (the slug, e.g. 'myapp-builds')"]
           ],
           execute: &list_versions/1
         ],
         show: [
           name: "ado packages show",
-          doc: "Show details of a package version.",
+          doc:
+            "Show details of a specific package version: full name, version string, protocol, status, size in bytes, publish date.",
           arguments: [
             project: [type: :string, doc: "Project name or ID"],
             feed_id: [type: :string, doc: "Feed name or ID"],
             package_name: [type: :string, doc: "Package name"],
-            package_version: [type: :string, doc: "Package version"]
+            package_version: [
+              type: :string,
+              doc:
+                "Specific version (e.g. '1.0.0', '2.3.1-beta.2'). Pass the exact version string, not a semver range."
+            ]
           ],
           execute: &show_package/1
         ]

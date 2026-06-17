@@ -15,16 +15,19 @@ defmodule AdoCli.CLI.Connections do
   def command do
     [
       name: "ado connections",
-      doc: "Manage service connections (service endpoints).",
+      doc:
+        "Manage service connections (a.k.a. service endpoints). A service connection stores credentials for external services (Azure subscriptions, GitHub repos, Docker registries, Kubernetes clusters) so pipelines can access them without re-entering secrets.",
       subcommands: [
         list: [
           name: "ado connections list",
-          doc: "List service connections in a project.",
+          doc:
+            "List service connections in a project. Output is a table (ID, Name, Type). Use --type to filter to a specific kind (e.g. 'github', 'kubernetes', 'azure'). Pass --json for raw data.",
           arguments: [project: [type: :string, doc: "Project name or ID"]],
           options: [
             type: [
               type: :string,
-              doc: "Filter by type (azure, github, generic, etc.)",
+              doc:
+                "Filter by connection type. Common values: 'github', 'azure' (Azure subscription), 'kubernetes' (K8s service account), 'dockerregistry', 'bitbucket', 'git'. Pass the Azure DevOps type ID string exactly as shown in the web UI.",
               doc_arg: "TYPE"
             ]
           ],
@@ -32,10 +35,11 @@ defmodule AdoCli.CLI.Connections do
         ],
         show: [
           name: "ado connections show",
-          doc: "Show details of a service connection.",
+          doc:
+            "Show details of a service connection: ID, name, type, target URL, and ready state. Secrets (passwords, tokens) are NEVER returned by this command — even with --json.",
           arguments: [
             project: [type: :string, doc: "Project name or ID"],
-            connection_id: [type: :string, doc: "Connection ID"]
+            connection_id: [type: :string, doc: "Service connection ID (UUID from `list`)"]
           ],
           execute: &show_connection/1
         ]

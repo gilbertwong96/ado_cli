@@ -17,18 +17,30 @@ defmodule AdoCli.CLI.Releases do
   def command do
     [
       name: "ado releases",
-      doc: "Manage Azure DevOps releases.",
+      doc:
+        "Manage Azure DevOps Releases (classic release pipelines, distinct from modern YAML pipelines). A release is a deployment of a build artifact through a series of environments (Dev → Staging → Prod).",
       subcommands: [
         list: [
           name: "ado releases list",
-          doc: "List releases in a project.",
+          doc:
+            "List recent releases in a project. Output is a table (ID, Name, Status, Created). Use --definition-id to filter to one release definition, --status to filter by state. Pass --json for raw data.",
           arguments: [project: [type: :string, doc: "Project name or ID"]],
           options: [
-            top: [type: :integer, doc: "Maximum number of releases to return", doc_arg: "N"],
-            definition_id: [type: :integer, doc: "Filter by release definition ID", doc_arg: "ID"],
+            top: [
+              type: :integer,
+              doc: "Maximum number of releases to return. Default 50, max 1000.",
+              doc_arg: "N"
+            ],
+            definition_id: [
+              type: :integer,
+              doc:
+                "Filter to releases from a specific release definition (find IDs with `ado pipelines-builds definitions list` for classic pipelines, or via the Azure DevOps UI)",
+              doc_arg: "ID"
+            ],
             status: [
               type: :string,
-              doc: "Filter by status (active, abandoned, draft, undefined)",
+              doc:
+                "Filter by release lifecycle status. Valid: active (default — in progress or deployed), abandoned (manually stopped), draft (not yet started), undefined (no status).",
               doc_arg: "STATUS"
             ]
           ],
@@ -36,10 +48,11 @@ defmodule AdoCli.CLI.Releases do
         ],
         show: [
           name: "ado releases show",
-          doc: "Show details of a specific release.",
+          doc:
+            "Show details of a specific release: ID, name, status, release definition, created-on date, creator, web URL, and the list of environments with their statuses (succeeded, inProgress, failed, etc.).",
           arguments: [
             project: [type: :string, doc: "Project name or ID"],
-            release_id: [type: :integer, doc: "Release ID"]
+            release_id: [type: :integer, doc: "Numeric release ID (from `list`)"]
           ],
           execute: &show_release/1
         ]

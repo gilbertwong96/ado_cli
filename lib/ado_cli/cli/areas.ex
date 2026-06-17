@@ -11,50 +11,83 @@ defmodule AdoCli.CLI.Areas do
   def command do
     [
       name: "ado areas",
-      doc: "Manage Azure DevOps area paths (classification nodes).",
+      doc:
+        "Manage Azure DevOps area paths (classification nodes). Areas organize work items into a hierarchy (e.g. 'Project\\Team\\Feature') for filtering and reporting.",
       subcommands: [
         list: [
           name: "ado areas list",
-          doc: "List area paths in a project.",
+          doc:
+            "List area paths in a project as a tree (default: only top-level; use --depth for children). Output is a hierarchical tree by default; pass --json for the raw root node with nested children.",
           arguments: [project: [type: :string, doc: "Project name or ID"]],
-          options: [depth: [type: :integer, doc: "Depth of children to retrieve", doc_arg: "N"]],
+          options: [
+            depth: [
+              type: :integer,
+              doc: "Depth of children to retrieve (1 = top-level only, 2 = includes sub-areas)",
+              doc_arg: "N"
+            ]
+          ],
           execute: &list_areas/1
         ],
         show: [
           name: "ado areas show",
-          doc: "Show details of an area path.",
+          doc:
+            "Show details of a single area path (ID, name, full path, structure type). Returns 404 if the path does not exist.",
           arguments: [
             project: [type: :string, doc: "Project name or ID"],
-            area_path: [type: :string, doc: "Area path (e.g. ProjectName\Area\SubArea)"]
+            area_path: [
+              type: :string,
+              doc:
+                "Area path using backslashes (e.g. MyProject\\Area\\SubArea). Escape the backslash in shells or wrap in single quotes."
+            ]
           ],
           execute: &show_area/1
         ],
         create: [
           name: "ado areas create",
-          doc: "Create an area path.",
+          doc:
+            "Create a new area path. Omit --parent to create at the project root, or pass --parent to nest under an existing area.",
           arguments: [project: [type: :string, doc: "Project name or ID"]],
           options: [
-            name: [type: :string, required: true, doc: "Area name", doc_arg: "NAME"],
-            parent: [type: :string, doc: "Parent area path", doc_arg: "PATH"]
+            name: [
+              type: :string,
+              required: true,
+              doc: "Name for the new area path (no backslashes)",
+              doc_arg: "NAME"
+            ],
+            parent: [
+              type: :string,
+              doc:
+                "Parent area path to nest under (e.g. MyProject\\Team). Omit to create at the root.",
+              doc_arg: "PATH"
+            ]
           ],
           execute: &create_area/1
         ],
         update: [
           name: "ado areas update",
-          doc: "Rename an area path.",
+          doc:
+            "Rename an existing area path. Only the leaf name is changed; the path prefix is preserved.",
           arguments: [
             project: [type: :string, doc: "Project name or ID"],
-            area_path: [type: :string, doc: "Current area path"]
+            area_path: [type: :string, doc: "Current area path (e.g. MyProject\\OldName)"]
           ],
-          options: [name: [type: :string, required: true, doc: "New name", doc_arg: "NAME"]],
+          options: [
+            name: [
+              type: :string,
+              required: true,
+              doc: "New name (no backslashes)",
+              doc_arg: "NAME"
+            ]
+          ],
           execute: &update_area/1
         ],
         delete: [
           name: "ado areas delete",
-          doc: "Delete an area path.",
+          doc:
+            "Delete an area path. Fails if the area has child areas or work items still assigned to it; reassign or remove those first.",
           arguments: [
             project: [type: :string, doc: "Project name or ID"],
-            area_path: [type: :string, doc: "Area path to delete"]
+            area_path: [type: :string, doc: "Area path to delete (e.g. MyProject\\OldArea)"]
           ],
           execute: &delete_area/1
         ]

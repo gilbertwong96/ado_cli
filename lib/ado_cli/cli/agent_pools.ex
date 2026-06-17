@@ -16,28 +16,35 @@ defmodule AdoCli.CLI.AgentPools do
   def command do
     [
       name: "ado agent-pools",
-      doc: "Manage Azure DevOps agent pools and queues.",
+      doc:
+        "Manage Azure DevOps agent pools and queues. Pools host agents; queues are project-scoped views into pools used for pipeline runs.",
       subcommands: [
         list: [
           name: "ado agent-pools list",
-          doc: "List agent pools in the organization.",
+          doc:
+            "List every agent pool in the organization. Output is a table by default (ID, Name, Auto-provision, Type); pass --json for a machine-readable array. Use this to discover pool IDs for use with `pipelines-builds queue --pool` or for agent management.",
           execute: &list_pools/1
         ],
         show: [
           name: "ado agent-pools show",
-          doc: "Show details of an agent pool, including agents.",
-          arguments: [pool_id: [type: :integer, doc: "Agent pool ID"]],
+          doc:
+            "Show details of an agent pool, including its agents and their status. The pool ID is an integer (not a name); use `ado agent-pools list` to look it up.",
+          arguments: [pool_id: [type: :integer, doc: "Numeric agent pool ID"]],
           execute: &show_pool/1
         ],
         queues: [
           name: "ado agent-pools queues",
-          doc: "Manage agent queues.",
+          doc:
+            "Manage agent queues. A queue is a project-scoped alias for a pool — pipelines run on a queue, not a pool directly.",
           subcommands: [
             list: [
               name: "ado agent-pools queues list",
-              doc: "List agent queues.",
+              doc:
+                "List agent queues in a project. Output is a table (ID, Name, Pool); pass --json for raw data. Use --pool to filter by a specific pool's queues.",
               arguments: [project: [type: :string, doc: "Project name or ID"]],
-              options: [pool: [type: :integer, doc: "Filter by pool ID", doc_arg: "POOL_ID"]],
+              options: [
+                pool: [type: :integer, doc: "Filter by numeric agent pool ID", doc_arg: "POOL_ID"]
+              ],
               execute: &list_queues/1
             ]
           ]

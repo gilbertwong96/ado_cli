@@ -20,23 +20,41 @@ defmodule AdoCli.CLI.WorkItems do
   def command do
     [
       name: "ado workitems",
-      doc: "Manage Azure DevOps work items.",
+      doc:
+        "Manage Azure DevOps work items (bugs, tasks, user stories, epics, issues). Full CRUD plus state transitions, comments, attachments, and WIQL queries. Use --json for structured output.",
       subcommands: [
         list: [
           name: "ado workitems list",
-          doc: "List work items in a project.",
+          doc:
+            "List work items in a project with optional filtering by type, assigned user, state. Output is a table (ID, Title, Type, State, Assigned To). Use --top to limit, --type to filter.",
           arguments: [project: [type: :string, doc: "Project name or ID"]],
           options: [
             type: [type: :string, doc: "Work item type (Bug, Task, User Story)", doc_arg: "TYPE"],
-            assigned_to: [type: :string, doc: "Filter by assigned user", doc_arg: "USER"],
-            state: [type: :string, doc: "Filter by state", doc_arg: "STATE"],
-            top: [type: :integer, doc: "Maximum items to return", doc_arg: "N"]
+            assigned_to: [
+              type: :string,
+              doc:
+                "Filter to items assigned to a specific user (substring match on display name or email)",
+              doc_arg: "USER"
+            ],
+            state: [
+              type: :string,
+              doc:
+                "Filter by work item state: New, Active, Resolved, Closed, etc. State values depend on the process template.",
+              doc_arg: "STATE"
+            ],
+            top: [
+              type: :integer,
+              doc:
+                "Max items per page. Default is 100; increase for broader queries, decrease for faster responses.",
+              doc_arg: "N"
+            ]
           ],
           execute: &list_work_items/1
         ],
         show: [
           name: "ado workitems show",
-          doc: "Show details of a specific work item.",
+          doc:
+            "Show a single work item by numeric ID. Returns all system fields, custom fields, and relations (parent/child links). Use --expand=all for full details.",
           arguments: [id: [type: :integer, doc: "Work item ID"]],
           options: [
             expand: [type: :string, default: "all", doc: "Expand level", doc_arg: "LEVEL"]
@@ -45,17 +63,24 @@ defmodule AdoCli.CLI.WorkItems do
         ],
         query: [
           name: "ado workitems query",
-          doc: "Run a WIQL query against a project.",
+          doc:
+            "Execute a WIQL (Work Item Query Language) query against a project. WIQL is SQL-like: SELECT [System.Id] FROM WorkItems WHERE [System.State] = Active. Use --top to limit.",
           arguments: [project: [type: :string, doc: "Project name or ID"]],
           options: [
-            wiql: [type: :string, doc: "WIQL query string", doc_arg: "WIQL"],
+            wiql: [
+              type: :string,
+              doc:
+                "WIQL query (SQL-like syntax). SELECT ... FROM WorkItems WHERE ... ORDER BY ... . Required fields: [System.Id], [System.Title].",
+              doc_arg: "WIQL"
+            ],
             top: [type: :integer, doc: "Maximum number of results", doc_arg: "N"]
           ],
           execute: &query_work_items/1
         ],
         create: [
           name: "ado workitems create",
-          doc: "Create a new work item.",
+          doc:
+            "Create a new work item. Requires --type and --title. Optional: --description, --assigned_to, --state, --priority (1-4), --tags (comma-separated).",
           arguments: [project: [type: :string, doc: "Project name or ID"]],
           options: [
             type: [
@@ -64,23 +89,68 @@ defmodule AdoCli.CLI.WorkItems do
               doc: "Work item type (Bug, Task, User Story, Epic, Issue)",
               doc_arg: "TYPE"
             ],
-            title: [type: :string, required: true, doc: "Work item title", doc_arg: "TITLE"],
-            description: [type: :string, doc: "Work item description", doc_arg: "DESC"],
-            assigned_to: [type: :string, doc: "Assign to user", doc_arg: "USER"],
-            state: [type: :string, doc: "Initial state", doc_arg: "STATE"],
-            priority: [type: :integer, doc: "Priority (1-4)", doc_arg: "N"],
-            tags: [type: :string, doc: "Comma-separated tags", doc_arg: "TAGS"]
+            title: [
+              type: :string,
+              required: true,
+              doc:
+                "Title for the work item. Keep it concise (shown in list views, boards, and queries).",
+              doc_arg: "TITLE"
+            ],
+            description: [
+              type: :string,
+              doc:
+                "Description body (markdown supported). Multi-word values do not need quoting.",
+              doc_arg: "DESC"
+            ],
+            assigned_to: [
+              type: :string,
+              doc:
+                "User display name or email to assign the item to. The user must be a member of the project.",
+              doc_arg: "USER"
+            ],
+            state: [
+              type: :string,
+              doc:
+                "Initial state: New, Active, Proposed, etc. Depends on process template. Default is the first state in the workflow.",
+              doc_arg: "STATE"
+            ],
+            priority: [
+              type: :integer,
+              doc:
+                "Priority level: 1 (highest), 2 (high), 3 (medium), 4 (low). Default depends on process template.",
+              doc_arg: "N"
+            ],
+            tags: [
+              type: :string,
+              doc:
+                "Tags as comma-separated list (e.g. frontend,ui,regression). Case-insensitive. Existing tags are auto-created.",
+              doc_arg: "TAGS"
+            ]
           ],
           execute: &create_work_item/1
         ],
         update: [
           name: "ado workitems update",
-          doc: "Update an existing work item.",
+          doc:
+            "Update a work item's fields. Pass only the fields you want to change. Setting a field to its current value is a no-op but still creates a revision entry.",
           arguments: [id: [type: :integer, doc: "Work item ID"]],
           options: [
-            title: [type: :string, doc: "New title", doc_arg: "TITLE"],
-            description: [type: :string, doc: "New description", doc_arg: "DESC"],
-            state: [type: :string, doc: "New state", doc_arg: "STATE"],
+            title: [
+              type: :string,
+              doc: "Replacement title. Leave unset to keep the current title.",
+              doc_arg: "TITLE"
+            ],
+            description: [
+              type: :string,
+              doc: "Replacement description. Leave unset to keep current.",
+              doc_arg: "DESC"
+            ],
+            state: [
+              type: :string,
+              doc:
+                "Target state. Must be a valid transition from the current state. Use the web UI to discover valid states for your process template.",
+              doc_arg: "STATE"
+            ],
             assigned_to: [type: :string, doc: "Assign to user", doc_arg: "USER"],
             priority: [type: :integer, doc: "Priority (1-4)", doc_arg: "N"],
             tags: [type: :string, doc: "Comma-separated tags (replaces all)", doc_arg: "TAGS"]
@@ -89,17 +159,20 @@ defmodule AdoCli.CLI.WorkItems do
         ],
         delete: [
           name: "ado workitems delete",
-          doc: "Delete a work item.",
+          doc:
+            "Permanently delete a work item. This is irreversible. By default work items can be moved to the Recycle Bin instead; deletion requires special permissions.",
           arguments: [id: [type: :integer, doc: "Work item ID"]],
           execute: &delete_work_item/1
         ],
         comments: [
           name: "ado workitems comments",
-          doc: "Manage work item discussion comments.",
+          doc:
+            "Add, list, or update discussion comments on a work item. Comments are threaded; each update creates a revision.",
           subcommands: [
             list: [
               name: "ado workitems comments list",
-              doc: "List discussion comments on a work item.",
+              doc:
+                "List all discussion comments on a work item. Returns comment ID, author, date, and text. Use for auditing or review.",
               arguments: [
                 id: [type: :integer, doc: "Work item ID"]
               ],
@@ -107,7 +180,8 @@ defmodule AdoCli.CLI.WorkItems do
             ],
             add: [
               name: "ado workitems comments add",
-              doc: "Add a discussion comment to a work item.",
+              doc:
+                "Add a new discussion comment to a work item. Comment text supports markdown. The comment appears in the Discussion section.",
               arguments: [
                 id: [type: :integer, doc: "Work item ID"]
               ],
@@ -118,13 +192,23 @@ defmodule AdoCli.CLI.WorkItems do
             ],
             update: [
               name: "ado workitems comments update",
-              doc: "Update a discussion comment on a work item.",
+              doc:
+                "Edit an existing discussion comment by revision ID. Only the comment body can be changed; author and timestamp are preserved. Use list to find comment IDs.",
               arguments: [
                 id: [type: :integer, doc: "Work item ID"],
-                comment_id: [type: :integer, doc: "Comment revision (from history)"]
+                comment_id: [
+                  type: :integer,
+                  doc:
+                    "Comment revision number (from the list command). Each edit creates a new revision."
+                ]
               ],
               options: [
-                text: [type: :string, doc: "New comment text", required: true, doc_arg: "TEXT"]
+                text: [
+                  type: :string,
+                  doc: "Replacement comment text.",
+                  required: true,
+                  doc_arg: "TEXT"
+                ]
               ],
               execute: &update_work_item_comment/1
             ]
@@ -132,11 +216,12 @@ defmodule AdoCli.CLI.WorkItems do
         ],
         attachments: [
           name: "ado workitems attachments",
-          doc: "Manage work item attachments.",
+          doc:
+            "Upload, list, or download file attachments on a work item. Attachments are stored in Azure DevOps with the work item.",
           subcommands: [
             list: [
               name: "ado workitems attachments list",
-              doc: "List attachments on a work item.",
+              doc: "List all file attachments on a work item: filename, size, and attachment ID.",
               arguments: [
                 id: [type: :integer, doc: "Work item ID"]
               ],
@@ -144,7 +229,8 @@ defmodule AdoCli.CLI.WorkItems do
             ],
             download: [
               name: "ado workitems attachments download",
-              doc: "Download an attachment from a work item.",
+              doc:
+                "Download a single attachment to a local file. Default filename matches the original attachment name. Use --output to specify a custom path.",
               arguments: [
                 id: [type: :integer, doc: "Work item ID"],
                 attachment_id: [type: :string, doc: "Attachment ID"]

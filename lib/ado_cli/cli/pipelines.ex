@@ -23,131 +23,219 @@ defmodule AdoCli.CLI.Pipelines do
   def command do
     [
       name: "ado pipelines",
-      doc: "Manage Azure DevOps pipelines.",
+      doc:
+        "Manage Azure DevOps YAML pipelines and variable groups. Pipelines define CI/CD workflows as code in azure-pipelines.yml; variable groups are shared sets of KEY=VALUE pairs that pipelines can reference.",
       subcommands: [
         list: [
           name: "ado pipelines list",
-          doc: "List pipelines in a project.",
+          doc:
+            "List all pipelines in a project. Output is a table (ID, Name, Folder). Use --folder to scope to a subtree (e.g. 'MyTeam/Frontend'); use --top to limit. Pass --json for raw data.",
           arguments: [project: [type: :string, doc: "Project name or ID"]],
           options: [
-            top: [type: :integer, doc: "Maximum number to return", doc_arg: "N"],
-            folder: [type: :string, doc: "Filter by folder path", doc_arg: "PATH"]
+            top: [
+              type: :integer,
+              doc: "Maximum number of pipelines to return. Default 100, max 1000.",
+              doc_arg: "N"
+            ],
+            folder: [
+              type: :string,
+              doc:
+                "Filter to pipelines in a specific folder (e.g. 'MyTeam/Frontend' or '/' for root)",
+              doc_arg: "PATH"
+            ]
           ],
           execute: &list_pipelines/1
         ],
         show: [
           name: "ado pipelines show",
-          doc: "Show details of a specific pipeline.",
+          doc:
+            "Show details of a single pipeline: ID, name, folder, YAML path, repository, and web URL. The pipeline ID is a stable integer — use it with `run`.",
           arguments: [
             project: [type: :string, doc: "Project name or ID"],
-            pipeline_id: [type: :integer, doc: "Pipeline definition ID"]
+            pipeline_id: [
+              type: :integer,
+              doc:
+                "Numeric pipeline ID (from `list`). The ID is project-scoped — the same number may refer to a different pipeline in another project."
+            ]
           ],
           execute: &show_pipeline/1
         ],
         run: [
           name: "ado pipelines run",
-          doc: "Trigger a pipeline run.",
+          doc:
+            "Trigger a new run of a pipeline. Returns the run ID and a link to monitor it (use `ado ci watch` for live streaming). Variables are scoped to this run only; use variable groups for shared config.",
           arguments: [
             project: [type: :string, doc: "Project name or ID"],
-            pipeline_id: [type: :integer, doc: "Pipeline definition ID"]
+            pipeline_id: [type: :integer, doc: "Numeric pipeline ID to run"]
           ],
           options: [
             branch: [
               type: :string,
-              doc: "Branch to run on (default: default ref)",
+              doc:
+                "Branch to run on (short name, e.g. 'main' or 'feature/foo'; 'refs/heads/' is added automatically). Default: the pipeline's default branch.",
               doc_arg: "BRANCH"
             ],
-            variables: [type: :string, doc: "Pipeline variables (KEY=VALUE,...)", doc_arg: "VARS"]
+            variables: [
+              type: :string,
+              doc:
+                "Run-time variables as comma-separated KEY=VALUE pairs (e.g. 'ENV=staging,DEBUG=true'). These override pipeline-defined variables for this run only.",
+              doc_arg: "VARS"
+            ]
           ],
           execute: &run_pipeline/1
         ],
         create: [
           name: "ado pipelines create",
-          doc: "Create a new pipeline.",
+          doc:
+            "Create a new YAML pipeline that points to an existing azure-pipelines.yml file in a repository. The YAML file must already exist; this command registers the pipeline definition.",
           arguments: [project: [type: :string, doc: "Project name or ID"]],
           options: [
-            name: [type: :string, required: true, doc: "Pipeline name", doc_arg: "NAME"],
-            repo: [type: :string, required: true, doc: "Repository ID or name", doc_arg: "REPO"],
-            path: [type: :string, required: true, doc: "YAML file path", doc_arg: "PATH"],
-            folder: [type: :string, doc: "Pipeline folder", doc_arg: "FOLDER"]
+            name: [
+              type: :string,
+              required: true,
+              doc: "Display name for the pipeline (e.g. 'MyApp CI')",
+              doc_arg: "NAME"
+            ],
+            repo: [
+              type: :string,
+              required: true,
+              doc: "Repository name or ID containing the YAML file (must be in the same project)",
+              doc_arg: "REPO"
+            ],
+            path: [
+              type: :string,
+              required: true,
+              doc:
+                "Path to the YAML file in the repo, relative to the repo root (e.g. 'pipelines/ci.yml' or 'azure-pipelines.yml')",
+              doc_arg: "PATH"
+            ],
+            folder: [
+              type: :string,
+              doc:
+                "Folder to place the pipeline in (e.g. 'MyTeam/Frontend'). Use '/' for the root. The folder is auto-created if it doesn't exist.",
+              doc_arg: "FOLDER"
+            ]
           ],
           execute: &create_pipeline/1
         ],
         update: [
           name: "ado pipelines update",
-          doc: "Update a pipeline definition.",
+          doc:
+            "Update a pipeline's name or YAML path. Cannot change the repository; delete and recreate to switch repos. Pass at least one of --name or --path.",
           arguments: [
             project: [type: :string, doc: "Project name or ID"],
-            pipeline_id: [type: :integer, doc: "Pipeline definition ID"]
+            pipeline_id: [type: :integer, doc: "Numeric pipeline ID"]
           ],
           options: [
-            name: [type: :string, doc: "New pipeline name", doc_arg: "NAME"],
-            path: [type: :string, doc: "New YAML path", doc_arg: "PATH"]
+            name: [type: :string, doc: "New display name for the pipeline", doc_arg: "NAME"],
+            path: [
+              type: :string,
+              doc:
+                "New YAML file path in the repo. Doesn't move the file on disk; just changes what the pipeline definition points to.",
+              doc_arg: "PATH"
+            ]
           ],
           execute: &update_pipeline/1
         ],
         delete: [
           name: "ado pipelines delete",
-          doc: "Delete a pipeline definition.",
+          doc:
+            "Delete a pipeline definition. This is irreversible: the run history is preserved (Azure DevOps retains it), but the pipeline can no longer be triggered and new runs cannot be created from this definition.",
           arguments: [
             project: [type: :string, doc: "Project name or ID"],
-            pipeline_id: [type: :integer, doc: "Pipeline definition ID"]
+            pipeline_id: [type: :integer, doc: "Numeric pipeline ID"]
           ],
           execute: &delete_pipeline/1
         ],
         vars: [
           name: "ado pipelines vars",
-          doc: "Manage variable groups (pipeline library).",
+          doc:
+            "Manage variable groups (a.k.a. library variable groups). Variable groups are shared KEY=VALUE sets that multiple pipelines can reference — perfect for environment-specific config (DB URLs, API keys).",
           subcommands: [
             list: [
               name: "ado pipelines vars list",
-              doc: "List variable groups in a project.",
+              doc:
+                "List all variable groups in a project. Output is a table (ID, Name, Description, variable count). Use --top to limit.",
               arguments: [project: [type: :string, doc: "Project name or ID"]],
-              options: [top: [type: :integer, doc: "Maximum number to return", doc_arg: "N"]],
+              options: [
+                top: [type: :integer, doc: "Maximum number to return. Default 50.", doc_arg: "N"]
+              ],
               execute: &list_var_groups/1
             ],
             show: [
               name: "ado pipelines vars show",
-              doc: "Show details of a variable group.",
+              doc:
+                "Show details of a variable group: ID, name, description, type, and the list of variable names. SECRET VALUES ARE NEVER DISPLAYED (they show as ' [secret]'). Use --json to confirm a variable's key/value is being read correctly without exposing secrets.",
               arguments: [
                 project: [type: :string, doc: "Project name or ID"],
-                group_id: [type: :integer, doc: "Variable group ID"]
+                group_id: [type: :integer, doc: "Numeric variable group ID (from `list`)"]
               ],
               execute: &show_var_group/1
             ],
             create: [
               name: "ado pipelines vars create",
-              doc: "Create a variable group.",
+              doc:
+                "Create a new variable group. Use --secret to mark specific keys as secret (the API stores them encrypted; they cannot be retrieved later).",
               arguments: [project: [type: :string, doc: "Project name or ID"]],
               options: [
-                name: [type: :string, required: true, doc: "Variable group name", doc_arg: "NAME"],
-                description: [type: :string, doc: "Description", doc_arg: "DESC"],
-                variables: [type: :string, doc: "Variables (KEY=VALUE,...)", doc_arg: "VARS"],
-                secret: [type: :string, doc: "Keys to mark as secret (KEY,...)", doc_arg: "KEYS"]
+                name: [
+                  type: :string,
+                  required: true,
+                  doc: "Display name for the variable group (e.g. 'prod-secrets', 'ci-shared')",
+                  doc_arg: "NAME"
+                ],
+                description: [
+                  type: :string,
+                  doc: "Human-readable description of the group's purpose",
+                  doc_arg: "DESC"
+                ],
+                variables: [
+                  type: :string,
+                  doc:
+                    "Initial variables as comma-separated KEY=VALUE pairs (e.g. 'DB_HOST=db.example.com,DB_USER=app')",
+                  doc_arg: "VARS"
+                ],
+                secret: [
+                  type: :string,
+                  doc:
+                    "Comma-separated list of variable names to mark as secret (e.g. 'DB_PASS,API_KEY'). The values are stored encrypted and cannot be retrieved via the API after creation.",
+                  doc_arg: "KEYS"
+                ]
               ],
               execute: &create_var_group/1
             ],
             update: [
               name: "ado pipelines vars update",
-              doc: "Update a variable group.",
+              doc:
+                "Update an existing variable group. Pass --variables to merge new values (existing variables not in the list are kept). Pass --secret to change which keys are secret. Note: changing a secret's value requires re-passing the value; the original encrypted value cannot be read back.",
               arguments: [
                 project: [type: :string, doc: "Project name or ID"],
-                group_id: [type: :integer, doc: "Variable group ID"]
+                group_id: [type: :integer, doc: "Numeric variable group ID"]
               ],
               options: [
-                name: [type: :string, doc: "New name", doc_arg: "NAME"],
+                name: [type: :string, doc: "New display name", doc_arg: "NAME"],
                 description: [type: :string, doc: "New description", doc_arg: "DESC"],
-                variables: [type: :string, doc: "Variables (KEY=VALUE,...)", doc_arg: "VARS"],
-                secret: [type: :string, doc: "Keys to mark as secret (KEY,...)", doc_arg: "KEYS"]
+                variables: [
+                  type: :string,
+                  doc: "Variables to merge, as comma-separated KEY=VALUE pairs",
+                  doc_arg: "VARS"
+                ],
+                secret: [
+                  type: :string,
+                  doc:
+                    "Comma-separated list of keys to mark as secret. Replaces the previous secret list.",
+                  doc_arg: "KEYS"
+                ]
               ],
               execute: &update_var_group/1
             ],
             delete: [
               name: "ado pipelines vars delete",
-              doc: "Delete a variable group.",
+              doc:
+                "Delete a variable group. Pipelines that reference it will fail at runtime until their YAML is updated to remove the reference.",
               arguments: [
                 project: [type: :string, doc: "Project name or ID"],
-                group_id: [type: :integer, doc: "Variable group ID"]
+                group_id: [type: :integer, doc: "Numeric variable group ID"]
               ],
               execute: &delete_var_group/1
             ]
@@ -155,40 +243,65 @@ defmodule AdoCli.CLI.Pipelines do
         ],
         variables: [
           name: "ado pipelines variables",
-          doc: "Manage per-pipeline variables.",
+          doc:
+            "Manage per-pipeline variables (user-defined variables stored on a single pipeline definition, not shared). Prefer variable groups for shared config — these are scoped to one pipeline.",
           subcommands: [
             list: [
               name: "ado pipelines variables list",
-              doc: "List variables on a pipeline.",
+              doc:
+                "List all variables defined directly on a pipeline (not those in referenced variable groups). Output is a table (Key, Value, Secret).",
               arguments: [
                 project: [type: :string, doc: "Project name or ID"],
-                pipeline_id: [type: :integer, doc: "Pipeline definition ID"]
+                pipeline_id: [type: :integer, doc: "Numeric pipeline ID"]
               ],
               execute: &list_pipeline_vars/1
             ],
             create: [
               name: "ado pipelines variables create",
-              doc: "Add a variable to a pipeline.",
+              doc:
+                "Add a single variable to a pipeline. For multiple variables, prefer `ado pipelines vars create` (variable groups) which can be shared across pipelines.",
               arguments: [
                 project: [type: :string, doc: "Project name or ID"],
-                pipeline_id: [type: :integer, doc: "Pipeline definition ID"]
+                pipeline_id: [type: :integer, doc: "Numeric pipeline ID"]
               ],
               options: [
-                key: [type: :string, required: true, doc: "Variable name", doc_arg: "KEY"],
-                value: [type: :string, required: true, doc: "Variable value", doc_arg: "VALUE"],
-                secret: [type: :boolean, default: false, doc: "Mark as secret"]
+                key: [
+                  type: :string,
+                  required: true,
+                  doc: "Variable name (env-var friendly: uppercase, no spaces)",
+                  doc_arg: "KEY"
+                ],
+                value: [
+                  type: :string,
+                  required: true,
+                  doc:
+                    "Variable value. Marked secret if --secret is passed (value is then stored encrypted and cannot be retrieved later).",
+                  doc_arg: "VALUE"
+                ],
+                secret: [
+                  type: :boolean,
+                  default: false,
+                  doc:
+                    "Mark the variable as secret. Once set, the value cannot be retrieved via the API — only overwritten with a new value."
+                ]
               ],
               execute: &create_pipeline_var/1
             ],
             delete: [
               name: "ado pipelines variables delete",
-              doc: "Remove a variable from a pipeline.",
+              doc:
+                "Remove a variable from a pipeline. Pipelines referencing this variable will fail; update the pipeline YAML or use a default value.",
               arguments: [
                 project: [type: :string, doc: "Project name or ID"],
-                pipeline_id: [type: :integer, doc: "Pipeline definition ID"]
+                pipeline_id: [type: :integer, doc: "Numeric pipeline ID"]
               ],
               options: [
-                key: [type: :string, required: true, doc: "Variable name", doc_arg: "KEY"]
+                key: [
+                  type: :string,
+                  required: true,
+                  doc: "Variable name to remove (must match exactly, case-sensitive)",
+                  doc_arg: "KEY"
+                ]
               ],
               execute: &delete_pipeline_var/1
             ]

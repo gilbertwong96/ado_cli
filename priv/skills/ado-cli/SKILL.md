@@ -1,11 +1,11 @@
 ---
 name: ado-cli
-description: Main ado skill — setup, authentication, and complete command reference for all 24 service areas
-version: "0.4.0"
+description: Complete command reference for all 24 Azure DevOps service areas (projects, repos, workitems, pipelines, prs, releases, packages, and more)
+version: "0.4.3"
 commands:
   - ado --version
   - ado version
-  - ado schema
+  - ado schema --json
   - ado completion bash
   - ado login --org ORG
   - ado login --method pat --org ORG --pat TOKEN
@@ -22,7 +22,6 @@ commands:
   - ado repos delete PROJECT REPO
   - ado repos branches PROJECT REPO
   - ado branch-policies list PROJECT REPO
-  - ado branch-policies show PROJECT REPO POLICY_ID
   - ado workitems list PROJECT
   - ado workitems show PROJECT ID
   - ado workitems create PROJECT --type T --title T --tags t1,t2
@@ -57,241 +56,414 @@ commands:
   - ado users list
   - ado users show USER
   - ado extensions list
-  - ado extensions install EXTENSION
   - ado agent-pools list
-  - ado agent-pools show POOL_ID
   - ado connections list PROJECT
   - ado security groups list PROJECT SCOPE
   - ado banners set --message TEXT --type warning
-  - ado banners delete
   - ado packages list PROJECT FEED
-  - ado ci watch PROJECT BUILD_ID                            # stream live build logs
-  - ado skills list                                            # list available skills
-  - ado skills describe NAME                                   # skill frontmatter + command index
-  - ado skills read NAME                                       # full skill content
-  - ado skills search "QUERY"                                  # find skill by topic
-  - ado skills install                                         # embed all skills to LLM agents
+  - ado ci watch PROJECT BUILD_ID
+  - ado skills list
+  - ado skills describe ado-cli
+  - ado skills read ado-cli
+  - ado skills search "query"
+  - ado skills install
   - ado test-results list PROJECT
   - ado test-results show PROJECT RUN_ID
-  - ado test-results publish PROJECT --name N --file coverage.xml [--build-id ID]
+  - ado test-results publish PROJECT --name N --file coverage.xml --build-id ID
   - ado test-coverage show PROJECT BUILD_ID
 ---
 
-# ado
+# ado — Azure DevOps CLI
 
-A self-contained command-line tool for managing Azure DevOps — projects, repos,
-work items, pipelines, PRs, releases, artifacts, packages, and more. Cross-compiled
-to single-file executables for macOS, Linux, and Windows via Burrito.
+A self-contained, cross-compiled CLI for managing every Azure DevOps service:
+projects, repos, work items, pipelines, PRs, releases, packages, and more.
+Single-file binaries for macOS, Linux, and Windows via Burrito. No `az` or
+Node.js dependency.
 
-## First Time Setup
+## When to use this skill
+
+- You need to automate Azure DevOps from a CI pipeline or script
+- You are an LLM agent helping a user manage their DevOps org
+- You want to script PR reviews, pipeline triggers, or work item workflows
+- You are behind a firewall/offline and cannot use `az devops`
+
+## Quick start (the 80% case)
 
 ```bash
-# Build from source
-mix escript.build
-cp ado /usr/local/bin/
+# Build from source or download a binary
+mix escript.build && cp ado /usr/local/bin/
+# Or: curl -L -o ado https://github.com/gilbertwong96/ado_cli/releases/latest/download/ado_linux
 
-# Authenticate (pick one)
-ado login --org {your-org}                              # browser OAuth
-ado login --method pat --org {org} --pat {token}       # Personal Access Token
-ado login --method device --org {org}                  # no browser needed
+# Authenticate
+ado login                                                   # browser OAuth
+ado login --method pat --org myorg --pat mytoken            # PAT (CI-friendly)
+
+# Verify
+ado whoami
+
+# Top 3 commands
+ado projects list
+ado workitems list MyProject --state Active
+ado pipelines run MyProject 42 --branch main
 ```
 
-The CLI auto-detects the org from the token if `--org` is omitted.
-
-## Global Options
+## Global options
 
 ```
 --org, -o ORG       Organization (or ADO_ORG env var; auto-detected on login)
 --pat, -t TOKEN     Personal Access Token (or ADO_PAT env var)
 --server, -s URL    Self-hosted server (or ADO_SERVER env var)
 --json              Output raw JSON instead of formatted tables
---verbose, -v       Verbose output
+--verbose, -v       Verbose output (includes stack traces on error)
+--version           Print the version and exit
 ```
 
-## Command Groups
+All commands support `--help`.
 
-| Group | Subcommands |
-|-------|-------------|
-| `login`, `logout`, `whoami` | Authentication & status |
-| `version` | Print the CLI version (`--version` flag also works) |
-| `schema` | Dump the full command tree as JSON for LLM discovery |
-| `completion` | Shell completion: bash, zsh, fish, powershell |
-| `projects` | list, show, create, update, delete |
-| `repos` | list, show, create, delete |
-| `branch-policies` | list, show, create, update, delete |
-| `workitems` | list, show, create, update, delete, comments, attachments |
-| `pipelines` | list, show, run, create, update, delete |
-| `pipelines vars` | Variable groups: list, show, create, update, delete |
-| `pipelines variables` | Per-pipeline variables: list, create, delete |
-| `pipelines-builds` | Classic builds: list, show, queue, cancel, tags, definitions |
-| `pipelines-folders` | Folders: list, create, delete |
-| `pipelines-artifacts` | Run artifacts: list, download |
-| `ci` | CI pipeline watching: `ci watch` (live status + streaming logs) |
-| `prs` | list, show, create, complete, abandon, approve, vote, diff, comments, reviewers |
-| `prs comments` | Threads: add (new/reply), list (with --all), update (content/status) |
-| `prs reviewers` | Reviewers: list, add, remove |
-| `releases` | list, show, create, update |
-| `iterations` | Sprints: list, show, create, update, delete |
-| `areas` | Area paths: list, show, create, update, delete |
-| `wikis` | Wikis and pages: list, show, create, update, delete |
-| `teams` | Teams: list, show, create, update, delete, members |
-| `users` | User entitlements: list, show, add, remove |
-| `extensions` | Marketplace: list, show, install, uninstall, enable, disable |
-| `agent-pools` | Pools and queues: list, show, queues |
-| `connections` | Service connections: list, show |
-| `security groups` | Groups: list, show, create, delete, members |
-| `security permissions` | ACLs: list, namespaces |
-| `banners` | Org-wide notifications: show, set, delete |
-| `packages` | Universal Packages: list, versions, show |
-| `skills` | list, describe, read, search, install (embed for LLM agents) |
-| `test-results` | Test runs: list, show, publish (Cobertura/JUnit) |
-| `test-coverage` | Code coverage: show by build ID |
+## Decision tree: which command for my task?
 
-## Conventions
+1. **Listing/viewing something?** → `<area> list` or `<area> show`
+2. **Creating new content?** → `<area> create` (always needs a project)
+3. **Updating existing content?** → `<area> update` + the item's ID
+4. **Deleting?** → `<area> delete` (add `--force` to skip confirmation)
+5. **Need JSON for scripting?** → add `--json` to any command
 
-1. **Project and repo names with spaces**: Quote them.
-   ```bash
-   ado repos list "Employee Management"
-   ```
+### Project and repo names with spaces
 
-2. **Org types**: Works with AAD (work/school), MSA (personal `*.visualstudio.com`),
-   and self-hosted DevOps Server orgs. No `az` CLI dependency.
+Quote them:
+```bash
+ado repos list "Employee Management"
+ado prs list "Employee Management" "My Repo"
+```
 
-3. **Error handling**: Non-zero exit code + stderr message on failure. Use `--verbose`
-   for stack traces.
+### `--org`, `--pat`, and `--server`
 
-4. **Secrets**: Never log or store PATs in plain text. Use `--pat` flag or `ADO_PAT`
-   env var (both are transient — never written to disk by the CLI).
+These can appear anywhere (before or after the subcommand):
+```bash
+ado --org myorg projects list
+ado projects list --org myorg               # same thing
+export ADO_ORG=myorg                        # or set env var once
+ado projects list                            # no --org needed
+```
 
-5. **Output**: Default is formatted tables. Use `--json` for machine-readable output.
+## Full command reference
 
-## Quick Examples
+### Projects
 
 ```bash
-# List projects (with PAT, headless)
-ado --org myorg --pat mytoken projects list
+# List all projects (table: Name, ID, State, Visibility)
+ado projects list
+ado projects list --state wellFormed --top 20
 
-# Authenticate interactively (browser)
-ado login --org myorg
+# Show a single project
+ado projects show MyProject
 
-# Auto-detect org from token
-ado login
+# Create a project
+ado projects create MyNewProject --description "My new project" --visibility private
+# Visibility: private (default) or public. Process: Agile, Scrum, CMMI, Basic.
 
-# Create a work item
-ado workitems create MyProject --type Bug --title "Fix login page"
+# Update (rename or change description)
+ado projects update MyProject --name "Renamed Project"
 
-# Create a PR
-ado prs create MyProject MyRepo --title "Add feature" --source dev --target main
+# Delete (--force skips confirmation)
+ado projects delete OldProject --force
+```
 
-# View PR changes (3 modes: file list, per-file, unified diff)
-ado prs diff MyProject MyRepo 42
-ado prs diff MyProject MyRepo 42 --file src/app.ex
-ado prs diff MyProject MyRepo 42 --unified | delta
+### Repositories
 
-# Manage reviewers
+```bash
+# List repos in a project
+ado repos list MyProject
+
+# Show a single repo
+ado repos show MyProject MyRepo
+
+# Create a repo
+ado repos create MyProject --name "new-repo" --default_branch main
+
+# List branches
+ado repos branches MyProject MyRepo
+ado repos branches MyProject MyRepo --filter feature
+
+# Delete
+ado repos delete MyProject MyRepo --force
+```
+
+### Branch policies
+
+```bash
+ado branch-policies list MyProject MyRepo
+ado branch-policies show MyProject MyRepo POLICY_ID
+ado branch-policies create MyProject MyRepo --type UUID --branch refs/heads/main --blocking
+ado branch-policies update MyProject MyRepo POLICY_ID --enabled false
+ado branch-policies delete MyProject MyRepo POLICY_ID
+```
+
+### Work Items
+
+```bash
+# List work items (table: ID, Title, Type, State, Assigned To)
+ado workitems list MyProject --state Active --type Bug --top 20
+
+# Show details
+ado workitems show 42
+
+# WIQL query
+ado workitems query MyProject --wiql "SELECT [System.Id] FROM WorkItems WHERE [System.State] = 'Active'"
+
+# Create
+ado workitems create MyProject --type Bug --title "Login fails" --description "Steps to reproduce: ..." --tags "ui,critical" --priority 1
+
+# Update state or fields
+ado workitems update 42 --state Resolved --assigned_to "Jane Smith"
+
+# Delete
+ado workitems delete 42
+```
+
+### Pipelines
+
+```bash
+# List pipelines in a project
+ado pipelines list MyProject
+
+# Trigger a run
+ado pipelines run MyProject 42 --branch main
+ado pipelines run MyProject 42 --branch release --variables "ENV=staging,DEBUG=true"
+
+# Variable groups
+ado pipelines vars list MyProject
+ado pipelines vars show MyProject 5
+ado pipelines vars create MyProject --name "prod-secrets" --variables "DB_HOST=prod" --secret NPM_TOKEN
+```
+
+### Classic Builds
+
+```bash
+ado pipelines-builds queue MyProject --definition 5 --branch main
+ado pipelines-builds cancel MyProject 99
+ado pipelines-builds show MyProject 99
+```
+
+### Pull Requests
+
+```bash
+# List PRs in a repo (table: ID, Title, Source, Target, Status)
+ado prs list MyProject MyRepo --status active --creator "alice@example.com"
+
+# Show details
+ado prs show MyProject MyRepo 42
+
+# Create
+ado prs create MyProject MyRepo --title "Add feature" --source dev --target main --draft
+
+# View diff (3 modes)
+ado prs diff MyProject MyRepo 42                                    # file list with +/- counts
+ado prs diff MyProject MyRepo 42 --file src/app.ex                   # per-file unified diff
+ado prs diff MyProject MyRepo 42 --unified | delta                  # full unified diff stream
+
+# Review and merge
+ado prs approve MyProject MyRepo 42                                 # vote +10
+ado prs complete MyProject MyRepo 42 --merge-strategy squash --delete-source
+ado prs abandon MyProject MyRepo 42
+
+# Comments (multi-word content does NOT need quoting)
+ado prs comments add MyProject MyRepo 42 --content LGTM ship it
+ado prs comments add MyProject MyRepo 42 --content @notes.md        # from file
+echo "review" | ado prs comments add MyProject MyRepo 42 --content - # from stdin
+ado prs comments list MyProject MyRepo 42 --all                     # full content view
+ado prs comments update MyProject MyRepo 42 THREAD_ID COMMENT_ID --content "updated text"
+ado prs comments update MyProject MyRepo 42 THREAD_ID COMMENT_ID --status closed --resolved-by-me
+
+# Reviewers
 ado prs reviewers list MyProject MyRepo 42
 ado prs reviewers add MyProject MyRepo 42 --reviewer USER_GUID
 ado prs reviewers remove MyProject MyRepo 42 --reviewer USER_GUID
-
-# Review PR comments (multi-word --content does not need quoting)
-ado prs comments add MyProject MyRepo 42 --content LGTM ship it
-ado prs comments add MyProject MyRepo 42 --content @notes.md
-echo "review body" | ado prs comments add MyProject MyRepo 42 --content -
-ado prs comments list MyProject MyRepo 42 --all
-ado prs comments update MyProject MyRepo 42 7 5 --content updated text --status fixed
-
-# Trigger a pipeline with variables
-ado pipelines run MyProject 42 --branch main --variables "ENV=staging,DEBUG=true"
-
-# Watch a build in real-time (live status + streaming logs)
-ado ci watch MyProject 99
-ado ci watch MyProject --latest --definition 42 --branch main
-
-# Add a secret to a variable group
-ado pipelines vars create MyProject --name CI --variables "DB_PASS=hunter2" --secret DB_PASS
-
-# Run on Linux server without browser
-export ADO_ORG=myorg ADO_PAT=mytoken
-ado projects list
-
-# Check auth status
-ado whoami
-
-# Check test results and code coverage
-ado test-results list MyProject
-ado test-results show MyProject 42
-ado test-results publish MyProject --name "CI Tests" --file coverage.cobertura.xml --build-id 99
-ado test-coverage show MyProject 99
-
-# Print version (or use --version flag)
-ado version
-ado --version
-
-# Dump the full command tree for LLM agents
-ado schema --json | jq '.schema.subcommands | length'
-
-# Install shell completion (bash/zsh/fish/powershell)
-ado completion bash | eval
-ado completion zsh > "${fpath[1]}/_ado"
 ```
 
-## Coverage & Test Results
-
-Fetch and publish test results and code coverage from Azure DevOps:
+### Releases
 
 ```bash
-# List recent test runs (with pass/fail counts)
-ado test-results list MyProject
-
-# Filter by build ID and limit results
-ado test-results list MyProject --build-id 99 --top 10
-
-# Show a specific test run with outcome breakdowns
-ado test-results show MyProject 42
-
-# Show code coverage for a build (visual bar chart)
-ado test-coverage show MyProject 99
-
-# Publish Cobertura XML / JUnit results to a build
-ado test-results publish MyProject --name "CI Tests" \
-  --file coverage.cobertura.xml --build-id 99
+ado releases list MyProject --definition_id 5 --status active
+ado releases show MyProject 42
 ```
 
-Use `--json` on any command for machine-readable output.
+### Iterations (Sprints)
+
+```bash
+ado iterations list MyProject
+ado iterations show MyProject MyTeam "Sprint 23"
+ado iterations create MyProject MyTeam --name "Sprint 24" --start-date 2026-01-15 --finish-date 2026-01-29
+```
+
+### Areas
+
+```bash
+ado areas list MyProject
+ado areas show MyProject "MyArea"
+ado areas create MyProject --name "NewArea"
+```
+
+### Wikis
+
+```bash
+ado wikis list MyProject
+ado wikis pages list MyProject MyWiki
+ado wikis pages show MyProject MyWiki --path /Home
+ado wikis pages create MyProject MyWiki --path /Design --content "# Design Doc"
+```
+
+### Teams
+
+```bash
+ado teams list MyProject
+ado teams members list MyProject "My Team"
+```
+
+### Users (Entitlements)
+
+```bash
+ado users list
+ado users show "alice@example.com"
+ado users add --email "newuser@example.com" --license professional
+ado users remove "user_id_or_email"
+```
+
+### Extensions
+
+```bash
+ado extensions list
+ado extensions install ms.azure-devops-utilities --publisher ms
+ado extensions uninstall "ms.azure-devops-utilities"
+```
+
+### Agent Pools
+
+```bash
+ado agent-pools list
+ado agent-pools show POOL_ID
+ado agent-pools queues POOL_ID
+```
+
+### Service Connections
+
+```bash
+ado connections list MyProject
+```
+
+### Security
+
+```bash
+ado security groups list MyProject
+ado security groups create MyProject --name "Reviewers"
+ado security groups members list MyProject "vssgp.xxxxx"
+ado security permissions list "2e9eb7ed-..." --token "repoV2/projectId/repoId"
+```
+
+### Banners (Org Notifications)
+
+```bash
+ado banners show
+ado banners set --message "Maintenance window: Sat 2-4am" --type warning
+ado banners delete
+```
+
+### Packages (Universal)
+
+```bash
+ado packages list MyProject MyFeed
+ado packages versions MyProject MyFeed my-package
+ado packages show MyProject MyFeed my-package 1.0.0
+```
+
+### CI Watch (Live Pipeline Logs)
+
+```bash
+ado ci watch MyProject 99                                         # specific build
+ado ci watch MyProject --latest --definition 42 --branch main    # latest matching build
+```
+
+### Test Results and Coverage
+
+```bash
+ado test-results list MyProject
+ado test-results show MyProject 42
+ado test-results publish MyProject --name "CI Suite" --file coverage.cobertura.xml --build-id 99
+ado test-coverage show MyProject 99
+```
+
+### Skills (for AI agents)
+
+```bash
+ado skills list
+ado skills describe ado-cli
+ado skills read ado-cli
+ado skills search "pipeline"
+ado skills install                                   # install to all known agent dirs
+ado skills install --target pi --skill ado-cli
+```
+
+## Non-obvious behaviors
+
+### Multi-word option values
+
+`--content`, `--description`, `--message`, `--body`, `--text`, `--summary`, `--reason`, and similar text options do NOT need shell quoting:
+
+```bash
+ado prs comments add MyProject MyRepo 42 --content This is fine without quotes
+ado prs comments add MyProject MyRepo 42 --content and works with multiple words
+```
+
+All words after the flag are joined into a single value. The joining stops at the next `--flag`.
+
+### MSA (personal) orgs
+
+Works with `*.visualstudio.com` orgs. No special flags needed. Use browser OAuth (default) or PAT. Device code also works.
+
+### Self-hosted Azure DevOps Server
+
+```bash
+ado login --method pat --server https://ado.example.com --org DefaultCollection --pat xxx
+ado --server https://ado.example.com --org Coll projects list
+```
+
+### Output formats
+
+- Default: formatted tables (human-readable)
+- `--json`: raw JSON envelope (machine-readable)
+- `ado schema --json`: the full command tree for LLM agent discovery
+
+### Exit codes
+
+| Code | Meaning |
+|------|---------|
+| 0    | Success |
+| 1    | Generic error |
+| 2    | API error (4xx/5xx) |
+| 3    | Auth not configured |
+
+## Common pitfalls
+
+1. **"Not authenticated"** → Run `ado login` or set `ADO_ORG`/`ADO_PAT` env vars
+2. **"API redirected to sign-in page" (302)** → Token expired. Re-run `ado login`
+3. **"You cannot record a vote for someone else"** → If approving a PR you did not create, you need to be added as a reviewer first. Use `ado prs approve` anyway — the CLI auto-adds you via `PUT /reviewers/{user-guid}`
+4. **"Organization not found"** → Check spelling. Use `ado whoami` to see what org is configured
+5. **401/403** → Token invalid or scope too narrow. Check your PAT at https://dev.azure.com/{org}/_usersSettings/tokens
+6. **Project/repo with spaces** → Always quote in the shell: `ado repos list "My Project"`
+7. **`connectionData` returns 400** → This is a known Azure DevOps API version issue for some orgs. The CLI now calls the endpoint without `api-version` to avoid this
+8. **PR diff shows no changes** → Use `--iteration` to inspect a specific iteration. The default is the latest
 
 ## Help
 
-Every command and subcommand supports `--help`:
 ```bash
-ado --help
-ado projects --help
-ado projects create --help
+ado --help                     # top-level
+ado projects --help            # command group
+ado projects create --help     # specific subcommand
 ```
 
-## Install Skills to Your Agent
+## See also
 
-If you're an LLM agent (pi, Claude Code, Cursor, etc.) and want
-`ado` skills to be loaded natively on startup instead of shelling
-out to `ado skills read`, install them:
-
-```bash
-ado skills install                          # install to all known targets
-ado skills install --target pi              # ~/.pi/agent/skills/
-ado skills install --target claude          # ~/.claude/skills/
-ado skills install --target cursor          # ~/.cursor/skills/
-ado skills install --target /custom/path    # absolute path
-ado skills install --skill ado-ci           # install only this skill
-ado skills install --force                  # overwrite existing files
-```
-
-After install, the agent can list/read these skills as native
-skills, no shell call needed.
-
-## Exit Codes
-
-- 0   Success
-- 1   Generic error
-- 2   API error (4xx/5xx response)
-- 3   Auth not configured
-
-Use `set -e` in shell scripts; non-zero always means failure.
+- [ado-auth skill](ado-auth) — authentication methods, PAT vs OAuth, troubleshooting
+- [ado-ci skill](ado-ci) — CI/CD patterns, GitHub/GitLab examples, headless auth
+- [Azure DevOps REST API docs](https://learn.microsoft.com/en-us/rest/azure/devops)
+- [Project homepage](https://gilbertwong96.github.io/ado_cli/)

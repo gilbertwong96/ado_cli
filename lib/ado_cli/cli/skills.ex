@@ -36,11 +36,13 @@ defmodule AdoCli.CLI.Skills do
   def command do
     [
       name: "ado skills",
-      doc: "Read embedded skill content (list / describe / read / search) for AI agents.",
+      doc:
+        "Read embedded skill content for AI agents (pi, Claude Code, Cursor, Copilot). Commands: list all skills, describe one (frontmatter only), read full content, search by topic, install to agent directories.",
       subcommands: [
         list: [
           name: "ado skills list",
-          doc: "List all skills with name + description + version + command count.",
+          doc:
+            "List all embedded skills with name, description, version, and command count. Use --json for structured output suitable for agent discovery.",
           arguments: [
             path: [type: :string, doc: "Optional: skill name or skill/path", required: false]
           ],
@@ -52,8 +54,8 @@ defmodule AdoCli.CLI.Skills do
         describe: [
           name: "ado skills describe",
           doc:
-            "Return the frontmatter + command index for a skill (no body). " <>
-              "Use this to decide whether to load the full content with `read`.",
+            "Return the YAML frontmatter and command index for a skill (no body text). " <>
+              "Use this to check version/description before loading the full content with read.",
           arguments: [
             name: [type: :string, doc: "Skill name"]
           ],
@@ -78,8 +80,8 @@ defmodule AdoCli.CLI.Skills do
         search: [
           name: "ado skills search",
           doc:
-            "Find skills whose name, description, or command index matches a query. " <>
-              "Case-insensitive substring search.",
+            "Find skills by keyword search (name, description, or command list). " <>
+              "Case-insensitive. Use for discovery when you do not know the exact skill name.",
           arguments: [
             query: [type: :string, doc: "Search query (e.g. 'create PR', 'pipeline', 'auth')"]
           ],

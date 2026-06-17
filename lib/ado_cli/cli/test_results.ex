@@ -21,11 +21,13 @@ defmodule AdoCli.CLI.TestResults do
   def command do
     [
       name: "ado test-results",
-      doc: "Manage Azure DevOps test results and code coverage.",
+      doc:
+        "Manage Azure DevOps test results. Lists recent test runs, shows individual run details, and publishes results from standard format files (Cobertura XML, JUnit, etc.).",
       subcommands: [
         list: [
           name: "ado test-results list",
-          doc: "List recent test runs in a project.",
+          doc:
+            "List recent test runs in a project. Output is a table (ID, Name, State, Completed date, Passed/Total). Use --build-id to filter to a specific build, --top to limit, --min-last-updated for date-based windowing.",
           arguments: [
             project: [type: :string, doc: "Project name or ID"]
           ],
@@ -43,7 +45,8 @@ defmodule AdoCli.CLI.TestResults do
         ],
         show: [
           name: "ado test-results show",
-          doc: "Show a specific test run by ID.",
+          doc:
+            "Show details of a single test run: name, state, owner, start/complete times, total/passed/failed counts, and outcome breakdown. Pass --json for machine-readable data.",
           arguments: [
             project: [type: :string, doc: "Project name or ID"],
             run_id: [type: :integer, doc: "Test run ID"]
@@ -55,19 +58,32 @@ defmodule AdoCli.CLI.TestResults do
         ],
         publish: [
           name: "ado test-results publish",
-          doc: "Publish test results from a file (Cobertura XML, JUnit, etc.) to Azure DevOps.",
+          doc:
+            "Publish test results from a standard-format file (Cobertura/cobertura XML, JUnit, VSTest TRX) to a build. The file is uploaded and parsed; results appear under Test Plans > Runs.",
           arguments: [
             project: [type: :string, doc: "Project name or ID"]
           ],
           options: [
-            name: [type: :string, required: true, doc: "Test run name", doc_arg: "NAME"],
+            name: [
+              type: :string,
+              required: true,
+              doc:
+                "Test run name (displayed in Azure DevOps Test Plans; use a descriptive name like CI Test Suite or Nightly Regression)",
+              doc_arg: "NAME"
+            ],
             file: [
               type: :string,
               required: true,
-              doc: "Path to test results file",
+              doc:
+                "Absolute or relative path to the results file on disk. Must be one of: cobertura XML, JUnit XML, VSTest TRX.",
               doc_arg: "PATH"
             ],
-            "build-id": [type: :integer, doc: "Associate with a build", doc_arg: "ID"],
+            "build-id": [
+              type: :integer,
+              doc:
+                "Numeric build ID to attach results to. If omitted, results are published as a standalone run (not linked to any build).",
+              doc_arg: "ID"
+            ],
             json: [type: :boolean, default: false, doc: "Output as JSON envelope"]
           ],
           execute: &publish_results/1

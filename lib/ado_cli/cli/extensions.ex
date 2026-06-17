@@ -19,42 +19,66 @@ defmodule AdoCli.CLI.Extensions do
   def command do
     [
       name: "ado extensions",
-      doc: "Manage marketplace extensions.",
+      doc:
+        "Manage Azure DevOps Marketplace extensions installed in the organization. Extensions add features like custom widgets, service hooks, and pipeline tasks.",
       subcommands: [
         list: [
           name: "ado extensions list",
-          doc: "List installed extensions.",
-          options: [search: [type: :string, doc: "Search by extension name", doc_arg: "SEARCH"]],
+          doc:
+            "List all extensions currently installed in the organization. Output is a table (Publisher.Name, Version, State). Use --search to filter by name (case-insensitive substring). Pass --json for the raw array.",
+          options: [
+            search: [
+              type: :string,
+              doc: "Filter to extensions whose name contains this string (case-insensitive)",
+              doc_arg: "SEARCH"
+            ]
+          ],
           execute: &list_extensions/1
         ],
         show: [
           name: "ado extensions show",
-          doc: "Show details of an extension.",
-          arguments: [extension_id: [type: :string, doc: "Extension ID (pub.name)"]],
+          doc:
+            "Show details of a single installed extension: publisher, name, version, and enabled/disabled state. Use the 'publisher.name' form (e.g. 'mspremier.BuildQualityChecks') — find it via `list`.",
+          arguments: [
+            extension_id: [
+              type: :string,
+              doc:
+                "Extension ID in 'publisher.name' form (e.g. 'mspremier.BuildQualityChecks'). NOT a numeric ID."
+            ]
+          ],
           execute: &show_extension/1
         ],
         install: [
           name: "ado extensions install",
-          doc: "Install an extension from the marketplace.",
+          doc:
+            "Install an extension from the Azure DevOps Marketplace. Both --publisher and --name are required; together they form the extension's ID. The extension must be available in the marketplace (free or licensed for your org).",
           options: [
             publisher: [
               type: :string,
               required: true,
-              doc: "Publisher name",
+              doc:
+                "Publisher namespace (e.g. 'mspremier', 'microsoft', 'swellaby'). The publisher's verified identity is shown on the marketplace listing.",
               doc_arg: "PUBLISHER"
             ],
-            name: [type: :string, required: true, doc: "Extension name", doc_arg: "NAME"]
+            name: [
+              type: :string,
+              required: true,
+              doc:
+                "Extension name as listed on the marketplace (e.g. 'BuildQualityChecks', ' octopus-deploy')",
+              doc_arg: "NAME"
+            ]
           ],
           execute: &install_extension/1
         ],
         uninstall: [
           name: "ado extensions uninstall",
-          doc: "Uninstall an extension.",
+          doc:
+            "Remove an extension from the organization. Fails if the extension is in use by active pipelines, service hooks, or tabs — disable first if you want a soft removal.",
           options: [
             publisher: [
               type: :string,
               required: true,
-              doc: "Publisher name",
+              doc: "Publisher namespace",
               doc_arg: "PUBLISHER"
             ],
             name: [type: :string, required: true, doc: "Extension name", doc_arg: "NAME"]
@@ -63,12 +87,13 @@ defmodule AdoCli.CLI.Extensions do
         ],
         enable: [
           name: "ado extensions enable",
-          doc: "Enable an extension.",
+          doc:
+            "Re-enable a previously disabled extension. Does not re-install; just flips the disabled flag back off.",
           options: [
             publisher: [
               type: :string,
               required: true,
-              doc: "Publisher name",
+              doc: "Publisher namespace",
               doc_arg: "PUBLISHER"
             ],
             name: [type: :string, required: true, doc: "Extension name", doc_arg: "NAME"]
@@ -77,12 +102,13 @@ defmodule AdoCli.CLI.Extensions do
         ],
         disable: [
           name: "ado extensions disable",
-          doc: "Disable an extension.",
+          doc:
+            "Disable an extension without uninstalling it. A soft-off: the extension is hidden from UI pickers and its service hooks pause, but installation state is preserved. Use `enable` to re-enable.",
           options: [
             publisher: [
               type: :string,
               required: true,
-              doc: "Publisher name",
+              doc: "Publisher namespace",
               doc_arg: "PUBLISHER"
             ],
             name: [type: :string, required: true, doc: "Extension name", doc_arg: "NAME"]

@@ -20,40 +20,89 @@ defmodule AdoCli.CLI.Projects do
   def command do
     [
       name: "ado projects",
-      doc: "Manage Azure DevOps projects.",
+      doc:
+        "Manage Azure DevOps projects. A project is the top-level container for repos, pipelines, work items, and teams. Every Azure DevOps organization has at least one project.",
       subcommands: [
         list: [
           name: "ado projects list",
-          doc: "List all projects in the organization.",
+          doc:
+            "List all projects in the organization. Output is a table (Name, ID, State, Visibility). Returns top 100 by default; use --top to change the page size. Pass --json for raw data.",
           options: [
-            state: [type: :string, doc: "Filter by project state", doc_arg: "STATE"],
-            top: [type: :integer, doc: "Maximum number of projects to return", doc_arg: "N"],
-            skip: [type: :integer, doc: "Number of projects to skip", doc_arg: "N"]
+            state: [
+              type: :string,
+              doc:
+                "Project lifecycle state. Valid: wellFormed (default — healthy and usable), creating, deleting, new (just created, being initialized), all (every state including soft-deleted)",
+              doc_arg: "STATE"
+            ],
+            top: [
+              type: :integer,
+              doc: "Maximum number of projects to return. Default 100, max 1000.",
+              doc_arg: "N"
+            ],
+            skip: [
+              type: :integer,
+              doc:
+                "Number of projects to skip (for pagination). Use with --top to page through results.",
+              doc_arg: "N"
+            ]
           ],
           execute: &list_projects/1
         ],
         show: [
           name: "ado projects show",
-          doc: "Show details of a specific project.",
-          arguments: [project_id: [type: :string, doc: "Project name or ID"]],
-          options: [capabilities: [type: :boolean, default: false, doc: "Include capabilities"]],
+          doc:
+            "Show details of a single project: ID, name, description, state, visibility, process template, and capabilities (with --capabilities). The argument accepts either the project name (e.g. 'MyApp') or the GUID.",
+          arguments: [
+            project_id: [
+              type: :string,
+              doc:
+                "Project name (e.g. 'MyApp') or GUID. Both are accepted; names are case-insensitive."
+            ]
+          ],
+          options: [
+            capabilities: [
+              type: :boolean,
+              default: false,
+              doc:
+                "Include the project's capability map (whether version control, boards, pipelines, test plans are enabled). Adds ~30 lines of output."
+            ]
+          ],
           execute: &show_project/1
         ],
         create: [
           name: "ado projects create",
-          doc: "Create a new project.",
-          arguments: [name: [type: :string, doc: "Project name"]],
+          doc:
+            "Create a new project. The project becomes 'wellFormed' within 30-60 seconds; the CLI does not wait. Use the resulting name with other commands.",
+          arguments: [
+            name: [
+              type: :string,
+              doc:
+                "Project name. Must be unique within the org, 3-64 chars, alphanumeric with hyphens (no spaces). Cannot be changed without deleting and recreating."
+            ]
+          ],
           options: [
-            description: [type: :string, doc: "Project description", doc_arg: "DESC"],
+            description: [
+              type: :string,
+              doc:
+                "Project description shown in the project picker. Multi-word values do not need quoting.",
+              doc_arg: "DESC"
+            ],
             visibility: [
               type: :string,
-              doc: "Visibility (private or public)",
+              doc:
+                "Who can see the project. Valid: private (default — only invited members), public (anyone on the internet can view, including non-Azure-DevOps users). Note: public projects require AAD and org-level enabling.",
               doc_arg: "VISIBILITY"
             ],
-            process: [type: :string, doc: "Process template name", doc_arg: "PROCESS"],
+            process: [
+              type: :string,
+              doc:
+                "Process template that defines work item types and states. Common values: 'Agile', 'Scrum', 'CMMI', 'Basic'. Default depends on the org.",
+              doc_arg: "PROCESS"
+            ],
             source_control: [
               type: :string,
-              doc: "Source control type (Git or Tfvc)",
+              doc:
+                "Initial source control type. Valid: 'Git' (default — modern, distributed), 'Tfvc' (legacy Team Foundation Version Control). Cannot be changed after creation.",
               doc_arg: "TYPE"
             ]
           ],
@@ -61,19 +110,32 @@ defmodule AdoCli.CLI.Projects do
         ],
         update: [
           name: "ado projects update",
-          doc: "Update an existing project.",
-          arguments: [project_id: [type: :string, doc: "Project name or ID"]],
+          doc:
+            "Update a project's name or description. The name change propagates to all URLs (old URLs redirect for a grace period).",
+          arguments: [project_id: [type: :string, doc: "Project name or GUID"]],
           options: [
-            name: [type: :string, doc: "New project name", doc_arg: "NAME"],
+            name: [
+              type: :string,
+              doc: "New project name (must be unique, same constraints as create)",
+              doc_arg: "NAME"
+            ],
             description: [type: :string, doc: "New project description", doc_arg: "DESC"]
           ],
           execute: &update_project/1
         ],
         delete: [
           name: "ado projects delete",
-          doc: "Delete a project.",
-          arguments: [project_id: [type: :string, doc: "Project name or ID"]],
-          options: [force: [type: :boolean, default: false, doc: "Skip confirmation"]],
+          doc:
+            "Permanently delete a project. This is IRREVERSIBLE: all repos, work items, pipelines, and history are erased. Use --force to skip the interactive confirmation (the CLI will still ask via the API). Plan for a 30-90 day soft-delete window if you change your mind.",
+          arguments: [project_id: [type: :string, doc: "Project name or GUID"]],
+          options: [
+            force: [
+              type: :boolean,
+              default: false,
+              doc:
+                "Skip the interactive confirmation prompt (useful in scripts). The Azure DevOps API itself does not require a separate confirmation."
+            ]
+          ],
           execute: &delete_project/1
         ]
       ]

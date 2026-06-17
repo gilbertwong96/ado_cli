@@ -19,17 +19,20 @@ defmodule AdoCli.CLI.Wikis do
   def command do
     [
       name: "ado wikis",
-      doc: "Manage Azure DevOps wikis and pages.",
+      doc:
+        "Manage Azure DevOps project wikis (code wikis) and their pages. Supports list, show, create, and update. Wikis are per-project Markdown documentation published alongside code.",
       subcommands: [
         list: [
           name: "ado wikis list",
-          doc: "List wikis in a project.",
+          doc:
+            "List all wikis in a project. Typically one code wiki per project; output shows name, type, and repository. Use --json for raw data.",
           arguments: [project: [type: :string, doc: "Project name or ID"]],
           execute: &list_wikis/1
         ],
         show: [
           name: "ado wikis show",
-          doc: "Show details of a wiki.",
+          doc:
+            "Show a single wiki: name, type (codeWiki or projectWiki), mapped repository, versions, and remote URL.",
           arguments: [
             project: [type: :string, doc: "Project name or ID"],
             wiki_id: [type: :string, doc: "Wiki ID or name"]
@@ -38,11 +41,13 @@ defmodule AdoCli.CLI.Wikis do
         ],
         pages: [
           name: "ado wikis pages",
-          doc: "Manage wiki pages.",
+          doc:
+            "Manage individual wiki pages (create, read, update). Pages are organized by path (e.g. /Home, /Design/Architecture). Content is Markdown.",
           subcommands: [
             list: [
               name: "ado wikis pages list",
-              doc: "List pages in a wiki.",
+              doc:
+                "List all pages in a wiki recursively. Use --path to scope to a subtree (e.g. /Design). Output is a flat list of paths.",
               arguments: [
                 project: [type: :string, doc: "Project name or ID"],
                 wiki_id: [type: :string, doc: "Wiki ID or name"]
@@ -72,7 +77,8 @@ defmodule AdoCli.CLI.Wikis do
                 content: [
                   type: :string,
                   required: true,
-                  doc: "Page content (markdown)",
+                  doc:
+                    "Markdown content for the page. Multi-word values do not need quoting. Use @file to read from a local .md file.",
                   doc_arg: "CONTENT"
                 ]
               ],
@@ -90,7 +96,8 @@ defmodule AdoCli.CLI.Wikis do
                 content: [
                   type: :string,
                   required: true,
-                  doc: "New page content",
+                  doc:
+                    "Replacement Markdown content for the page. Use @file to read from a local .md file.",
                   doc_arg: "CONTENT"
                 ]
               ],
