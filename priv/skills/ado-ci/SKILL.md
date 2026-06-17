@@ -1,6 +1,6 @@
 ---
 name: ado-ci
-description: Use ado in CI/CD: auth setup, pipeline triggers, PR automation, package publishing, work item creation on failure
+description: "Use ado in CI/CD: auth setup, pipeline triggers, PR automation, package publishing, work item creation on failure"
 version: "0.4.3"
 commands:
   - ado projects list
