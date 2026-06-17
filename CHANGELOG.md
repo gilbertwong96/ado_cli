@@ -5,6 +5,35 @@ All notable changes to `ado` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.2] - 2026-06-16
+
+### Fixed
+
+- **`ado login --method device` no longer crashes.** Two bugs prevented
+  the device code flow from working: (1) the Microsoft identity platform
+  response uses `verification_url` (not `verification_uri`), causing
+  `WithClauseError` in `request_device_code/1`; (2) `CLI.color/2` returns
+  an IO list, and string interpolation in the user prompt raised
+  `ArgumentError`. Switched to passing the IO list to `CLI.writeln/1`.
+- **`ado prs approve` works for non-creator PRs** — `connectionData`
+  API returns 400 when called with `api-version=7.1`. Added
+  `Client.get_raw_no_version/2` that builds the URL without the
+  api-version parameter. `current_user_id/0` now returns the
+  authenticated user's GUID correctly, and `resolve_reviewer_id/3`
+  uses a two-tier lookup: reviewer list first, then `createdBy.id`
+  fallback.
+- **Credo cleanup in `resolve_reviewer_id/3`** — extracted
+  `fetch_pr/3`, `pick_reviewer_id/2`, `reviewer_slot_for_user/1`,
+  and `creator_id/1` to reduce cyclomatic complexity from 10 to 3
+  and remove nested `case` statements.
+
+### Tests
+
+- **3 new `prs diff` tests** cover the new `diffs/commits` + `items`
+  API flow (--unified, --file, --file with leading slash).
+- 325 tests pass, 0 warnings, `mix credo --strict` clean.
+
+
 ## [0.4.1] - 2026-06-16
 
 ### Fixed
@@ -459,7 +488,11 @@ the embedded skills can be installed into any LLM agent's skill directory.
   are filtered by the `mix ci.dialyzer` task.
 - ExUnit test count: 234 (across 30+ test files). All pass.
 
-[Unreleased]: https://github.com/gilbertwong96/ado_cli/compare/v0.2.4...HEAD
+[Unreleased]: https://github.com/gilbertwong96/ado_cli/compare/v0.4.2...HEAD
+[0.4.2]: https://github.com/gilbertwong96/ado_cli/compare/v0.4.1...v0.4.2
+[0.4.1]: https://github.com/gilbertwong96/ado_cli/compare/v0.4.0...v0.4.1
+[0.4.0]: https://github.com/gilbertwong96/ado_cli/compare/v0.3.0...v0.4.0
+[0.3.0]: https://github.com/gilbertwong96/ado_cli/compare/v0.2.4...v0.3.0
 [0.2.4]: https://github.com/gilbertwong96/ado_cli/compare/v0.2.3...v0.2.4
 [0.2.3]: https://github.com/gilbertwong96/ado_cli/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/gilbertwong96/ado_cli/compare/v0.2.1...v0.2.2

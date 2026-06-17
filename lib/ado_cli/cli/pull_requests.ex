@@ -1081,40 +1081,44 @@ defmodule AdoCli.CLI.PullRequests do
   end
 
   defp resolve_reviewer_id(project, repo_id, pr_id) do
-    # Fetch the PR to get both the reviewer list and the creator.
-    # Match the authenticated user against the reviewer list first;
-    # if the user isn't found or current_user_id() fails, fall back
-    # to the PR creator (always a valid voter).
+    with {:ok, pr} <- fetch_pr(project, repo_id, pr_id),
+         reviewer_id when is_binary(reviewer_id) <- pick_reviewer_id(pr, pr_id) do
+      reviewer_id
+    end
+  end
+
+  defp fetch_pr(project, repo_id, pr_id) do
     case Client.get(
            "/#{URI.encode(project)}/_apis/git/repositories/#{URI.encode(repo_id)}/pullrequests/#{pr_id}"
          ) do
-      {:ok, pr} ->
-        reviewers = pr["reviewers"] || []
-
-        reviewer_id =
-          case AdoCli.Auth.current_user_id() do
-            {:ok, user_id} ->
-              Enum.find_value(reviewers, fn r ->
-                if get_in(r, ["identity", "id"]) == user_id, do: r["id"]
-              end)
-
-            _ ->
-              nil
-          end
-
-        if reviewer_id do
-          reviewer_id
-        else
-          case get_in(pr, ["createdBy", "id"]) do
-            nil -> halt_error("Cannot determine reviewer identity for PR ##{pr_id}")
-            creator_id -> creator_id
-          end
-        end
-
-      _ ->
-        halt_error("Cannot fetch PR ##{pr_id} to determine reviewer identity")
+      {:ok, pr} -> {:ok, pr}
+      _ -> {:error, "Cannot fetch PR ##{pr_id} to determine reviewer identity"}
     end
   end
+
+  defp pick_reviewer_id(pr, pr_id) do
+    case reviewer_slot_for_user(pr) do
+      id when is_binary(id) -> id
+      nil -> creator_id(pr) || halt_error("Cannot determine reviewer identity for PR ##{pr_id}")
+    end
+  end
+
+  defp reviewer_slot_for_user(%{"reviewers" => reviewers}) when is_list(reviewers) do
+    case AdoCli.Auth.current_user_id() do
+      {:ok, user_id} ->
+        Enum.find_value(reviewers, fn r ->
+          if get_in(r, ["identity", "id"]) == user_id, do: r["id"]
+        end)
+
+      _ ->
+        nil
+    end
+  end
+
+  defp reviewer_slot_for_user(_), do: nil
+
+  defp creator_id(%{"createdBy" => %{"id" => id}}) when is_binary(id), do: id
+  defp creator_id(_), do: nil
 
   defp vote_label(10), do: "+10 (approved)"
   defp vote_label(5), do: "+5 (approved with suggestions)"
