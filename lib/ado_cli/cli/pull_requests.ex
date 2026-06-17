@@ -244,8 +244,10 @@ defmodule AdoCli.CLI.PullRequests do
                 content: [
                   type: :string,
                   doc:
-                    "New comment content. Supports @<file> to read from a file " <>
-                      "or - to read from stdin. Omit to update status only.",
+                    "New comment content. Multi-word values do NOT need quoting " <>
+                      "— all subsequent args are joined until the next flag. " <>
+                      "Use @<file> to read from a file or `-` to read from stdin. " <>
+                      "Omit to update status only.",
                   doc_arg: "TEXT"
                 ],
                 status: [
@@ -287,7 +289,11 @@ defmodule AdoCli.CLI.PullRequests do
                 content: [
                   type: :string,
                   required: true,
-                  doc: "Comment text (markdown allowed)",
+                  doc:
+                    "Comment text (markdown allowed). Multi-word values do NOT " <>
+                      "need quoting — all subsequent args are joined until the " <>
+                      "next flag. Use @<file> to read from a file or `-` to read " <>
+                      "from stdin.",
                   doc_arg: "TEXT"
                 ],
                 file_path: [

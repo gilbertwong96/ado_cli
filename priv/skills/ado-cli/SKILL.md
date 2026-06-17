@@ -193,10 +193,12 @@ ado prs reviewers list MyProject MyRepo 42
 ado prs reviewers add MyProject MyRepo 42 --reviewer USER_GUID
 ado prs reviewers remove MyProject MyRepo 42 --reviewer USER_GUID
 
-# Review PR comments
-ado prs comments add MyProject MyRepo 42 --content "LGTM!"
+# Review PR comments (multi-word --content does not need quoting)
+ado prs comments add MyProject MyRepo 42 --content LGTM ship it
+ado prs comments add MyProject MyRepo 42 --content @notes.md
+echo "review body" | ado prs comments add MyProject MyRepo 42 --content -
 ado prs comments list MyProject MyRepo 42 --all
-ado prs comments update MyProject MyRepo 42 7 5 --content "updated" --status fixed
+ado prs comments update MyProject MyRepo 42 7 5 --content updated text --status fixed
 
 # Trigger a pipeline with variables
 ado pipelines run MyProject 42 --branch main --variables "ENV=staging,DEBUG=true"

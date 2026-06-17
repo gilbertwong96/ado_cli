@@ -160,6 +160,7 @@ defmodule AdoCli.CLI do
       System.halt(0)
     end
 
+    args = join_multivalue_opts(args)
     parsed = parse_or_halt!(args, @command)
 
     # Apply global options to runtime env for auth resolution
@@ -167,6 +168,46 @@ defmodule AdoCli.CLI do
 
     parsed.execute.()
   end
+
+  # String options that should consume all subsequent non-flag tokens.
+  # Without this, `--content foo bar baz` would parse as content=foo
+  # and bar/baz as extra positional args, which CliMate rejects.
+  # This is the same convention as `curl --data`, `tar -cf`, etc.
+  @multivalue_opts ~w(--content --message --body --description --reason --summary --text)
+
+  def join_multivalue_opts(args) do
+    join_multivalue_opts(args, [])
+  end
+
+  defp join_multivalue_opts([], result), do: Enum.reverse(result)
+
+  defp join_multivalue_opts([arg | rest], result) do
+    if arg in @multivalue_opts do
+      {joined, remaining} = take_multivalue_tokens(rest)
+      join_multivalue_opts(remaining, ["#{arg}=#{joined}" | result])
+    else
+      join_multivalue_opts(rest, [arg | result])
+    end
+  end
+
+  # Collects consecutive non-flag tokens after a multivalue flag like
+  # --content, stopping at the next flag. Returns the joined string
+  # and the leftover args (so a subsequent --status can still parse).
+  defp take_multivalue_tokens(tokens) do
+    take_multivalue_tokens(tokens, [])
+  end
+
+  defp take_multivalue_tokens([arg | rest] = tokens, acc) do
+    if String.starts_with?(arg, "-") and arg != "-" do
+      {join_words(Enum.reverse(acc)), tokens}
+    else
+      take_multivalue_tokens(rest, [arg | acc])
+    end
+  end
+
+  defp take_multivalue_tokens([], acc), do: {join_words(Enum.reverse(acc)), []}
+
+  defp join_words(words), do: Enum.join(words, " ")
 
   defp apply_global_opts(opts) do
     if org = opts[:org], do: :persistent_term.put({:ado_cli, :org}, org)
