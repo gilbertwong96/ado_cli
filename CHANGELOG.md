@@ -5,6 +5,48 @@ All notable changes to `ado` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.4] - 2026-06-17
+
+### Fixed
+
+- **`ado prs comments add --content` accepts unquoted multi-word text.**
+  Elixir 1.18+ `OptionParser` in strict mode consumes only one token after
+  a flag, so `--content Code review approved` parsed as `content="Code"`
+  and `["review", "approved"]` as extra positional args, which CliMate
+  rejected with `unexpected extra argument review`. Added a pre-parse
+  pass in `AdoCli.CLI.run/1` that detects flags in `@multivalue_opts`
+  (`--content`, `--message`, `--body`, `--description`, `--reason`,
+  `--summary`, `--text`) and joins all subsequent non-flag tokens into
+  a single value using the `--flag=value` syntax. 12 new unit tests
+  cover single-word, multi-word, `--status`-after, `=`, `-`, `@file`
+  and combination cases.
+
+### Documentation
+
+- **Enriched `--help` text across all 27 command modules.** Every option
+  `doc:` string now includes valid values for enums, default behavior
+  hints, output format descriptions, and argument format hints (GUID
+  vs numeric ID vs name). Example: `state: "wellFormed, creating,
+  deleting, new, all"` instead of `Filter by project state`.
+- **Rewrote all 3 skills for LLM agent consumption.** Each skill now
+  has a decision tree, structured command reference, common pitfalls
+  table with specific error messages and version-specific fixes, and
+  cross-references. Bumped to v0.4.3 to match the CLI version. New
+  sections include binary download matrix (5 platforms in ado-ci), PAT
+  scope table, troubleshooting matrix (ado-auth), and JSON output
+  examples (ado-cli).
+- **Updated help text to document the new multi-word flag behavior.**
+  `prs comments add --help` and `prs comments update --help` now show:
+  "Multi-word values do NOT need quoting — all subsequent args are
+  joined until the next flag. Use @<file> to read from a file or `-`
+  to read from stdin."
+
+### Tests
+
+- 12 new tests in `test/ado_cli/cli_test.exs` for the multi-word flag
+  join behavior. 337 tests pass, credo clean, dialyzer clean.
+
+
 ## [0.4.3] - 2026-06-17
 
 ### Fixed
@@ -504,7 +546,8 @@ the embedded skills can be installed into any LLM agent's skill directory.
   are filtered by the `mix ci.dialyzer` task.
 - ExUnit test count: 234 (across 30+ test files). All pass.
 
-[Unreleased]: https://github.com/gilbertwong96/ado_cli/compare/v0.4.3...HEAD
+[Unreleased]: https://github.com/gilbertwong96/ado_cli/compare/v0.4.4...HEAD
+[0.4.4]: https://github.com/gilbertwong96/ado_cli/compare/v0.4.3...v0.4.4
 [0.4.3]: https://github.com/gilbertwong96/ado_cli/compare/v0.4.2...v0.4.3
 [0.4.1]: https://github.com/gilbertwong96/ado_cli/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/gilbertwong96/ado_cli/compare/v0.3.0...v0.4.0
