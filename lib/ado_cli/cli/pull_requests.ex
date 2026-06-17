@@ -1080,45 +1080,20 @@ defmodule AdoCli.CLI.PullRequests do
     "#{base}/#{org}/#{project}/_git/#{repo_id}/pullrequest/#{pr_id}"
   end
 
-  defp resolve_reviewer_id(project, repo_id, pr_id) do
-    with {:ok, pr} <- fetch_pr(project, repo_id, pr_id),
-         reviewer_id when is_binary(reviewer_id) <- pick_reviewer_id(pr, pr_id) do
-      reviewer_id
-    end
-  end
-
-  defp fetch_pr(project, repo_id, pr_id) do
-    case Client.get(
-           "/#{URI.encode(project)}/_apis/git/repositories/#{URI.encode(repo_id)}/pullrequests/#{pr_id}"
-         ) do
-      {:ok, pr} -> {:ok, pr}
-      _ -> {:error, "Cannot fetch PR ##{pr_id} to determine reviewer identity"}
-    end
-  end
-
-  defp pick_reviewer_id(pr, pr_id) do
-    case reviewer_slot_for_user(pr) do
-      id when is_binary(id) -> id
-      nil -> creator_id(pr) || halt_error("Cannot determine reviewer identity for PR ##{pr_id}")
-    end
-  end
-
-  defp reviewer_slot_for_user(%{"reviewers" => reviewers}) when is_list(reviewers) do
+  defp resolve_reviewer_id(_project, _repo_id, pr_id) do
+    # Use the authenticated user's identity GUID as the reviewer ID.
+    # The Azure DevOps PUT /reviewers/{id} endpoint auto-adds the user
+    # as a reviewer with the given vote if they aren't one already.
+    # Using createdBy.id as a fallback would cause
+    # "You cannot record a vote for someone else" errors.
     case AdoCli.Auth.current_user_id() do
       {:ok, user_id} ->
-        Enum.find_value(reviewers, fn r ->
-          if get_in(r, ["identity", "id"]) == user_id, do: r["id"]
-        end)
+        user_id
 
-      _ ->
-        nil
+      {:error, reason} ->
+        halt_error("Cannot determine authenticated user identity for PR ##{pr_id}: #{reason}")
     end
   end
-
-  defp reviewer_slot_for_user(_), do: nil
-
-  defp creator_id(%{"createdBy" => %{"id" => id}}) when is_binary(id), do: id
-  defp creator_id(_), do: nil
 
   defp vote_label(10), do: "+10 (approved)"
   defp vote_label(5), do: "+5 (approved with suggestions)"
