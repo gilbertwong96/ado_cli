@@ -5,6 +5,22 @@ All notable changes to `ado` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.3] - 2026-06-17
+
+### Fixed
+
+- **`ado prs approve` for any PR** — `resolve_reviewer_id/3` previously
+  fell back to `createdBy.id` (the PR creator's identity) when the
+  authenticated user was not in the PR's reviewer list. This caused
+  `TF401186: You cannot record a vote for someone else` errors when
+  voting on a PR the user did not create. Now uses the authenticated
+  user's identity GUID directly (via `current_user_id/0`). The Azure
+  DevOps `PUT /reviewers/{id}` endpoint auto-adds the user as a
+  reviewer with the given vote if they aren't one already, so this
+  works for PRs the user created, was added to as a reviewer, or
+  needs to be added to. Function simplified from 34 lines to 9.
+
+
 ## [0.4.2] - 2026-06-16
 
 ### Fixed
@@ -488,8 +504,8 @@ the embedded skills can be installed into any LLM agent's skill directory.
   are filtered by the `mix ci.dialyzer` task.
 - ExUnit test count: 234 (across 30+ test files). All pass.
 
-[Unreleased]: https://github.com/gilbertwong96/ado_cli/compare/v0.4.2...HEAD
-[0.4.2]: https://github.com/gilbertwong96/ado_cli/compare/v0.4.1...v0.4.2
+[Unreleased]: https://github.com/gilbertwong96/ado_cli/compare/v0.4.3...HEAD
+[0.4.3]: https://github.com/gilbertwong96/ado_cli/compare/v0.4.2...v0.4.3
 [0.4.1]: https://github.com/gilbertwong96/ado_cli/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/gilbertwong96/ado_cli/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/gilbertwong96/ado_cli/compare/v0.2.4...v0.3.0
