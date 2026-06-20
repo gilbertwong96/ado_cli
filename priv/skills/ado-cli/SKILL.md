@@ -58,6 +58,9 @@ commands:
   - ado extensions list
   - ado agent-pools list
   - ado connections list PROJECT
+  - ado connections create PROJECT --name N --type T --url URL --access-token TOKEN
+  - ado connections update PROJECT ID --name N
+  - ado connections delete PROJECT ID
   - ado security groups list PROJECT SCOPE
   - ado banners set --message TEXT --type warning
   - ado packages list PROJECT FEED
@@ -348,7 +351,52 @@ ado agent-pools queues POOL_ID
 ### Service Connections
 
 ```bash
+# List connections (table: ID, Name, Type)
 ado connections list MyProject
+ado connections list MyProject --type github
+
+# Show details (ID, name, type, url, isReady). Secrets are never returned.
+ado connections show MyProject <connection-id>
+
+# Create a GitHub PAT connection (literal token — appears in shell history)
+ado connections create MyProject GitHubPat github https://github.com \
+    --access-token gh_xxxxx --description "CI bot PAT"
+
+# Create with token from stdin (secure — no shell history)
+echo "$GITHUB_PAT" | ado connections create MyProject GitHubPat github https://github.com \
+    --access-token -
+
+# Create with token from a file
+ado connections create MyProject GitHubPat github https://github.com \
+    --access-token @~/.github-pat --description "CI bot PAT"
+
+# Create with type-specific --data (e.g. Azure RM subscription)
+ado connections create MyProject AzureProd azure "" \
+    --data '{"subscriptionId":"11111111-2222-3333-4444-555555555555","subscriptionName":"Prod"}' \
+    --scheme UsernamePassword --access-token secret-password
+
+# Update (rename, change description, or rotate credentials)
+ado connections update MyProject <id> --name "Renamed"
+ado connections update MyProject <id> --access-token new-token
+ado connections update MyProject <id> --data '{"subscriptionId":"new-sub-id"}'
+# No fields supplied → usage error
+
+# Delete (--force skips y/N confirmation)
+ado connections delete MyProject <id> --force
+```
+
+JSON response shape for create/update (with `--json`):
+```json
+{
+  "ok": true,
+  "result": {
+    "id": "uuid",
+    "name": "string",
+    "type": "string",
+    "url": "string",
+    "isReady": true
+  }
+}
 ```
 
 ### Security
