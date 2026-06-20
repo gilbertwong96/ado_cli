@@ -232,6 +232,57 @@ defmodule AdoCli.CLI.ConnectionsTest do
 
       assert_receive {:cli_mate_shell, :halt, 1}, 500
     end
+
+    test "reads --access-token from @file", %{server: server} do
+      path = Path.join(System.tmp_dir!(), "ado_conn_test_#{System.unique_integer()}")
+      File.write!(path, "file-based-token\n")
+
+      body =
+        ~s({"id":"new-id","name":"GH","type":"github","url":"https://github.com","isReady":false})
+
+      TestServer.expect(server, "POST", api("/MyProj/_apis/serviceendpoint/endpoints"), fn conn ->
+        {:ok, req_body, _} = Plug.Conn.read_body(conn)
+
+        assert Jason.decode!(req_body)["authorization"]["parameters"]["accessToken"] ==
+                 "file-based-token"
+
+        Plug.Conn.resp(conn, 200, body)
+      end)
+
+      Connections.create_connection(%{
+        options: %{
+          json: true,
+          description: nil,
+          scheme: "Token",
+          access_token: "@#{path}",
+          data: nil,
+          ready: false
+        },
+        arguments: %{project: "MyProj", name: "GH", type: "github", url: "https://github.com"}
+      })
+
+      assert_receive {:cli_mate_shell, :halt, 0}, 500
+      File.rm!(path)
+    end
+  end
+
+  describe "resolve_token/1" do
+    test "returns nil for nil or empty", _ do
+      assert nil == Connections.resolve_token(nil)
+      assert nil == Connections.resolve_token("")
+    end
+
+    test "returns literal string unchanged", _ do
+      assert "ghp_xxx" == Connections.resolve_token("ghp_xxx")
+    end
+
+    test "reads from file with @prefix", _ do
+      path = Path.join(System.tmp_dir!(), "ado_test_token_#{System.unique_integer()}")
+      File.write!(path, "file-read-token\n")
+
+      assert "file-read-token" == Connections.resolve_token("@#{path}")
+      File.rm!(path)
+    end
   end
 
   describe "update_connection/1" do

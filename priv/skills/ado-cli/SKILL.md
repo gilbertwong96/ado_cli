@@ -358,9 +358,17 @@ ado connections list MyProject --type github
 # Show details (ID, name, type, url, isReady). Secrets are never returned.
 ado connections show MyProject <connection-id>
 
-# Create a GitHub PAT connection
+# Create a GitHub PAT connection (literal token — appears in shell history)
 ado connections create MyProject GitHubPat github https://github.com \
     --access-token gh_xxxxx --description "CI bot PAT"
+
+# Create with token from stdin (secure — no shell history)
+echo "$GITHUB_PAT" | ado connections create MyProject GitHubPat github https://github.com \
+    --access-token -
+
+# Create with token from a file
+ado connections create MyProject GitHubPat github https://github.com \
+    --access-token @~/.github-pat --description "CI bot PAT"
 
 # Create with type-specific --data (e.g. Azure RM subscription)
 ado connections create MyProject AzureProd azure "" \

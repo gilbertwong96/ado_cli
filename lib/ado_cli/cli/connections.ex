@@ -87,7 +87,7 @@ defmodule AdoCli.CLI.Connections do
             access_token: [
               type: :string,
               doc:
-                "Credential value for the chosen scheme. For scheme=Token this is the access token (e.g. GitHub PAT). For scheme=UsernamePassword this is the password. Pass the secret via a shell variable, not inline.",
+                "Credential value. Accepts three forms: a literal string, `-` to read from stdin (no shell history), or `@path/to/file` to read from a file (trailing newline is stripped). Recommended: `echo \"$MY_PAT\" | ado connections create ... --access-token -`",
               doc_arg: "TOKEN"
             ],
             data: [
@@ -124,7 +124,7 @@ defmodule AdoCli.CLI.Connections do
             access_token: [
               type: :string,
               doc:
-                "Replace the credential (accessToken for Token scheme, password for UsernamePassword).",
+                "Replace the credential. Same forms as create: literal value, `-` (stdin), or `@path` (from file).",
               doc_arg: "TOKEN"
             ],
             data: [
@@ -194,7 +194,7 @@ defmodule AdoCli.CLI.Connections do
       Map.put(
         %{"scheme" => Map.get(parsed.options, :scheme, "Token"), "parameters" => %{}},
         "parameters",
-        put_if_present(%{}, Map.get(parsed.options, :access_token), "accessToken")
+        put_if_present(%{}, resolve_token(Map.get(parsed.options, :access_token)), "accessToken")
       )
 
     body = %{
@@ -241,7 +241,7 @@ defmodule AdoCli.CLI.Connections do
     body = put_if_present(body, Map.get(parsed.options, :url), "url")
 
     body =
-      if token = Map.get(parsed.options, :access_token) do
+      if token = resolve_token(Map.get(parsed.options, :access_token)) do
         base = Map.get(body, "authorization", %{"scheme" => "Token", "parameters" => %{}})
         params = Map.put(base["parameters"] || %{}, "accessToken", token)
         Map.put(body, "authorization", Map.put(base, "parameters", params))
@@ -297,6 +297,24 @@ defmodule AdoCli.CLI.Connections do
 
       {:error, _} = error ->
         Helpers.handle_api_result(error, parsed, fn _ -> :ok end)
+    end
+  end
+
+  @doc false
+  def resolve_token(nil), do: nil
+  def resolve_token(""), do: nil
+  def resolve_token("-"), do: read_stdin()
+  def resolve_token("@" <> path), do: read_file_secret(path)
+  def resolve_token(token), do: token
+
+  defp read_stdin do
+    String.trim(to_string(IO.read(:stdio, 1_073_741_824)))
+  end
+
+  defp read_file_secret(path) do
+    case File.read(path) do
+      {:ok, content} -> String.trim(content)
+      {:error, reason} -> halt_error("Cannot read secret file \"#{path}\": #{reason}")
     end
   end
 
