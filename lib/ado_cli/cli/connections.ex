@@ -53,7 +53,7 @@ defmodule AdoCli.CLI.Connections do
         create: [
           name: "ado connections create",
           doc:
-            "Create a new service connection. The minimum required fields are name, type, and url. Pass --access-token to set the credential for the most common schemes (Token, e.g. GitHub PATs). Use --data with a JSON string for type-specific fields (e.g. subscriptionId for Azure RM, clusterUrl for Kubernetes).",
+            "Create a new service connection. The minimum required fields are name, type, and url. Pass --access-token to set the credential for the most common schemes (Token, e.g. GitHub PATs). Use --data with a JSON string for type-specific fields (e.g. subscriptionId for Azure RM, clusterUrl for Kubernetes). Returns the created connection object: 'id' (UUID), 'name', 'type', 'url', 'isReady' (boolean). Secrets are never returned — even with --json.",
           arguments: [
             project: [type: :string, doc: "Project name or ID"],
             name: [
@@ -108,7 +108,7 @@ defmodule AdoCli.CLI.Connections do
         update: [
           name: "ado connections update",
           doc:
-            "Update an existing service connection. Pass any of --name, --description, --url, --access-token, or --data; at least one is required. To rotate credentials, pass --access-token (or --data for UsernamePassword / Certificate).",
+            "Update an existing service connection. Pass any of --name, --description, --url, --access-token, or --data; at least one is required. To rotate credentials, pass --access-token (or --data for UsernamePassword / Certificate). Returns the updated connection object: 'id' (UUID), 'name', 'type', 'url', 'isReady' (boolean).",
           arguments: [
             project: [type: :string, doc: "Project name or ID"],
             connection_id: [type: :string, doc: "Service connection ID (UUID from `list`)"]
