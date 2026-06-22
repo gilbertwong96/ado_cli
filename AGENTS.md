@@ -182,3 +182,41 @@ mix escript.build
 MIX_ENV=prod mix release
 ```
 
+## Release Process
+
+Use `just bump` to automate version bumps across all files:
+
+```bash
+# 1. Bump version everywhere (mix.exs, npm packages, docs, README)
+just bump 0.4.6
+
+# 2. Write the CHANGELOG entry for the new version
+#    (edit CHANGELOG.md manually — bump only touches mechanical files)
+
+# 3. Verify everything is clean
+just check
+
+# 4. Commit and tag
+mix format
+git add -u
+git commit -m "release: v0.4.6"
+git tag -a v0.4.6 -m "Release 0.4.6"
+git push github main v0.4.6
+#    CI builds binaries and creates the GitHub Release automatically.
+
+# 5. Publish npm packages (after CI completes and binaries are uploaded)
+./scripts/npm-publish.sh 0.4.6
+```
+
+`just bump` updates these files mechanically:
+
+| File | What changes |
+|------|-------------|
+| `mix.exs` | Canonical version string |
+| `npm/@*/package.json` | All 6 npm package manifests |
+| `github-page/index.html` | Download binary curl example |
+| `README.md` | Publishing section examples |
+
+It does NOT update `CHANGELOG.md`, `priv/skills/*`, or `AGENTS.md` —
+those need human-written content.
+

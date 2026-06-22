@@ -155,25 +155,21 @@ all: ci test release
 #
 # Updates:
 #   * mix.exs                  — the canonical version
+#   * npm/@*/package.json      — all 6 npm package manifests
 #   * github-page/index.html   — the "Download binary" curl example
 #   * README.md                — the Publishing section's release flow
 #                                 (tag, push, npm-publish.sh, etc.)
 #
-# Reminds you (but does NOT auto-update):
+# Does NOT auto-update (needs human input):
 #   * CHANGELOG.md             — needs a human-written entry
-#   * AGENTS.md                — has a coverage stat quoted per-version
 #   * priv/skills/*            — the `version:` frontmatter is the SKILL's
 #                                 own version, not the binary's; leave
 #                                 alone unless you also bump the skills
 #
-# Files the bump task leaves alone (intentionally):
-#   * npm/*/package.json       — template files at the previous version;
-#                                 scripts/npm-publish.sh bumps at runtime
-#   * npm/@gilbertwong1996-ado-{platform}/bin/ado{,.exe} — downloaded
-#                                 from the GitHub Release by the publish
-#                                 script
-#   * lib/ado_cli/version.ex   — the AdoCli.Version module reads the
-#                                 version dynamically from mix.exs;
+# Files intentionally left alone:
+#   * npm/@*-{platform}/bin/ado{,.exe} — downloaded from the GitHub
+#                                 Release by the publish script
+#   * lib/ado_cli/version.ex   — reads the version dynamically from mix.exs;
 #                                 there's no hard-coded string
 #
 # The task is idempotent: running it twice with the same arg is a
@@ -212,11 +208,19 @@ bump new_version:
     sed -i '' "s/version: \"$OLD\"/version: \"$NEW\"/" mix.exs
     echo "  ✓ mix.exs"
 
-    # 2. github-page/index.html — the curl example
+    # 2. npm package manifests — all 6 package.json files
+    for pkg in npm/@gilbertwong1996-ado{,-darwin-arm64,-darwin-x64,-linux-arm64,-linux-x64,-win32-x64}/package.json; do
+        if [[ -f "$pkg" ]]; then
+            sed -i '' "s/\"$OLD\"/\"$NEW\"/" "$pkg"
+        fi
+    done
+    echo "  ✓ npm/@*/package.json (6 files)"
+
+    # 3. github-page/index.html — the curl example
     sed -i '' "s/ado-${OLD}-macos-aarch64/ado-${NEW}-macos-aarch64/g" github-page/index.html
     echo "  ✓ github-page/index.html (Download binary curl example)"
 
-    # 3. README.md — the Publishing section's release flow + examples
+    # 4. README.md — the Publishing section's release flow + examples
     #    (lines ~688–788, the publishing cheat-sheet). We replace
     #    $OLD with $NEW; the rest of README shouldn't reference the
     #    version, but if it does, the diff at the end will show it.
@@ -229,20 +233,17 @@ bump new_version:
     echo "Done. You still need to:"
     echo ""
     echo "  1. Add a CHANGELOG.md entry under '## [$NEW]'"
-    echo "       (see the [0.2.1] section as a template)"
-    echo "  2. Bump the 'Total project coverage is X% as of v$OLD' line in AGENTS.md"
-    echo "       if the coverage number has changed (only on v0.X.0 releases)"
-    echo "  3. Run \`mix format\` to normalize the diff"
-    echo "  4. Run \`just check\` to confirm CI is still green"
-    echo "  5. Commit, push, tag:"
+    echo "  2. Run \`mix format\` to normalize the diff"
+    echo "  3. Run \`just check\` to confirm CI is still green"
+    echo "  4. Commit and tag:"
     echo "       git add -u && git commit -m 'release: v$NEW'"
     echo "       git tag -a v$NEW -m 'Release $NEW'"
     echo "       git push github main v$NEW"
     echo "       (CI will build the binaries and create the GitHub Release)"
-    echo "  6. Run \`./scripts/npm-publish.sh $NEW\` locally to publish the npm packages"
+    echo "  5. Run \`./scripts/npm-publish.sh $NEW\` locally to publish the npm packages"
     echo ""
     echo "Diff (review before committing):"
     echo "─────────────────────────────────────────────────────────"
     git --no-pager diff --stat
     echo "─────────────────────────────────────────────────────────"
-    git --no-pager diff mix.exs github-page/index.html README.md | head -60
+    git --no-pager diff mix.exs npm/ github-page/index.html README.md | head -80
