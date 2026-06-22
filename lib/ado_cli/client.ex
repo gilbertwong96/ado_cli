@@ -45,15 +45,21 @@ defmodule AdoCli.Client do
   @doc """
   Makes a POST request.
   """
-  def post(path, body, params \\ %{}) do
-    handle_response(do_request(:post, path, body, params))
+  def post(path, body, params \\ %{}),
+    do: post(path, body, params, "application/json")
+
+  def post(path, body, params, content_type) do
+    handle_response(do_request(:post, path, body, params, content_type))
   end
 
   @doc """
   Makes a PATCH request.
   """
-  def patch(path, body, params \\ %{}) do
-    handle_response(do_request(:patch, path, body, params))
+  def patch(path, body, params \\ %{}),
+    do: patch(path, body, params, "application/json")
+
+  def patch(path, body, params, content_type) do
+    handle_response(do_request(:patch, path, body, params, content_type))
   end
 
   @doc """
@@ -122,27 +128,78 @@ defmodule AdoCli.Client do
 
   defp safe_decode(body), do: body
 
-  defp do_request(method, path, body, params, extra_headers \\ [], attempt \\ 0)
+  defp do_request(
+         method,
+         path,
+         body,
+         params,
+         content_type_or_extra_headers \\ "application/json",
+         attempt \\ 0
+       )
 
-  defp do_request(_method, _path, _body, _params, _extra_headers, 3),
+  defp do_request(_method, _path, _body, _params, _content_type_or_extra_headers, 3),
     do: {:error, %{status: 302, body: "Too many redirects"}}
 
-  defp do_request(method, path, body, params, extra_headers, attempt) do
+  defp do_request(method, path, body, params, content_type_or_extra_headers, attempt)
+       when is_list(content_type_or_extra_headers) do
     with {:ok, org, auth_headers} <- AdoCli.Auth.resolve_auth() do
-      do_request_with_auth(method, path, body, params, attempt, org, auth_headers, extra_headers)
+      do_request_with_auth(
+        method,
+        path,
+        body,
+        params,
+        attempt,
+        {org, auth_headers},
+        "application/json",
+        content_type_or_extra_headers
+      )
     end
   end
 
-  defp do_request_with_auth(method, path, body, params, attempt, org, auth_headers, extra_headers) do
+  defp do_request(method, path, body, params, content_type, attempt)
+       when is_binary(content_type) do
+    with {:ok, org, auth_headers} <- AdoCli.Auth.resolve_auth() do
+      do_request_with_auth(
+        method,
+        path,
+        body,
+        params,
+        attempt,
+        {org, auth_headers},
+        content_type,
+        []
+      )
+    end
+  end
+
+  defp do_request_with_auth(
+         method,
+         path,
+         body,
+         params,
+         attempt,
+         {org, auth_headers},
+         content_type,
+         extra_headers
+       ) do
     url = build_url(path, params)
     full_url = inject_org(url, org)
-    headers = [{"Content-Type", "application/json"} | auth_headers] ++ extra_headers
+    headers = [{"Content-Type", content_type} | auth_headers] ++ extra_headers
     encoded = if body, do: JSON.encode!(body)
 
     case Finch.request(Finch.build(method, full_url, headers, encoded), AdoCli.Finch) do
       {:ok, %Finch.Response{status: status, headers: resp_headers}}
       when status in [301, 302, 307, 308] ->
-        handle_redirect(method, path, body, params, resp_headers, auth_headers, attempt)
+        handle_redirect(
+          method,
+          path,
+          body,
+          params,
+          resp_headers,
+          auth_headers,
+          attempt,
+          extra_headers
+        )
 
       {:ok, %Finch.Response{status: status, body: resp_body}} ->
         {:ok, %{status: status, body: resp_body}}
@@ -156,7 +213,16 @@ defmodule AdoCli.Client do
   # browser-based identity establishment (MSA personal orgs, etc.).
   # This cannot be automated — the user must authenticate interactively
   # via `ado login` first.
-  defp handle_redirect(_method, _path, _body, _params, resp_headers, _auth_headers, _attempt) do
+  defp handle_redirect(
+         _method,
+         _path,
+         _body,
+         _params,
+         resp_headers,
+         _auth_headers,
+         _attempt,
+         _extra_headers
+       ) do
     location =
       Enum.find_value(resp_headers, fn
         {"location", v} -> v

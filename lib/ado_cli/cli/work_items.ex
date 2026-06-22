@@ -264,24 +264,17 @@ defmodule AdoCli.CLI.WorkItems do
   def list_work_items(parsed) do
     project = parsed.arguments.project
 
-    filters =
-      []
+    where_clauses =
+      ["[System.TeamProject] = '#{escape_wiql(project)}'"]
       |> add_wiql_filter(Map.get(parsed.options, :type), "System.WorkItemType")
       |> add_wiql_filter(Map.get(parsed.options, :assigned_to), "System.AssignedTo")
       |> add_wiql_filter(Map.get(parsed.options, :state), "System.State")
 
     wiql =
-      ["ORDER BY [System.Id] DESC" | filters]
-      |> then(&["WHERE [System.TeamProject] = '#{escape_wiql(project)}'" | &1])
-      |> then(&["FROM WorkItems" | &1])
-      |> then(
-        &[
-          "SELECT [System.Id], [System.Title], [System.State], [System.WorkItemType], [System.AssignedTo]"
-          | &1
-        ]
-      )
-      |> Enum.reverse()
-      |> Enum.join(" ")
+      "SELECT [System.Id], [System.Title], [System.State], [System.WorkItemType], [System.AssignedTo] " <>
+        "FROM WorkItems " <>
+        "WHERE #{Enum.join(where_clauses, " AND ")} " <>
+        "ORDER BY [System.Id] DESC"
 
     run_wiql_query(project, wiql, parsed)
   end
@@ -340,7 +333,12 @@ defmodule AdoCli.CLI.WorkItems do
         {"/fields/System.Tags", Map.get(parsed.options, :tags)}
       ])
 
-    case Client.post("/#{URI.encode(project)}/_apis/wit/workitems/$#{URI.encode(type)}", patch) do
+    case Client.post(
+           "/#{URI.encode(project)}/_apis/wit/workitems/$#{URI.encode(type)}",
+           patch,
+           %{},
+           "application/json-patch+json"
+         ) do
       {:ok, wi} ->
         success("Work item ##{wi["id"]} created: #{wi["fields"]["System.Title"]}\n")
         writeln("  Type:  #{wi["fields"]["System.WorkItemType"]}")
@@ -368,9 +366,14 @@ defmodule AdoCli.CLI.WorkItems do
         {"/fields/System.Description", Map.get(parsed.options, :description)},
         {"/fields/System.State", Map.get(parsed.options, :state)},
         {"/fields/System.AssignedTo", Map.get(parsed.options, :assigned_to)},
-        {"/fields/Microsoft.VSTS.Common.Priority", Map.get(parsed.options, :priority)},
-        {"/fields/System.Tags", Map.get(parsed.options, :tags)}
+        {"/fields/Microsoft.VSTS.Common.Priority", Map.get(parsed.options, :priority)}
       ])
+
+    patch =
+      case Map.get(parsed.options, :tags) do
+        nil -> patch
+        tags -> [%{"op" => "replace", "path" => "/fields/System.Tags", "value" => tags} | patch]
+      end
 
     if patch == [] do
       halt_error(
@@ -378,7 +381,7 @@ defmodule AdoCli.CLI.WorkItems do
       )
     end
 
-    case Client.patch("/_apis/wit/workitems/#{id}", patch) do
+    case Client.patch("/_apis/wit/workitems/#{id}", patch, %{}, "application/json-patch+json") do
       {:ok, wi} ->
         success("Work item ##{wi["id"]} updated.\n")
         writeln("  Title: #{wi["fields"]["System.Title"]}")
@@ -434,11 +437,24 @@ defmodule AdoCli.CLI.WorkItems do
           writeln("No work items found.")
           halt_success("")
         else
-          Helpers.json_or_format(items, parsed, &print_work_items_table/1)
+          fetch_work_items_batch(items, parsed)
         end
 
       error ->
         Helpers.handle_api_result(error, parsed, fn _ -> :ok end)
+    end
+  end
+
+  defp fetch_work_items_batch(items, parsed) do
+    ids = Enum.map_join(items, ",", & &1["id"])
+    fields = "System.Id,System.Title,System.State,System.WorkItemType,System.AssignedTo"
+
+    case Client.get("/_apis/wit/workitems", %{"ids" => ids, "fields" => fields}) do
+      {:ok, %{"value" => work_items}} ->
+        Helpers.json_or_format(work_items, parsed, &print_work_items_table/1)
+
+      _error ->
+        Helpers.json_or_format(items, parsed, &print_work_items_table/1)
     end
   end
 
@@ -534,7 +550,7 @@ defmodule AdoCli.CLI.WorkItems do
 
     path = "/_apis/wit/workitems/#{id}"
 
-    case Client.patch(path, patch) do
+    case Client.patch(path, patch, %{}, "application/json-patch+json") do
       {:ok, _} ->
         success("Comment added to work item ##{id}.\n\n")
 
@@ -558,7 +574,7 @@ defmodule AdoCli.CLI.WorkItems do
 
     path = "/_apis/wit/workitems/#{id}"
 
-    case Client.patch(path, patch) do
+    case Client.patch(path, patch, %{}, "application/json-patch+json") do
       {:ok, _} ->
         success("Comment updated on work item ##{id}.\n\n")
 
