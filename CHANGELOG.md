@@ -5,6 +5,28 @@ All notable changes to `ado` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.5] - 2026-06-22
+
+### Fixed
+
+- **Work items `list` returned empty Type/Title columns.** WIQL queries
+  return bare `{id, url}` refs without field data. Added `fetch_work_items_batch`
+  to batch-fetch full work item details by IDs for rich table output.
+- **Work items `list` WIQL clause ordering was broken.** The internal query
+  builder produced `ORDER BY ... WHERE ... FROM WorkItems SELECT ...` instead
+  of the correct `SELECT ... FROM WorkItems WHERE ... ORDER BY ...` order.
+  Rewrote the pipeline to build clauses in the proper order.
+- **Work items `create` and `update` returned "content-type not supported".**
+  The Azure DevOps work items API requires `application/json-patch+json`,
+  but `Client.post`/`patch` always sent `application/json`. Extended both
+  functions to accept an optional content type parameter.
+- **Work items `update --tags` appended instead of replacing.** The JSON-Patch
+  `op: "add"` on `System.Tags` appends tags in Azure DevOps. Changed
+  `update_work_item` to use `op: "replace"` to match the documented
+  "replaces all" behavior.
+- **`Client.do_request_with_auth` exceeded Credo's max arity of 8.** Merged
+  `org` and `auth_headers` into a single tuple parameter.
+
 ## [0.4.4] - 2026-06-17
 
 ### Fixed
