@@ -21,7 +21,7 @@ defmodule AdoCli.CLI.AuthCommands do
     [
       name: "ado login",
       doc:
-        "Authenticate with Azure DevOps. Default (no --method) opens your browser for interactive OAuth sign-in. For CI or headless environments, use --method pat with a Personal Access Token. Use --method device to print a code+URL for signing in on any device. After login, credentials are stored in ~/.ado_cli/config.json with 0600 permissions.",
+        "Authenticate with Azure DevOps. Default (no --method) opens your browser for interactive OAuth sign-in. Run without any flags — the org is auto-detected from your token. For CI or headless environments, use --method pat with a Personal Access Token. Use --method device to print a code+URL for signing in on any device (org also optional). After login, credentials are stored in ~/.ado_cli/config.json with 0600 permissions.",
       options: [
         method: [
           type: :string,
@@ -32,7 +32,7 @@ defmodule AdoCli.CLI.AuthCommands do
         org: [
           type: :string,
           doc:
-            "Azure DevOps organization name. Optional for browser/device login (the org is auto-detected from the token). Required for PAT login. Can also be set via ADO_ORG env var.",
+            "Azure DevOps organization name. Optional — auto-detected from the token for browser and device login. Required for PAT login. Can also be set via ADO_ORG env var.",
           doc_arg: "ORG"
         ],
         server: [
@@ -76,7 +76,7 @@ defmodule AdoCli.CLI.AuthCommands do
     method = Map.get(opts, :method, "browser")
     org = Map.get(opts, :org) || System.get_env("ADO_ORG")
 
-    if org == nil and method != "browser" do
+    if org == nil and method not in ["browser", "device"] do
       Output.error(
         parsed,
         "validation_error",

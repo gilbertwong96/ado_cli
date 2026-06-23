@@ -1,12 +1,12 @@
 ---
 name: ado-auth
 description: "Authenticate ado: PAT (CI-friendly), browser OAuth (AAD + MSA), device code (headless), env vars, self-hosted server"
-version: "0.4.3"
+version: "0.4.6"
 commands:
-  - ado login --method pat --org ORG --pat TOKEN
-  - ado login --org ORG
-  - ado login --method device --org ORG
   - ado login
+  - ado login --method device
+  - ado login --org ORG
+  - ado login --method pat --org ORG --pat TOKEN
   - ado logout
   - ado whoami
   - export ADO_ORG=org ADO_PAT=token
@@ -27,19 +27,16 @@ There is **no `az` CLI dependency**.
 
 ```
 Are you in CI/headless (no browser)?
-  ├── Yes → Use PAT (method: pat)
+  ├── Yes → Use PAT (method: pat, requires --org)
   │         ado login --method pat --org myorg --pat mytoken
   │
-  └── No → Are you signing into a work/school (AAD) org?
-            ├── Yes → Browser OAuth (default)
-            │         ado login --org myorg
+  └── No → Just type `ado login` — picks the right method automatically:
+            ├── Browser OAuth (default, no flags needed)
+            │   ado login                 # auto-detects org
+            │   ado login --org myorg     # or hint a specific org
             │
-            └── No (MSA/personal org, *.visualstudio.com)?
-                  ├── Browser works → Browser OAuth
-                  │   ado login --org myorg
-                  │
-                  └── Browser blocked (firewall/Zscaler) → Device code
-                      ado login --method device --org myorg
+            └── Device code (browser blocked by firewall/Zscaler)
+                ado login --method device  # org also auto-detected
 ```
 
 ## Method details
@@ -64,8 +61,8 @@ ado projects list
 ### Browser OAuth — default, interactive
 
 ```bash
-ado login --org myorg     # opens browser
-ado login                 # auto-detects org from token
+ado login                 # auto-detects org from token (recommended)
+ado login --org myorg     # hint a specific org
 ```
 
 Supports:
@@ -80,7 +77,8 @@ Prerequisites:
 ### Device Code — headless, no browser
 
 ```bash
-ado login --method device --org myorg
+ado login --method device         # org auto-detected, no --org needed
+ado login --method device --org myorg  # or hint a specific org
 # CLI prints a URL and code → visit https://login.microsoft.com/device
 # Enter the code → CLI polls for completion
 ```

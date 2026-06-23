@@ -1,12 +1,14 @@
 ---
 name: ado-cli
 description: Complete command reference for all 24 Azure DevOps service areas (projects, repos, workitems, pipelines, prs, releases, packages, and more)
-version: "0.4.3"
+version: "0.4.6"
 commands:
   - ado --version
   - ado version
   - ado schema --json
   - ado completion bash
+  - ado login
+  - ado login --method device
   - ado login --org ORG
   - ado login --method pat --org ORG --pat TOKEN
   - ado logout
@@ -43,6 +45,8 @@ commands:
   - ado prs comments add PROJECT REPO PR_ID --content TEXT
   - ado prs comments update PROJECT REPO PR_ID THREAD COMMENT --content TEXT
   - ado prs diff PROJECT REPO PR_ID
+  - ado prs diff PROJECT REPO PR_ID --file PATH
+  - ado prs diff PROJECT REPO PR_ID --unified
   - ado prs reviewers list PROJECT REPO PR_ID
   - ado prs reviewers add PROJECT REPO PR_ID --reviewer USER_GUID
   - ado prs reviewers remove PROJECT REPO PR_ID --reviewer USER_GUID
@@ -98,7 +102,8 @@ mix escript.build && cp ado /usr/local/bin/
 # Or: curl -L -o ado https://github.com/gilbertwong96/ado_cli/releases/latest/download/ado_linux
 
 # Authenticate
-ado login                                                   # browser OAuth
+ado login                                                   # browser OAuth, auto-detects org
+ado login --method device                                   # device code, no --org needed
 ado login --method pat --org myorg --pat mytoken            # PAT (CI-friendly)
 
 # Verify
@@ -264,6 +269,10 @@ ado prs create MyProject MyRepo --title "Add feature" --source dev --target main
 ado prs diff MyProject MyRepo 42                                    # file list with +/- counts
 ado prs diff MyProject MyRepo 42 --file src/app.ex                   # per-file unified diff
 ado prs diff MyProject MyRepo 42 --unified | delta                  # full unified diff stream
+
+# Diff handles new, edited, and deleted files correctly:
+ado prs diff MyProject MyRepo 42 --file new_file.ex                  # new file: shows all + lines
+ado prs diff MyProject MyRepo 42 --file deleted.ex                   # deleted: shows all - lines
 
 # Review and merge
 ado prs approve MyProject MyRepo 42                                 # vote +10
