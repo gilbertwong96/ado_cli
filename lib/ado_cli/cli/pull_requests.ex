@@ -917,19 +917,21 @@ defmodule AdoCli.CLI.PullRequests do
     end
   end
 
-  defp fetch_file_diff(parsed, iteration, file, change) do
+  defp fetch_file_diff(parsed, iteration, _file, change) do
     project = URI.encode(parsed.arguments.project)
     repo_id = URI.encode(parsed.arguments.repo_id)
     base = get_in(iteration, ["targetRefCommit", "commitId"])
     target = get_in(iteration, ["sourceRefCommit", "commitId"])
     ctype = change_type(change)
+    # Use the API's canonical path (always has leading /) for item fetches.
+    api_path = change_path(change)
 
     if !base || !target do
       {:error, "Iteration is missing sourceRefCommit or targetRefCommit"}
     else
-      with {:ok, old_content} <- fetch_or_empty(project, repo_id, file, base, ctype, :del),
-           {:ok, new_content} <- fetch_or_empty(project, repo_id, file, target, ctype, :ins) do
-        {:ok, format_unified_diff(file, old_content, new_content, base, target)}
+      with {:ok, old_content} <- fetch_or_empty(project, repo_id, api_path, base, ctype, :del),
+           {:ok, new_content} <- fetch_or_empty(project, repo_id, api_path, target, ctype, :ins) do
+        {:ok, format_unified_diff(api_path, old_content, new_content, base, target)}
       end
     end
   end
