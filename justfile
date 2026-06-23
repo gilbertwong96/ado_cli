@@ -156,15 +156,13 @@ all: ci test release
 # Updates:
 #   * mix.exs                  — the canonical version
 #   * npm/@*/package.json      — all 6 npm package manifests
+#   * priv/skills/*/SKILL.md   — version frontmatter in every skill
 #   * github-page/index.html   — the "Download binary" curl example
 #   * README.md                — the Publishing section's release flow
 #                                 (tag, push, npm-publish.sh, etc.)
 #
 # Does NOT auto-update (needs human input):
 #   * CHANGELOG.md             — needs a human-written entry
-#   * priv/skills/*            — the `version:` frontmatter is the SKILL's
-#                                 own version, not the binary's; leave
-#                                 alone unless you also bump the skills
 #
 # Files intentionally left alone:
 #   * npm/@*-{platform}/bin/ado{,.exe} — downloaded from the GitHub
@@ -216,11 +214,19 @@ bump new_version:
     done
     echo "  ✓ npm/@*/package.json (6 files)"
 
-    # 3. github-page/index.html — the curl example
+    # 3. priv/skills/*/SKILL.md — version frontmatter in YAML header
+    for skill in priv/skills/*/SKILL.md; do
+        if [[ -f "$skill" ]]; then
+            sed -i '' "s/^version: \"$OLD\"/version: \"$NEW\"/" "$skill"
+        fi
+    done
+    echo "  ✓ priv/skills/*/SKILL.md (version frontmatter)"
+
+    # 4. github-page/index.html — the curl example
     sed -i '' "s/ado-${OLD}-macos-aarch64/ado-${NEW}-macos-aarch64/g" github-page/index.html
     echo "  ✓ github-page/index.html (Download binary curl example)"
 
-    # 4. README.md — the Publishing section's release flow + examples
+    # 5. README.md — the Publishing section's release flow + examples
     #    (lines ~688–788, the publishing cheat-sheet). We replace
     #    $OLD with $NEW; the rest of README shouldn't reference the
     #    version, but if it does, the diff at the end will show it.
