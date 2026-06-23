@@ -5,6 +5,19 @@ All notable changes to `ado` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.6] - 2026-06-23
+
+### Fixed
+
+- **`prs diff --file` returned 404 for new files.** For files added in a
+  PR (changeType `add`), the Azure DevOps `/items` API returns 404 when
+  fetching the file at the base commit (the file didn't exist yet). The
+  diff pipeline now tolerates 404 on the old-content side for new files
+  and on the new-content side for deleted files, using empty content.
+- **`prs diff --unified` dropped new and deleted files.** The unified diff
+  mode (`collect_diffs`) silently skipped files where either the old or new
+  content fetch failed. It now correctly includes new and deleted files.
+
 ## [0.4.5] - 2026-06-22
 
 ### Fixed
