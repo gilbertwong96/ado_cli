@@ -700,6 +700,246 @@ defmodule AdoCli.CLI.PullRequestsTest do
 
       assert_receive {:cli_mate_shell, :halt, 1}, 500
     end
+
+    test "--file with a new (add) file: tolerates 404 on old content", %{server: server} do
+      iterations_body =
+        JSON.encode!(%{
+          "value" => [
+            %{
+              "id" => 1,
+              "sourceRefCommit" => %{"commitId" => "src"},
+              "targetRefCommit" => %{"commitId" => "tgt"}
+            }
+          ]
+        })
+
+      changes_body =
+        JSON.encode!(%{
+          "changeEntries" => [
+            %{"changeId" => 101, "changeType" => 1, "item" => %{"path" => "/src/new_file.ex"}}
+          ]
+        })
+
+      TestServer.expect(
+        server,
+        "GET",
+        api("/testorg/_apis/git/repositories/test/pullRequests/1/iterations"),
+        fn conn -> Plug.Conn.resp(conn, 200, iterations_body) end
+      )
+
+      TestServer.expect(
+        server,
+        "GET",
+        api("/testorg/_apis/git/repositories/test/pullRequests/1/iterations/1/changes"),
+        fn conn -> Plug.Conn.resp(conn, 200, changes_body) end
+      )
+
+      TestServer.expect(
+        server,
+        "GET",
+        api("/testorg/_apis/git/repositories/test/pullRequests/1/iterations"),
+        fn conn -> Plug.Conn.resp(conn, 200, iterations_body) end
+      )
+
+      # LIFO matching: the FIRST GET /items matches the LAST expectation.
+      # We want 1st call (old content, base) → 404, 2nd call (new content, source) → 200.
+      # So register 200 FIRST (matched last), 404 LAST (matched first).
+
+      # New content — file exists in source commit (registered first → matched last)
+      TestServer.expect(
+        server,
+        "GET",
+        api("/testorg/_apis/git/repositories/test/items"),
+        fn conn ->
+          Plug.Conn.resp(conn, 200, "defmodule NewFile do\n  @moduledoc \"New file\"\nend\n")
+        end
+      )
+
+      # Old content — file doesn't exist in base commit (registered last → matched first)
+      TestServer.expect(
+        server,
+        "GET",
+        api("/testorg/_apis/git/repositories/test/items"),
+        fn conn -> Plug.Conn.resp(conn, 404, ~s({"message":"not found"})) end
+      )
+
+      output =
+        capture_io(fn ->
+          apply(AdoCli.CLI.PullRequests, :diff_pr, [
+            %{
+              options: %{file: "src/new_file.ex", iteration: nil, unified: false, json: false},
+              arguments: %{project: "testorg", repo_id: "test", pr_id: 1}
+            }
+          ])
+        end)
+
+      assert_receive {:cli_mate_shell, :halt, 0}, 500
+      assert output =~ "diff --git"
+      assert output =~ "+++ b/src/new_file.ex"
+      # All lines should be additions (start with +)
+      assert output =~ "+defmodule NewFile do"
+      refute output =~ "-defmodule NewFile do"
+    end
+
+    test "--file with a deleted file: tolerates 404 on new content", %{server: server} do
+      iterations_body =
+        JSON.encode!(%{
+          "value" => [
+            %{
+              "id" => 1,
+              "sourceRefCommit" => %{"commitId" => "src"},
+              "targetRefCommit" => %{"commitId" => "tgt"}
+            }
+          ]
+        })
+
+      changes_body =
+        JSON.encode!(%{
+          "changeEntries" => [
+            %{"changeId" => 102, "changeType" => 4, "item" => %{"path" => "/src/deleted.ex"}}
+          ]
+        })
+
+      TestServer.expect(
+        server,
+        "GET",
+        api("/testorg/_apis/git/repositories/test/pullRequests/1/iterations"),
+        fn conn -> Plug.Conn.resp(conn, 200, iterations_body) end
+      )
+
+      TestServer.expect(
+        server,
+        "GET",
+        api("/testorg/_apis/git/repositories/test/pullRequests/1/iterations/1/changes"),
+        fn conn -> Plug.Conn.resp(conn, 200, changes_body) end
+      )
+
+      TestServer.expect(
+        server,
+        "GET",
+        api("/testorg/_apis/git/repositories/test/pullRequests/1/iterations"),
+        fn conn -> Plug.Conn.resp(conn, 200, iterations_body) end
+      )
+
+      # LIFO matching: 1st GET /items → 200 (old content), 2nd → 404 (new content).
+      # Register 404 first (matched last), 200 last (matched first).
+
+      # New content — file doesn't exist in source commit (registered first → matched last)
+      TestServer.expect(
+        server,
+        "GET",
+        api("/testorg/_apis/git/repositories/test/items"),
+        fn conn -> Plug.Conn.resp(conn, 404, ~s({"message":"not found"})) end
+      )
+
+      # Old content — file exists in base commit (registered last → matched first)
+      TestServer.expect(
+        server,
+        "GET",
+        api("/testorg/_apis/git/repositories/test/items"),
+        fn conn ->
+          Plug.Conn.resp(conn, 200, "defmodule Deleted do\n  def bye, do: :ok\nend\n")
+        end
+      )
+
+      output =
+        capture_io(fn ->
+          apply(AdoCli.CLI.PullRequests, :diff_pr, [
+            %{
+              options: %{file: "src/deleted.ex", iteration: nil, unified: false, json: false},
+              arguments: %{project: "testorg", repo_id: "test", pr_id: 1}
+            }
+          ])
+        end)
+
+      assert_receive {:cli_mate_shell, :halt, 0}, 500
+      assert output =~ "diff --git"
+      assert output =~ "--- a/src/deleted.ex"
+      # All lines should be deletions (start with -)
+      assert output =~ "-defmodule Deleted do"
+      refute output =~ "+defmodule Deleted do"
+    end
+
+    test "--unified includes new files (tolerates 404 on base)", %{server: server} do
+      iterations_body =
+        JSON.encode!(%{
+          "value" => [
+            %{
+              "id" => 1,
+              "sourceRefCommit" => %{"commitId" => "src"},
+              "targetRefCommit" => %{"commitId" => "tgt"}
+            }
+          ]
+        })
+
+      changes_body =
+        JSON.encode!(%{
+          "changeEntries" => [
+            %{"changeId" => 501, "changeType" => 1, "item" => %{"path" => "/src/new.ex"}}
+          ]
+        })
+
+      diffs_body =
+        JSON.encode!(%{
+          "changes" => [
+            %{
+              "changeType" => 1,
+              "item" => %{"path" => "/src/new.ex", "objectId" => "n1", "originalObjectId" => "n0"}
+            }
+          ]
+        })
+
+      TestServer.expect(
+        server,
+        "GET",
+        api("/testorg/_apis/git/repositories/test/pullRequests/1/iterations"),
+        fn conn -> Plug.Conn.resp(conn, 200, iterations_body) end
+      )
+
+      TestServer.expect(
+        server,
+        "GET",
+        api("/testorg/_apis/git/repositories/test/pullRequests/1/iterations/1/changes"),
+        fn conn -> Plug.Conn.resp(conn, 200, changes_body) end
+      )
+
+      TestServer.expect(
+        server,
+        "GET",
+        api("/testorg/_apis/git/repositories/test/pullRequests/1/iterations"),
+        fn conn -> Plug.Conn.resp(conn, 200, iterations_body) end
+      )
+
+      TestServer.expect(
+        server,
+        "GET",
+        api("/testorg/_apis/git/repositories/test/diffs/commits"),
+        fn conn -> Plug.Conn.resp(conn, 200, diffs_body) end
+      )
+
+      # New content only — fetch_or_empty_raw short-circuits old for add
+      TestServer.expect(
+        server,
+        "GET",
+        api("/testorg/_apis/git/repositories/test/items"),
+        fn conn -> Plug.Conn.resp(conn, 200, "defmodule New do\nend\n") end
+      )
+
+      output =
+        capture_io(fn ->
+          apply(AdoCli.CLI.PullRequests, :diff_pr, [
+            %{
+              options: %{file: nil, iteration: nil, unified: true, json: false},
+              arguments: %{project: "testorg", repo_id: "test", pr_id: 1}
+            }
+          ])
+        end)
+
+      assert_receive {:cli_mate_shell, :halt, 0}, 500
+      assert output =~ "diff --git"
+      assert output =~ "+++ b/src/new.ex"
+      assert output =~ "+defmodule New do"
+    end
   end
 
   # Drain all :info messages from the ProcessShell's mailbox.

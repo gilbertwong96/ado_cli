@@ -834,7 +834,7 @@ defmodule AdoCli.CLI.PullRequests do
   defp do_render_file_diff(parsed, iteration_id, change, file, json?) do
     case fetch_iteration_data(parsed, iteration_id) do
       {:ok, iteration} ->
-        case fetch_file_diff(parsed, iteration, file) do
+        case fetch_file_diff(parsed, iteration, file, change) do
           {:ok, content} ->
             emit_diff_or_json(
               json?,
@@ -917,17 +917,18 @@ defmodule AdoCli.CLI.PullRequests do
     end
   end
 
-  defp fetch_file_diff(parsed, iteration, file) do
+  defp fetch_file_diff(parsed, iteration, file, change) do
     project = URI.encode(parsed.arguments.project)
     repo_id = URI.encode(parsed.arguments.repo_id)
     base = get_in(iteration, ["targetRefCommit", "commitId"])
     target = get_in(iteration, ["sourceRefCommit", "commitId"])
+    ctype = change_type(change)
 
     if !base || !target do
       {:error, "Iteration is missing sourceRefCommit or targetRefCommit"}
     else
-      with {:ok, old_content} <- fetch_file_content(project, repo_id, file, base),
-           {:ok, new_content} <- fetch_file_content(project, repo_id, file, target) do
+      with {:ok, old_content} <- fetch_or_empty(project, repo_id, file, base, ctype, :del),
+           {:ok, new_content} <- fetch_or_empty(project, repo_id, file, target, ctype, :ins) do
         {:ok, format_unified_diff(file, old_content, new_content, base, target)}
       end
     end
@@ -966,9 +967,11 @@ defmodule AdoCli.CLI.PullRequests do
     changes
     |> Enum.map(fn ch ->
       path = get_in(ch, ["item", "path"])
+      # changeType: 1=add, 2=edit, 4=delete
+      ctype = ch["changeType"]
 
-      with {:ok, old_content} <- fetch_file_content(project, repo_id, path, base),
-           {:ok, new_content} <- fetch_file_content(project, repo_id, path, target) do
+      with {:ok, old_content} <- fetch_or_empty_raw(project, repo_id, path, base, ctype, :del),
+           {:ok, new_content} <- fetch_or_empty_raw(project, repo_id, path, target, ctype, :ins) do
         format_unified_diff(path, old_content, new_content, base, target)
       else
         _ -> nil
@@ -988,6 +991,41 @@ defmodule AdoCli.CLI.PullRequests do
     }
 
     Client.get_raw(content_path, params)
+  end
+
+  # Fetches file content, falling back to empty string when the file
+  # does not exist in that commit (404). The side parameter (:del for
+  # base/old, :ins for target/new) controls which 404s are allowed:
+  #   * "add" files — the file is new; base fetch returns 404 → use ""
+  #   * "delete" files — the file was removed; target fetch returns 404 → use ""
+  #   * "edit" files — the file must exist in both commits; 404 is an error
+  defp fetch_or_empty(project, repo_id, path, commit_id, ctype, side) do
+    case fetch_file_content(project, repo_id, path, commit_id) do
+      {:ok, content} ->
+        {:ok, content}
+
+      {:error, %{status: 404}} ->
+        if (ctype == "add" and side == :del) or (ctype == "delete" and side == :ins) do
+          {:ok, ""}
+        else
+          {:error, "File not found in commit #{commit_id}"}
+        end
+
+      {:error, _} = err ->
+        err
+    end
+  end
+
+  # Same as fetch_or_empty/6 but uses raw changeType integer from the
+  # /diffs/commits response (1=add, 2=edit, 4=delete).
+  defp fetch_or_empty_raw(_project, _repo_id, _path, _commit_id, 1, :del), do: {:ok, ""}
+  defp fetch_or_empty_raw(_project, _repo_id, _path, _commit_id, 4, :ins), do: {:ok, ""}
+
+  defp fetch_or_empty_raw(project, repo_id, path, commit_id, _ctype, _side) do
+    case fetch_file_content(project, repo_id, path, commit_id) do
+      {:ok, content} -> {:ok, content}
+      {:error, _} = err -> err
+    end
   end
 
   defp format_unified_diff(path, old_content, new_content, base_sha, target_sha) do
