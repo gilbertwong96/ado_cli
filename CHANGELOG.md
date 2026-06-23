@@ -5,6 +5,24 @@ All notable changes to `ado` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.7] - 2026-06-23
+
+### Fixed
+
+- **`prs diff --file` used raw user input as API path.** The path from
+  `--file` (e.g. `src/foo.ex` without leading `/`) was passed directly to
+  the `/items` API, causing 404s when the API expected `/src/foo.ex`. The
+  canonical API path from the change list is now used for all item fetches.
+- **`just bump` didn't update skill version frontmatter.** `priv/skills/*/SKILL.md`
+  files were excluded, requiring manual version bumps. Added to the bump script.
+
+### Changed
+
+- **`ado login --method device` no longer requires `--org`.** The org is
+  auto-detected from the token, matching the browser flow behavior.
+- **Login help text and skills updated** to emphasize the no-flags workflow
+  (`ado login` without any flags works for both browser and device code).
+
 ## [0.4.6] - 2026-06-23
 
 ### Fixed
