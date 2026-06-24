@@ -223,7 +223,7 @@ bump new_version:
     echo "  ✓ priv/skills/*/SKILL.md (version frontmatter)"
 
     # 4. github-page/index.html — the curl example
-    sed -i '' "s/ado-${OLD}-macos-aarch64/ado-${NEW}-macos-aarch64/g" github-page/index.html
+    sed -i '' -E "s/ado-[0-9]+\.[0-9]+\.[0-9]+-macos-aarch64/ado-${NEW}-macos-aarch64/g" github-page/index.html
     echo "  ✓ github-page/index.html (Download binary curl example)"
 
     # 5. README.md — the Publishing section's release flow + examples
