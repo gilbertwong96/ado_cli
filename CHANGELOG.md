@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.4.9] - 2026-06-24
 
+### Added
+
+- **`prs comments delete` subcommand.** Delete a specific comment (HTTP DELETE)
+  or close an entire thread (PATCH status=closed, since Azure DevOps does not
+  support DELETE on threads). Supports `--force` to skip confirmation prompt
+  and `--json` for scripting.
+- **`prs comments resolve` subcommand.** Resolve a review thread by setting its
+  status via PATCH. Defaults to "fixed"; also accepts wontFix, closed,
+  byDesign, and active (reopen). `--resolved-by-me` attributes the resolution
+  to the authenticated user.
+
 ### Fixed
 
 - **Inline PR comments showed "file no longer exists" warning.** The
