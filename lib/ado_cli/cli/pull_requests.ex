@@ -1935,8 +1935,8 @@ defmodule AdoCli.CLI.PullRequests do
       "status" => status,
       "threadContext" => %{
         "filePath" => file_path,
-        "leftFileStart" => %{"line" => line, "offset" => 1},
-        "leftFileEnd" => %{"line" => line, "offset" => 2}
+        "rightFileStart" => %{"line" => line, "offset" => 1},
+        "rightFileEnd" => %{"line" => line, "offset" => 2}
       }
     }
 

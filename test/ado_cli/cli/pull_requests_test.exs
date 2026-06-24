@@ -1022,8 +1022,8 @@ defmodule AdoCli.CLI.PullRequestsTest do
           "status" => "active",
           "threadContext" => %{
             "filePath" => "src/foo.ex",
-            "leftFileStart" => %{"line" => 42, "offset" => 1},
-            "leftFileEnd" => %{"line" => 42, "offset" => 2}
+            "rightFileStart" => %{"line" => 42, "offset" => 1},
+            "rightFileEnd" => %{"line" => 42, "offset" => 2}
           }
         }),
         response,
