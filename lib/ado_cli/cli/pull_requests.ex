@@ -1126,22 +1126,24 @@ defmodule AdoCli.CLI.PullRequests do
 
   defp change_type(change) do
     # Azure DevOps can return changeType as string ("add") or integer (1).
-    # The iterations/changes endpoint uses strings; /diffs/commits uses
-    # integers. Normalize both to atoms.
+    # Normalize to integer first, then map to display string.
     case change["changeType"] do
       "add" -> "add"
       "edit" -> "edit"
       "delete" -> "delete"
       "rename" -> "rename"
       "directory" -> "directory"
-      1 -> "add"
-      2 -> "edit"
-      4 -> "delete"
-      8 -> "rename"
-      16 -> "directory"
+      n when is_integer(n) -> int_change_type(n)
       _ -> "change"
     end
   end
+
+  defp int_change_type(1), do: "add"
+  defp int_change_type(2), do: "edit"
+  defp int_change_type(4), do: "delete"
+  defp int_change_type(8), do: "rename"
+  defp int_change_type(16), do: "directory"
+  defp int_change_type(_), do: "change"
 
   defp change_to_envelope(change) do
     %{
