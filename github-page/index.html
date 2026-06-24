@@ -38,8 +38,7 @@
       <div class="install-row install-row-hero">
         <div class="install-cmd">
           <span class="label">npm <span class="recommended-pill">recommended</span></span>
-          <pre><code>npm install -g @gilbertwong1996/ado
-npm approve-scripts @gilbertwong1996/ado  # npm 11+ one-time setup</code></pre>
+          <pre><code>npm install -g @gilbertwong1996/ado --foreground-scripts</code></pre>
         </div>
       </div>
       <p class="hero-hint">Works on macOS, Linux, and Windows. <a href="#install">Other install methods →</a></p>
@@ -248,9 +247,9 @@ cp ado /usr/local/bin/</code></pre>
       <h2>Quick start</h2>
       <div class="code-block">
 <pre><code><span class="comment"># 1. Authenticate (pick one)</span>
-ado login --org myorg                            <span class="comment"># browser OAuth</span>
+ado login                                         <span class="comment"># browser OAuth (org auto-detected)</span>
 ado login --method pat --org myorg --pat TOKEN   <span class="comment"># Personal Access Token</span>
-ado login --method device --org myorg            <span class="comment"># no browser needed</span>
+ado login --method device                         <span class="comment"># no browser needed</span>
 
 <span class="comment"># 2. List projects</span>
 ado projects list

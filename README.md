@@ -50,13 +50,12 @@ so they load natively on startup.
 ### npm (recommended)
 
 ```bash
-npm install -g @gilbertwong1996/ado
-npm approve-scripts @gilbertwong1996/ado      # npm 11+: allow the postinstall to auto-install shell completion
+npm install -g @gilbertwong1996/ado --foreground-scripts
 ```
 
 > **npm 11+ note**: newer npm versions gate lifecycle scripts behind explicit
-> approval. Run the second command above once — the postinstall will then
-> auto-install shell completion on every `npm install -g` afterward.
+> approval. The `--foreground-scripts` flag allows the postinstall to run, which
+> downloads the platform binary and auto-installs shell completion.
 
 ### Pre-built binaries
 
