@@ -25,6 +25,8 @@ defmodule AdoCli.CLI.PullRequests do
         [--file-path PATH --line N] [--thread-id TID] [--status STATUS] [--json]
     ado_cli prs comments update PROJECT REPO PR_ID THREAD_ID COMMENT_ID
         [--content TEXT|@FILE|-] [--status STATUS] [--resolved-by-me] [--dry-run] [--json]
+    ado_cli prs comments delete PROJECT REPO PR_ID THREAD_ID [--comment-id ID] [--force] [--json]
+    ado_cli prs comments resolve PROJECT REPO PR_ID THREAD_ID [--status STATUS] [--resolved-by-me] [--json]
 
   `prs diff` lists changed files by default (path, change type, +/- counts),
   or shows the full unified diff for a specific path with --file, or emits
@@ -250,7 +252,7 @@ defmodule AdoCli.CLI.PullRequests do
         comments: [
           name: "ado prs comments",
           doc:
-            "Manage pull request review comments (inline code comments, file-level comments, and discussion threads). A 'thread' is the top-level comment; a 'comment' is a reply within a thread.",
+            "Manage pull request review comments. Subcommands: add (create thread or reply), list (view threads), update (edit content or status), delete (remove comment or close thread), resolve (mark thread as fixed). A 'thread' is the top-level comment; a 'comment' is a reply within a thread.",
           subcommands: [
             list: [
               name: "ado prs comments list",

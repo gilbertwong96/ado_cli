@@ -44,6 +44,9 @@ commands:
   - ado prs comments list PROJECT REPO PR_ID
   - ado prs comments add PROJECT REPO PR_ID --content TEXT
   - ado prs comments update PROJECT REPO PR_ID THREAD COMMENT --content TEXT
+  - ado prs comments delete PROJECT REPO PR_ID THREAD
+  - ado prs comments delete PROJECT REPO PR_ID THREAD --comment-id ID
+  - ado prs comments resolve PROJECT REPO PR_ID THREAD
   - ado prs diff PROJECT REPO PR_ID
   - ado prs diff PROJECT REPO PR_ID --file PATH
   - ado prs diff PROJECT REPO PR_ID --unified
@@ -286,6 +289,10 @@ echo "review" | ado prs comments add MyProject MyRepo 42 --content - # from stdi
 ado prs comments list MyProject MyRepo 42 --all                     # full content view
 ado prs comments update MyProject MyRepo 42 THREAD_ID COMMENT_ID --content "updated text"
 ado prs comments update MyProject MyRepo 42 THREAD_ID COMMENT_ID --status closed --resolved-by-me
+ado prs comments delete MyProject MyRepo 42 THREAD_ID               # close a thread
+ado prs comments delete MyProject MyRepo 42 THREAD_ID --comment-id 1 # delete a comment
+ado prs comments resolve MyProject MyRepo 42 THREAD_ID              # resolve as fixed
+ado prs comments resolve MyProject MyRepo 42 THREAD_ID --resolved-by-me --status wontFix
 
 # Reviewers
 ado prs reviewers list MyProject MyRepo 42
