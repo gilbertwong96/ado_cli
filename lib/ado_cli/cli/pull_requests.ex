@@ -22,7 +22,7 @@ defmodule AdoCli.CLI.PullRequests do
     ado_cli prs abandon PROJECT REPO PR_ID
     ado_cli prs comments list PROJECT REPO PR_ID [--all]
     ado_cli prs comments add PROJECT REPO PR_ID --content TEXT|@FILE|-
-        [--file-path PATH --line N] [--thread-id TID] [--status STATUS] [--json]
+        [--file-path PATH --line N [--end-line N]] [--thread-id TID] [--status STATUS] [--json]
     ado_cli prs comments update PROJECT REPO PR_ID THREAD_ID COMMENT_ID
         [--content TEXT|@FILE|-] [--status STATUS] [--resolved-by-me] [--dry-run] [--json]
     ado_cli prs comments delete PROJECT REPO PR_ID THREAD_ID [--comment-id ID] [--force] [--json]

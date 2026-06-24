@@ -42,7 +42,8 @@ commands:
   - ado prs complete PROJECT REPO ID --merge-strategy squash
   - ado prs approve PROJECT REPO ID
   - ado prs comments list PROJECT REPO PR_ID
-  - ado prs comments add PROJECT REPO PR_ID --content TEXT
+  - ado prs comments add PROJECT REPO PR_ID --content TEXT --file-path PATH --line N
+  - ado prs comments add PROJECT REPO PR_ID --content TEXT --file-path PATH --line N --end-line N
   - ado prs comments update PROJECT REPO PR_ID THREAD COMMENT --content TEXT
   - ado prs comments delete PROJECT REPO PR_ID THREAD
   - ado prs comments delete PROJECT REPO PR_ID THREAD --comment-id ID
@@ -286,6 +287,8 @@ ado prs abandon MyProject MyRepo 42
 ado prs comments add MyProject MyRepo 42 --content LGTM ship it
 ado prs comments add MyProject MyRepo 42 --content @notes.md        # from file
 echo "review" | ado prs comments add MyProject MyRepo 42 --content - # from stdin
+ado prs comments add MyProject MyRepo 42 --file-path src/app.ex --line 10 --content nitpick
+ado prs comments add MyProject MyRepo 42 --file-path src/app.ex --line 10 --end-line 20 --content codeblock review
 ado prs comments list MyProject MyRepo 42 --all                     # full content view
 ado prs comments update MyProject MyRepo 42 THREAD_ID COMMENT_ID --content "updated text"
 ado prs comments update MyProject MyRepo 42 THREAD_ID COMMENT_ID --status closed --resolved-by-me
