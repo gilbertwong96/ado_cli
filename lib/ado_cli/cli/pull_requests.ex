@@ -1893,33 +1893,30 @@ defmodule AdoCli.CLI.PullRequests do
         {:patch, base, "thread #{thread_id}"}
       end
 
-    unless force? do
-      CliMate.CLI.write("Close #{target_label}? [y/N] ")
+    confirm_delete!(target_label, force?)
 
-      case String.trim(IO.gets("")) do
-        "y" -> :ok
-        "Y" -> :ok
-        _ -> halt_success("Cancelled.")
-      end
+    result = do_delete_request(method, path)
+    render_delete_result(result, target_label, json?, parsed)
+  end
+
+  defp confirm_delete!(_label, true), do: :ok
+
+  defp confirm_delete!(label, false) do
+    CliMate.CLI.write("Close #{label}? [y/N] ")
+
+    case String.trim(IO.gets("")) do
+      "y" -> :ok
+      "Y" -> :ok
+      _ -> halt_success("Cancelled.")
     end
+  end
 
-    result =
-      case method do
-        :delete -> Client.delete(path)
-        :patch -> Client.patch(path, %{"status" => "closed"})
-      end
+  defp do_delete_request(:delete, path), do: Client.delete(path)
+  defp do_delete_request(:patch, path), do: Client.patch(path, %{"status" => "closed"})
 
+  defp render_delete_result(result, target_label, json?, parsed) do
     case result do
-      :ok ->
-        if json? do
-          IO.puts(JSON.encode!(%{ok: true, closed: target_label}))
-        else
-          success("Closed #{target_label}.")
-        end
-
-        halt_success("")
-
-      {:ok, _} ->
+      r when r == :ok or (is_tuple(r) and elem(r, 0) == :ok) ->
         if json? do
           IO.puts(JSON.encode!(%{ok: true, closed: target_label}))
         else
