@@ -1,7 +1,7 @@
 ---
 name: ado-auth
 description: "Authenticate ado: PAT (CI-friendly), browser OAuth (AAD + MSA), device code (headless), env vars, self-hosted server"
-version: "0.4.9"
+version: "0.4.10"
 commands:
   - ado login
   - ado login --method device

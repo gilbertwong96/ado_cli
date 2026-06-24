@@ -5,6 +5,22 @@ All notable changes to `ado` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.10] - 2026-06-24
+
+### Added
+
+- **`--end-line` for multi-line codeblock comments.** `ado prs comments add`
+  now supports `--line START --end-line END` to comment on a range of
+  lines instead of a single line. The `threadContext` spans from
+  `rightFileStart` to `rightFileEnd` with different line numbers.
+
+### Fixed
+
+- **Inline comments showed "file no longer exists" warning.** The `filePath`
+  in `threadContext` was missing a leading `/`, causing Azure DevOps to not
+  set `changeTrackingId`. The `ensure_leading_slash/1` helper now normalizes
+  user input automatically — both `src/foo.ex` and `/src/foo.ex` work.
+
 ## [0.4.9] - 2026-06-24
 
 ### Added
