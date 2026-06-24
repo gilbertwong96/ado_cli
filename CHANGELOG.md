@@ -5,6 +5,22 @@ All notable changes to `ado` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.8] - 2026-06-24
+
+### Fixed
+
+- **`prs diff` failed to detect new/deleted files from real Azure DevOps API.**
+  The `change_type/1` function only matched integer `changeType` values (1, 2, 4),
+  but the real `iterations/{i}/changes` endpoint returns strings (`"add"`, `"edit"`,
+  `"delete"`). This caused the 404-tolerance logic to never activate, so the
+  original new-file diff bug persisted in practice. Also handles the
+  `/diffs/commits` endpoint which returns both formats depending on API version.
+- **Hunk headers were wrong for new and deleted files.** `String.split("", "\n")`
+  returns `[""]` causing `@@ -1,1 +1,N @@` instead of `@@ -0,0 +1,N @@` for
+  new files, and a spurious empty deletion line. Empty content now maps to `[]`.
+- **Credo cyclomatic complexity in `change_type/1`** exceeded the max of 8.
+  Split integer mapping into a separate `int_change_type/1` helper.
+
 ## [0.4.7] - 2026-06-23
 
 ### Fixed

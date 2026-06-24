@@ -1,7 +1,7 @@
 ---
 name: ado-cli
 description: Complete command reference for all 24 Azure DevOps service areas (projects, repos, workitems, pipelines, prs, releases, packages, and more)
-version: "0.4.7"
+version: "0.4.8"
 commands:
   - ado --version
   - ado version
