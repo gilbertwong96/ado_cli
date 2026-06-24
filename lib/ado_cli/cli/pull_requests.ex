@@ -1187,6 +1187,9 @@ defmodule AdoCli.CLI.PullRequests do
     get_in(change, ["item", "path"]) || change["originalPath"] || change["path"] || "?"
   end
 
+  defp ensure_leading_slash("/" <> _ = path), do: path
+  defp ensure_leading_slash(path), do: "/#{path}"
+
   defp change_type(change) do
     # Azure DevOps can return changeType as string ("add") or integer (1).
     # Normalize to integer first, then map to display string.
@@ -2100,6 +2103,10 @@ defmodule AdoCli.CLI.PullRequests do
 
     path = "/#{project}/_apis/git/repositories/#{repo_id}/pullrequests/#{pr_id}/threads"
 
+    # Azure DevOps requires filePath with a leading /. Without it,
+    # changeTrackingId is missing and the web UI shows "file no longer exists".
+    canonical_path = ensure_leading_slash(file_path)
+
     body = %{
       "comments" => [
         %{
@@ -2110,7 +2117,7 @@ defmodule AdoCli.CLI.PullRequests do
       ],
       "status" => status,
       "threadContext" => %{
-        "filePath" => file_path,
+        "filePath" => canonical_path,
         "rightFileStart" => %{"line" => line, "offset" => 1},
         "rightFileEnd" => %{"line" => line, "offset" => 2}
       }
@@ -2118,7 +2125,7 @@ defmodule AdoCli.CLI.PullRequests do
 
     case Client.post(path, body) do
       {:ok, result} ->
-        render_add_result(result, "Comment added to #{file_path}:#{line}.", json?)
+        render_add_result(result, "Comment added to #{canonical_path}:#{line}.", json?)
 
       {:error, reason} ->
         bail(reason, parsed)
