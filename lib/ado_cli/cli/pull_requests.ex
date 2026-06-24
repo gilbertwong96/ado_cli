@@ -1018,10 +1018,15 @@ defmodule AdoCli.CLI.PullRequests do
     end
   end
 
-  # Same as fetch_or_empty/6 but uses raw changeType integer from the
-  # /diffs/commits response (1=add, 2=edit, 4=delete).
-  defp fetch_or_empty_raw(_project, _repo_id, _path, _commit_id, 1, :del), do: {:ok, ""}
-  defp fetch_or_empty_raw(_project, _repo_id, _path, _commit_id, 4, :ins), do: {:ok, ""}
+  # Same as fetch_or_empty/6 but uses raw changeType from the
+  # /diffs/commits response (1=add, 4=delete, or string "add"/"delete").
+  defp fetch_or_empty_raw(_project, _repo_id, _path, _commit_id, ctype, :del)
+       when ctype in [1, "add"],
+       do: {:ok, ""}
+
+  defp fetch_or_empty_raw(_project, _repo_id, _path, _commit_id, ctype, :ins)
+       when ctype in [4, "delete"],
+       do: {:ok, ""}
 
   defp fetch_or_empty_raw(project, repo_id, path, commit_id, _ctype, _side) do
     case fetch_file_content(project, repo_id, path, commit_id) do
@@ -1042,14 +1047,38 @@ defmodule AdoCli.CLI.PullRequests do
     +++ b#{path}
     """
 
-    old_lines = String.split(old_content, "\n")
-    new_lines = String.split(new_content, "\n")
+    # Split content into lines. Empty content (new file / deleted file)
+    # is treated as an empty list, not [""], to produce correct hunk
+    # headers (@@ -0,0 for new files, @@ -N,0 +0,0 for deleted files).
+    old_lines =
+      if old_content == "", do: [], else: String.split(old_content, "\n")
+
+    new_lines =
+      if new_content == "", do: [], else: String.split(new_content, "\n")
 
     changes = compute_hunk(old_lines, new_lines)
     "#{header}#{changes}"
   end
 
   # Simple line-by-line diff. Produces unified hunk output.
+  # Handles empty lists for new files (old_lines=[]) and deleted
+  # files (new_lines=[]) with correct hunk headers.
+  defp compute_hunk([], []), do: ""
+
+  defp compute_hunk([], new_lines) do
+    n = length(new_lines)
+    header = "@@ -0,0 +1,#{n} @@\n"
+    body = format_diff_lines([{:ins, new_lines}])
+    "#{header}#{body}"
+  end
+
+  defp compute_hunk(old_lines, []) do
+    n = length(old_lines)
+    header = "@@ -1,#{n} +0,0 @@\n"
+    body = format_diff_lines([{:del, old_lines}])
+    "#{header}#{body}"
+  end
+
   defp compute_hunk(old_lines, new_lines) do
     diff = List.myers_difference(old_lines, new_lines)
 
@@ -1096,7 +1125,15 @@ defmodule AdoCli.CLI.PullRequests do
   end
 
   defp change_type(change) do
+    # Azure DevOps can return changeType as string ("add") or integer (1).
+    # The iterations/changes endpoint uses strings; /diffs/commits uses
+    # integers. Normalize both to atoms.
     case change["changeType"] do
+      "add" -> "add"
+      "edit" -> "edit"
+      "delete" -> "delete"
+      "rename" -> "rename"
+      "directory" -> "directory"
       1 -> "add"
       2 -> "edit"
       4 -> "delete"

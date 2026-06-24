@@ -219,12 +219,12 @@ defmodule AdoCli.CLI.PullRequestsTest do
           "value" => [
             %{
               "changeId" => 101,
-              "changeType" => 2,
+              "changeType" => "edit",
               "item" => %{"path" => "/src/foo.ex", "additions" => 10, "deletions" => 5}
             },
             %{
               "changeId" => 102,
-              "changeType" => 1,
+              "changeType" => "add",
               "item" => %{"path" => "/src/bar.ex", "additions" => 30, "deletions" => 0}
             }
           ]
@@ -268,7 +268,7 @@ defmodule AdoCli.CLI.PullRequestsTest do
           "value" => [
             %{
               "changeId" => 201,
-              "changeType" => 2,
+              "changeType" => "edit",
               "item" => %{"path" => "/README.md", "additions" => 3, "deletions" => 1}
             }
           ]
@@ -326,7 +326,7 @@ defmodule AdoCli.CLI.PullRequestsTest do
       changes_body =
         JSON.encode!(%{
           "changeEntries" => [
-            %{"changeId" => 101, "changeType" => 2, "item" => %{"path" => "/src/foo.ex"}}
+            %{"changeId" => 101, "changeType" => "edit", "item" => %{"path" => "/src/foo.ex"}}
           ]
         })
 
@@ -404,7 +404,7 @@ defmodule AdoCli.CLI.PullRequestsTest do
       changes_body =
         JSON.encode!(%{
           "changeEntries" => [
-            %{"changeId" => 101, "changeType" => 2, "item" => %{"path" => "/src/foo.ex"}}
+            %{"changeId" => 101, "changeType" => "edit", "item" => %{"path" => "/src/foo.ex"}}
           ]
         })
 
@@ -463,7 +463,7 @@ defmodule AdoCli.CLI.PullRequestsTest do
       changes_body =
         JSON.encode!(%{
           "value" => [
-            %{"changeId" => 101, "changeType" => 2, "item" => %{"path" => "/src/foo.ex"}}
+            %{"changeId" => 101, "changeType" => "edit", "item" => %{"path" => "/src/foo.ex"}}
           ]
         })
 
@@ -525,7 +525,7 @@ defmodule AdoCli.CLI.PullRequestsTest do
       changes_body =
         JSON.encode!(%{
           "changeEntries" => [
-            %{"changeId" => 301, "changeType" => 2, "item" => %{"path" => "/x.ex"}}
+            %{"changeId" => 301, "changeType" => "edit", "item" => %{"path" => "/x.ex"}}
           ]
         })
 
@@ -571,8 +571,8 @@ defmodule AdoCli.CLI.PullRequestsTest do
       changes_body =
         JSON.encode!(%{
           "changeEntries" => [
-            %{"changeId" => 401, "changeType" => 2, "item" => %{"path" => "/a.ex"}},
-            %{"changeId" => 402, "changeType" => 2, "item" => %{"path" => "/b.ex"}}
+            %{"changeId" => 401, "changeType" => "edit", "item" => %{"path" => "/a.ex"}},
+            %{"changeId" => 402, "changeType" => "edit", "item" => %{"path" => "/b.ex"}}
           ]
         })
 
@@ -716,7 +716,7 @@ defmodule AdoCli.CLI.PullRequestsTest do
       changes_body =
         JSON.encode!(%{
           "changeEntries" => [
-            %{"changeId" => 101, "changeType" => 1, "item" => %{"path" => "/src/new_file.ex"}}
+            %{"changeId" => 101, "changeType" => "add", "item" => %{"path" => "/src/new_file.ex"}}
           ]
         })
 
@@ -796,7 +796,11 @@ defmodule AdoCli.CLI.PullRequestsTest do
       changes_body =
         JSON.encode!(%{
           "changeEntries" => [
-            %{"changeId" => 102, "changeType" => 4, "item" => %{"path" => "/src/deleted.ex"}}
+            %{
+              "changeId" => 102,
+              "changeType" => "delete",
+              "item" => %{"path" => "/src/deleted.ex"}
+            }
           ]
         })
 
@@ -875,7 +879,7 @@ defmodule AdoCli.CLI.PullRequestsTest do
       changes_body =
         JSON.encode!(%{
           "changeEntries" => [
-            %{"changeId" => 501, "changeType" => 1, "item" => %{"path" => "/src/new.ex"}}
+            %{"changeId" => 501, "changeType" => "add", "item" => %{"path" => "/src/new.ex"}}
           ]
         })
 
@@ -883,7 +887,7 @@ defmodule AdoCli.CLI.PullRequestsTest do
         JSON.encode!(%{
           "changes" => [
             %{
-              "changeType" => 1,
+              "changeType" => "add",
               "item" => %{"path" => "/src/new.ex", "objectId" => "n1", "originalObjectId" => "n0"}
             }
           ]
