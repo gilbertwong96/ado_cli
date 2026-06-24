@@ -379,6 +379,35 @@ defmodule AdoCli.CLI.PullRequests do
                 json: [type: :boolean, default: false, doc: "Output as JSON envelope"]
               ],
               execute: &add_comment/1
+            ],
+            delete: [
+              name: "ado prs comments delete",
+              doc:
+                "Delete a review comment or close a thread. " <>
+                  "Pass --comment-id to delete a specific comment (HTTP DELETE). " <>
+                  "Without --comment-id, the thread is closed (PATCH status=closed). " <>
+                  "Use --force to skip the confirmation prompt.",
+              arguments: [
+                project: [type: :string, doc: "Project name or ID"],
+                repo_id: [type: :string, doc: "Repository name or ID"],
+                pr_id: [type: :integer, doc: "Numeric PR ID"],
+                thread_id: [type: :integer, doc: "Thread ID (from `comments list`)"]
+              ],
+              options: [
+                comment_id: [
+                  type: :integer,
+                  doc:
+                    "Comment ID within the thread to delete. Omit to delete the entire thread.",
+                  doc_arg: "COMMENT_ID"
+                ],
+                force: [
+                  type: :boolean,
+                  default: false,
+                  doc: "Skip confirmation prompt."
+                ],
+                json: [type: :boolean, default: false, doc: "Output as JSON envelope"]
+              ],
+              execute: &delete_comment/1
             ]
           ]
         ],
@@ -1802,6 +1831,73 @@ defmodule AdoCli.CLI.PullRequests do
 
       {:error, message} ->
         halt_error(message)
+    end
+  end
+
+  @doc """
+  Delete a review comment or close an entire thread.
+
+  With --comment-id: deletes a specific comment within a thread (HTTP DELETE).
+  Without --comment-id: closes the entire thread (PATCH status=closed) since
+  Azure DevOps does not support DELETE on threads.
+  """
+  def delete_comment(parsed) do
+    project = URI.encode(parsed.arguments.project)
+    repo_id = URI.encode(parsed.arguments.repo_id)
+    pr_id = parsed.arguments.pr_id
+    thread_id = parsed.arguments.thread_id
+    comment_id = Map.get(parsed.options, :comment_id)
+    force? = Map.get(parsed.options, :force, false)
+    json? = Map.get(parsed.options, :json, false)
+
+    base =
+      "/#{project}/_apis/git/repositories/#{repo_id}/pullrequests/#{pr_id}/threads/#{thread_id}"
+
+    {method, path, target_label} =
+      if comment_id do
+        {:delete, "#{base}/comments/#{comment_id}",
+         "comment #{comment_id} in thread #{thread_id}"}
+      else
+        {:patch, base, "thread #{thread_id}"}
+      end
+
+    unless force? do
+      CliMate.CLI.write("Close #{target_label}? [y/N] ")
+
+      case String.trim(IO.gets("")) do
+        "y" -> :ok
+        "Y" -> :ok
+        _ -> halt_success("Cancelled.")
+      end
+    end
+
+    result =
+      case method do
+        :delete -> Client.delete(path)
+        :patch -> Client.patch(path, %{"status" => "closed"})
+      end
+
+    case result do
+      :ok ->
+        if json? do
+          IO.puts(JSON.encode!(%{ok: true, closed: target_label}))
+        else
+          success("Closed #{target_label}.")
+        end
+
+        halt_success("")
+
+      {:ok, _} ->
+        if json? do
+          IO.puts(JSON.encode!(%{ok: true, closed: target_label}))
+        else
+          success("Closed #{target_label}.")
+        end
+
+        halt_success("")
+
+      {:error, reason} ->
+        bail(reason, parsed)
     end
   end
 

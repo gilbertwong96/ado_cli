@@ -1249,6 +1249,83 @@ defmodule AdoCli.CLI.PullRequestsTest do
     end
   end
 
+  # ── delete_comment (prs comments delete) ───────────────────────
+
+  describe "delete_comment (prs comments delete)" do
+    test "halts 0 when deleting a specific comment with --force", %{server: server} do
+      expect_delete_success(
+        server,
+        "/testorg/_apis/git/repositories/test/pullrequests/1/threads/5/comments/10",
+        fn ->
+          apply(AdoCli.CLI.PullRequests, :delete_comment, [
+            %{
+              options: %{comment_id: 10, force: true, json: false},
+              arguments: %{project: "testorg", repo_id: "test", pr_id: 1, thread_id: 5}
+            }
+          ])
+        end
+      )
+    end
+
+    test "halts 0 when closing a thread with --force", %{server: server} do
+      expect_patch_success(
+        server,
+        "/testorg/_apis/git/repositories/test/pullrequests/1/threads/5",
+        %{"status" => "closed"},
+        ~s({"id":5,"status":"closed"}),
+        fn ->
+          apply(AdoCli.CLI.PullRequests, :delete_comment, [
+            %{
+              options: %{comment_id: nil, force: true, json: false},
+              arguments: %{project: "testorg", repo_id: "test", pr_id: 1, thread_id: 5}
+            }
+          ])
+        end
+      )
+    end
+
+    test "emits JSON envelope with --json", %{server: server} do
+      TestServer.expect(
+        server,
+        "DELETE",
+        api("/testorg/_apis/git/repositories/test/pullrequests/1/threads/5/comments/10"),
+        fn conn -> Plug.Conn.resp(conn, 204, "") end
+      )
+
+      output =
+        capture_io(fn ->
+          apply(AdoCli.CLI.PullRequests, :delete_comment, [
+            %{
+              options: %{comment_id: 10, force: true, json: true},
+              arguments: %{project: "testorg", repo_id: "test", pr_id: 1, thread_id: 5}
+            }
+          ])
+        end)
+
+      assert_receive {:cli_mate_shell, :halt, 0}, 500
+      assert {:ok, decoded} = JSON.decode(String.trim(output))
+      assert decoded["ok"] == true
+    end
+
+    test "halts 1 on API error (thread close fails)", %{server: server} do
+      TestServer.expect(
+        server,
+        "PATCH",
+        api("/testorg/_apis/git/repositories/test/pullrequests/1/threads/5"),
+        fn conn -> Plug.Conn.resp(conn, 404, ~s({"message":"not found"})) end
+      )
+
+      apply(AdoCli.CLI.PullRequests, :delete_comment, [
+        %{
+          options: %{comment_id: nil, force: true, json: false},
+          arguments: %{project: "testorg", repo_id: "test", pr_id: 1, thread_id: 5}
+        }
+      ])
+
+      assert_receive {:cli_mate_shell, :halt, 1}, 500
+    end
+  end
+
   # ── list_comments --all (prs comments list) ─────────────────────
 
   describe "list_comments (prs comments list)" do
