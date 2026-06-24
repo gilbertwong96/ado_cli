@@ -5,6 +5,20 @@ All notable changes to `ado` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.9] - 2026-06-24
+
+### Fixed
+
+- **Inline PR comments showed "file no longer exists" warning.** The
+  `threadContext` used `leftFileStart`/`leftFileEnd` (old/base side of diff).
+  For new files there is no left side, causing Azure DevOps to show the
+  misleading warning. Changed to `rightFileStart`/`rightFileEnd` (new/source
+  side) which is the standard for PR review comments.
+- **`just bump` left `github-page/index.html` stale.** The sed pattern
+  matched only the immediately-previous version. Changed to a semver-generic
+  regex (`ado-[0-9]+\.[0-9]+\.[0-9]+-macos-aarch64`) to catch any stale
+  references regardless of how many versions were skipped.
+
 ## [0.4.8] - 2026-06-24
 
 ### Fixed
