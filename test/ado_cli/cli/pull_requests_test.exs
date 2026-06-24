@@ -1023,7 +1023,7 @@ defmodule AdoCli.CLI.PullRequestsTest do
           "threadContext" => %{
             "filePath" => "/src/foo.ex",
             "rightFileStart" => %{"line" => 42, "offset" => 1},
-            "rightFileEnd" => %{"line" => 42, "offset" => 2}
+            "rightFileEnd" => %{"line" => 42, "offset" => 1}
           }
         }),
         response,
@@ -1034,6 +1034,7 @@ defmodule AdoCli.CLI.PullRequestsTest do
                 content: "Use a guard clause here",
                 file_path: "src/foo.ex",
                 line: 42,
+                end_line: nil,
                 thread_id: nil,
                 comment_id: nil,
                 status: "active",

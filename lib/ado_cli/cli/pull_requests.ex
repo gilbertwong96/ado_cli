@@ -355,7 +355,13 @@ defmodule AdoCli.CLI.PullRequests do
                 line: [
                   type: :integer,
                   doc:
-                    "Line number for an inline comment. Must be a line in the diff (right side for new files, left for deleted). Requires --file-path.",
+                    "Starting line number for an inline comment. Must be a line in the diff (right side for new files, left for deleted). Requires --file-path. Use --end-line to comment on a range of lines.",
+                  doc_arg: "N"
+                ],
+                end_line: [
+                  type: :integer,
+                  doc:
+                    "Ending line number for a multi-line (codeblock) comment. The comment will span from --line to --end-line inclusive. Requires --file-path and --line.",
                   doc_arg: "N"
                 ],
                 thread_id: [
@@ -1849,6 +1855,7 @@ defmodule AdoCli.CLI.PullRequests do
         json? = Map.get(parsed.options, :json, false)
         file_path = Map.get(parsed.options, :file_path)
         line = Map.get(parsed.options, :line)
+        end_line = Map.get(parsed.options, :end_line)
         thread_id = Map.get(parsed.options, :thread_id)
         parent_comment_id = Map.get(parsed.options, :comment_id, 0) || 0
 
@@ -1859,7 +1866,7 @@ defmodule AdoCli.CLI.PullRequests do
 
           file_path && line ->
             # New inline thread: POST a new thread with file/line context
-            do_new_inline_thread(parsed, content, file_path, line, status, json?)
+            do_new_inline_thread(parsed, content, file_path, line, end_line, status, json?)
 
           true ->
             # New general thread: POST a new thread with no file context
@@ -2096,7 +2103,7 @@ defmodule AdoCli.CLI.PullRequests do
     end
   end
 
-  defp do_new_inline_thread(parsed, content, file_path, line, status, json?) do
+  defp do_new_inline_thread(parsed, content, file_path, line, end_line, status, json?) do
     project = URI.encode(parsed.arguments.project)
     repo_id = URI.encode(parsed.arguments.repo_id)
     pr_id = parsed.arguments.pr_id
@@ -2106,6 +2113,11 @@ defmodule AdoCli.CLI.PullRequests do
     # Azure DevOps requires filePath with a leading /. Without it,
     # changeTrackingId is missing and the web UI shows "file no longer exists".
     canonical_path = ensure_leading_slash(file_path)
+
+    # For a single-line comment: start and end are on the same line
+    # (offset 1 to 2 covers the whole line). For a multi-line codeblock,
+    # start is at line:offset 1 and end is at end_line:offset 1.
+    end_line = end_line || line
 
     body = %{
       "comments" => [
@@ -2119,13 +2131,14 @@ defmodule AdoCli.CLI.PullRequests do
       "threadContext" => %{
         "filePath" => canonical_path,
         "rightFileStart" => %{"line" => line, "offset" => 1},
-        "rightFileEnd" => %{"line" => line, "offset" => 2}
+        "rightFileEnd" => %{"line" => end_line, "offset" => 1}
       }
     }
 
     case Client.post(path, body) do
       {:ok, result} ->
-        render_add_result(result, "Comment added to #{canonical_path}:#{line}.", json?)
+        range_label = if end_line && end_line != line, do: "#{line}-#{end_line}", else: "#{line}"
+        render_add_result(result, "Comment added to #{canonical_path}:#{range_label}.", json?)
 
       {:error, reason} ->
         bail(reason, parsed)
