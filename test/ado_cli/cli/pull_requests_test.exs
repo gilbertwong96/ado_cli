@@ -1326,6 +1326,88 @@ defmodule AdoCli.CLI.PullRequestsTest do
     end
   end
 
+  # ── resolve_thread (prs comments resolve) ───────────────────────
+
+  describe "resolve_thread (prs comments resolve)" do
+    test "halts 0 on successful resolve (default: fixed)", %{server: server} do
+      expect_patch_success(
+        server,
+        "/testorg/_apis/git/repositories/test/pullrequests/1/threads/5",
+        %{"status" => "fixed"},
+        ~s({"id":5,"status":"fixed"}),
+        fn ->
+          apply(AdoCli.CLI.PullRequests, :resolve_thread, [
+            %{
+              options: %{status: "fixed", resolved_by_me: false, json: false},
+              arguments: %{project: "testorg", repo_id: "test", pr_id: 1, thread_id: 5}
+            }
+          ])
+        end
+      )
+    end
+
+    test "resolves with a custom status", %{server: server} do
+      expect_patch_success(
+        server,
+        "/testorg/_apis/git/repositories/test/pullrequests/1/threads/5",
+        %{"status" => "wontFix"},
+        ~s({"id":5,"status":"wontFix"}),
+        fn ->
+          apply(AdoCli.CLI.PullRequests, :resolve_thread, [
+            %{
+              options: %{status: "wontFix", resolved_by_me: false, json: false},
+              arguments: %{project: "testorg", repo_id: "test", pr_id: 1, thread_id: 5}
+            }
+          ])
+        end
+      )
+    end
+
+    test "resolves with --resolved-by-me", %{server: server} do
+      :erlang.put({AdoCli.Auth, :user_id}, "user-guid-123")
+
+      expect_patch_success(
+        server,
+        "/testorg/_apis/git/repositories/test/pullrequests/1/threads/5",
+        %{"status" => "fixed", "resolvedBy" => %{"id" => "user-guid-123"}},
+        ~s({"id":5,"status":"fixed"}),
+        fn ->
+          apply(AdoCli.CLI.PullRequests, :resolve_thread, [
+            %{
+              options: %{status: "fixed", resolved_by_me: true, json: false},
+              arguments: %{project: "testorg", repo_id: "test", pr_id: 1, thread_id: 5}
+            }
+          ])
+        end
+      )
+    after
+      :erlang.erase({AdoCli.Auth, :user_id})
+    end
+
+    test "emits JSON envelope with --json", %{server: server} do
+      TestServer.expect(
+        server,
+        "PATCH",
+        api("/testorg/_apis/git/repositories/test/pullrequests/1/threads/5"),
+        fn conn -> Plug.Conn.resp(conn, 200, ~s({"id":5,"status":"fixed"})) end
+      )
+
+      output =
+        capture_io(fn ->
+          apply(AdoCli.CLI.PullRequests, :resolve_thread, [
+            %{
+              options: %{status: "fixed", resolved_by_me: false, json: true},
+              arguments: %{project: "testorg", repo_id: "test", pr_id: 1, thread_id: 5}
+            }
+          ])
+        end)
+
+      assert_receive {:cli_mate_shell, :halt, 0}, 500
+      assert {:ok, decoded} = JSON.decode(String.trim(output))
+      assert decoded["ok"] == true
+    end
+  end
+
   # ── list_comments --all (prs comments list) ─────────────────────
 
   describe "list_comments (prs comments list)" do

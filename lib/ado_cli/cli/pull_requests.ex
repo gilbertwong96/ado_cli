@@ -408,6 +408,38 @@ defmodule AdoCli.CLI.PullRequests do
                 json: [type: :boolean, default: false, doc: "Output as JSON envelope"]
               ],
               execute: &delete_comment/1
+            ],
+            resolve: [
+              name: "ado prs comments resolve",
+              doc:
+                "Resolve a review thread by setting its status. " <>
+                  "This is a convenience wrapper around `comments update --status` " <>
+                  "that does not require a comment ID. Default status is 'fixed'. " <>
+                  "Use --resolved-by-me to attribute the resolution to yourself.",
+              arguments: [
+                project: [type: :string, doc: "Project name or ID"],
+                repo_id: [type: :string, doc: "Repository name or ID"],
+                pr_id: [type: :integer, doc: "Numeric PR ID"],
+                thread_id: [type: :integer, doc: "Thread ID (from `comments list`)"]
+              ],
+              options: [
+                status: [
+                  type: :string,
+                  default: "fixed",
+                  doc:
+                    "Resolution status. Valid: fixed (resolved), wontFix (won't fix), closed (admin-closed), byDesign (working as intended), active (reopen).",
+                  doc_arg: "STATUS"
+                ],
+                resolved_by_me: [
+                  type: :boolean,
+                  default: false,
+                  doc:
+                    "Attribute the resolution to the currently-authenticated user. " <>
+                      "Makes an extra GET to /_apis/connectionData to look up your GUID."
+                ],
+                json: [type: :boolean, default: false, doc: "Output as JSON envelope"]
+              ],
+              execute: &resolve_thread/1
             ]
           ]
         ],
@@ -1900,6 +1932,55 @@ defmodule AdoCli.CLI.PullRequests do
         bail(reason, parsed)
     end
   end
+
+  @doc """
+  Resolve a review thread by setting its status.
+
+  Convenience wrapper around the thread PATCH endpoint. Default status
+  is "fixed". Use --resolved-by-me to attribute to the current user.
+  """
+  def resolve_thread(parsed) do
+    project = URI.encode(parsed.arguments.project)
+    repo_id = URI.encode(parsed.arguments.repo_id)
+    pr_id = parsed.arguments.pr_id
+    thread_id = parsed.arguments.thread_id
+    status = Map.get(parsed.options, :status, "fixed")
+    resolved_by_me = Map.get(parsed.options, :resolved_by_me, false)
+    json? = Map.get(parsed.options, :json, false)
+
+    path =
+      "/#{project}/_apis/git/repositories/#{repo_id}/pullrequests/#{pr_id}/threads/#{thread_id}"
+
+    body = build_resolve_body(status, resolved_by_me, pr_id)
+
+    case Client.patch(path, body) do
+      {:ok, _result} ->
+        label = if resolved_by_me, do: " (by you)", else: ""
+
+        if json? do
+          IO.puts(JSON.encode!(%{ok: true, thread: thread_id, status: status}))
+        else
+          success("Thread #{thread_id} resolved as '#{status}'#{label}.")
+        end
+
+        halt_success("")
+
+      {:error, reason} ->
+        bail(reason, parsed)
+    end
+  end
+
+  defp build_resolve_body(status, true, _pr_id) do
+    case AdoCli.Auth.current_user_id() do
+      {:ok, user_id} ->
+        %{"status" => status, "resolvedBy" => %{"id" => user_id}}
+
+      {:error, reason} ->
+        halt_error("Cannot determine authenticated user identity: #{reason}")
+    end
+  end
+
+  defp build_resolve_body(status, _resolved_by_me, _pr_id), do: %{"status" => status}
 
   @doc """
   Resolve the --content argument.
