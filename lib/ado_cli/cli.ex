@@ -127,14 +127,12 @@ defmodule AdoCli.CLI do
   def main(args \\ nil) do
     start_finch()
 
-    # Burrito passes CLI args via ADO_ARGS env var (set by Zig wrapper).
-    # System.argv() in Burrito mode includes BEAM flags; prefer env var.
-    cli_args =
-      case System.get_env("ADO_ARGS") do
-        nil -> args || System.argv()
-        "" -> args || System.argv()
-        str -> String.split(str, " ")
-      end
+    # Burrito.Util.Args.get_arguments/0 transparently falls back to the
+    # ADO_ARGS env var (set by the Zig wrapper) when :init.get_plain_arguments
+    # is empty, using a POSIX-style parser that respects quoted args.
+    # In escript mode, get_arguments/0 returns the env value or [], so
+    # we prefer System.argv() and fall back to the helper.
+    cli_args = args || System.argv() || Burrito.Util.Args.get_arguments()
 
     run(cli_args)
   end

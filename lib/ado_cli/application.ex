@@ -16,17 +16,13 @@ defmodule AdoCli.Application do
 
     {:ok, _pid} = Supervisor.start_link(children, strategy: :one_for_one)
 
-    # Burrito passes CLI args via ADO_ARGS env var (set by Zig wrapper).
-    # Falls back to System.argv() for escript/release boot.
-    args =
-      case System.get_env("ADO_ARGS") do
-        nil -> System.argv()
-        "" -> System.argv()
-        str -> String.split(str, " ")
-      end
+    # Burrito's Zig wrapper passes CLI args via the ADO_ARGS env var
+    # (see deps/burrito/src/erlang_launcher.zig) and :init.get_plain_arguments
+    # is empty in MIX_ENV=prod releases. AdoCli.BurritoArgs.get_arguments/0
+    # falls back to parsing ADO_ARGS with a POSIX-style parser that
+    # respects quoted args (e.g. project names like "Employee Management").
+    args = AdoCli.BurritoArgs.get_arguments()
 
-    # CliMate.CLI run/1 handles exit codes internally via System.halt(0)/halt(1).
-    # The exit code propagates to the Zig wrapper through the OS process exit.
     AdoCli.CLI.run(args)
 
     # Unreachable — CliMate always halts after execution.
