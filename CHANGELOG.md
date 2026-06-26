@@ -5,6 +5,20 @@ All notable changes to `ado` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.11] - 2026-06-24
+
+### Fixed
+
+- **`ado prs diff ... --unified | head -n 220` failed in Burrito binaries
+  with "Failed to write log message to stdout, trying stderr".** The root
+  cause was a Burrito wrapper bug: CLI args were joined with spaces into
+  the `ADO_ARGS` env var, which broke args containing spaces (e.g. project
+  names like `"Employee Management"`). The workaround in the Burrito fork
+  has been removed upstream — args now flow via native argv (after
+  `-extra`) and reach the BEAM through `:init.get_plain_arguments/0`.
+  `ado_cli` updated to match. Verified: quoted args parse correctly and
+  piping to `head` works in both escript and Burrito binaries.
+
 ## [0.4.10] - 2026-06-24
 
 ### Added
