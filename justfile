@@ -66,6 +66,8 @@ release-fast:
 # Clear Burrito cache only
 release-clean:
     rm -rf ~/Library/Application\ Support/.burrito/ado*
+    @# Burrito leaves staged build dirs and unpacked ERTS in $TMPDIR
+    @-rm -rf ${TMPDIR:-/tmp}/burrito_build_* ${TMPDIR:-/tmp}/unpacked_erts_*
 
 # List built binaries
 release-list:
