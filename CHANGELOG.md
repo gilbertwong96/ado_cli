@@ -5,6 +5,33 @@ All notable changes to `ado` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.12] - 2026-06-27
+
+### Fixed
+
+- **Broken pipe (EPIPE) and `ado prs diff ... --file <path>` 404 errors in
+  Burrito binaries.** Root cause was a bug in the upstream Burrito Zig
+  wrapper: `-elixir ansi_enabled true` and `-s elixir start_cli` were
+  passed as single argv entries with embedded spaces, which `erlexec`
+  forwarded to `beam.smp` as-is. The BEAM's `erl_start` couldn't parse
+  them and hung in `__select`. Fixed upstream in
+  [burrito-elixir/burrito#225](https://github.com/burrito-elixir/burrito/pull/225)
+  by splitting them into separate argv entries and switching from
+  `std.process.replace` to `spawn + wait` (required for Zig 0.16.0 on
+  macOS arm64). No app-side changes needed — bumping burrito is enough.
+
+### Changed
+
+- **burrito upgraded** to the `zig-0.16.0` branch (`0f9761b`), which
+  includes the Zig 0.16.0 compatibility layer and the arg-splitting fix
+  above.
+
+### Removed
+
+- **App-side EPIPE workaround** (`PipeSafeShell` module and bypass in
+  `AdoCli.CLI.run/1`) — no longer needed now that the Burrito wrapper
+  flushes stdout correctly.
+
 ## [0.4.11] - 2026-06-24
 
 ### Fixed
