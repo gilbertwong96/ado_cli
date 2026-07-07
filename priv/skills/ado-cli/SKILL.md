@@ -10,6 +10,7 @@ commands:
   - ado login
   - ado login --method device
   - ado login --org ORG
+  - ado login --org ORG --pat TOKEN
   - ado login --method pat --org ORG --pat TOKEN
   - ado logout
   - ado whoami
@@ -108,7 +109,8 @@ mix escript.build && cp ado /usr/local/bin/
 # Authenticate
 ado login                                                   # browser OAuth, auto-detects org
 ado login --method device                                   # device code, no --org needed
-ado login --method pat --org myorg --pat mytoken            # PAT (CI-friendly)
+ado login --org myorg --pat mytoken                        # PAT (--method pat inferred from --pat)
+ado login --method pat --org myorg --pat mytoken            # explicit form (same result)
 
 # Verify
 ado whoami

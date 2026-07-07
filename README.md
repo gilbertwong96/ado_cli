@@ -170,12 +170,15 @@ Multiple auth methods, auto-resolved in priority order. **No `az` CLI required.*
 | 2 | Environment variables | `ADO_ORG` + `ADO_PAT` |
 | 3 | Config file | `~/.ado_cli/config.json` (persistent) |
 
-Auth via `ado login` is browser-based OAuth — no `az login` is detected or
-required. The CLI is self-contained.
+Auth via `ado login` defaults to browser-based OAuth when no `--pat` is
+given, and infers PAT login when `--pat` is present — no `az login` is
+detected or required. The CLI is self-contained.
 
 ### Login (persistent)
 
-Three login methods are supported. Pick the one that fits your situation:
+Three login methods are supported. Pick the one that fits your situation.
+The `--method` flag is optional — if `--pat` (or `ADO_PAT`) is present,
+the CLI infers PAT login; otherwise it defaults to browser OAuth.
 
 #### 1. Browser OAuth (default) — recommended for interactive use
 
@@ -228,6 +231,8 @@ automation, CI runners, and scripts. See
 [How to create a PAT](https://learn.microsoft.com/azure/devops/organizations/accounts/use-personal-access-tokens-to-authenticate).
 
 ```bash
+# --method pat is inferred from --pat (both forms are equivalent)
+ado login --org myorg --pat mytoken
 ado login --method pat --org myorg --pat mytoken
 ```
 
@@ -277,8 +282,8 @@ ado --server https://ado.internal.example.com --org DefaultCollection projects l
 # Environment variable
 export ADO_SERVER=https://ado.internal.example.com
 
-# Login with server
-ado login --method pat --server https://ado.internal.example.com --org DefaultCollection --pat xxx
+# Login with server (--method pat inferred from --pat)
+ado login --server https://ado.internal.example.com --org DefaultCollection --pat xxx
 ```
 
 When `--server` is set, `--org` becomes the collection name (e.g. `DefaultCollection`).

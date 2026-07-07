@@ -6,7 +6,8 @@ commands:
   - ado login
   - ado login --method device
   - ado login --org ORG
-  - ado login --method pat --org ORG --pat TOKEN
+  - ado login --org ORG --pat TOKEN             # --pat infers method=pat, no --method needed
+  - ado login --method pat --org ORG --pat TOKEN   # explicit form (same result)
   - ado logout
   - ado whoami
   - export ADO_ORG=org ADO_PAT=token
@@ -27,17 +28,22 @@ There is **no `az` CLI dependency**.
 
 ```
 Are you in CI/headless (no browser)?
-  ├── Yes → Use PAT (method: pat, requires --org)
-  │         ado login --method pat --org myorg --pat mytoken
+  ├── Yes → Use PAT (--pat infers method=pat automatically; --org required)
+  │         ado login --org myorg --pat mytoken
   │
   └── No → Just type `ado login` — picks the right method automatically:
-            ├── Browser OAuth (default, no flags needed)
+            ├── Browser OAuth (default when no --pat given)
             │   ado login                 # auto-detects org
             │   ado login --org myorg     # or hint a specific org
             │
             └── Device code (browser blocked by firewall/Zscaler)
                 ado login --method device  # org also auto-detected
 ```
+
+> **Method inference:** If `--pat` (or `ADO_PAT`) is present without
+> `--method`, the CLI uses PAT login — no browser. Pass `--method` only
+> to override the inference (e.g. `--method browser` to force OAuth even
+> when `--pat` is set).
 
 ## Method details
 
@@ -48,8 +54,10 @@ Are you in CI/headless (no browser)?
 # Recommended scopes: vso.work, vso.code, vso.project, vso.build, vso.release
 # Or use "Full access" for broadest coverage
 
-# Save to config (persistent)
-ado login --method pat --org myorg --pat mytoken
+# Save to config (persistent) — --method pat is inferred from --pat
+ado login --org myorg --pat mytoken
+# Explicit form is equivalent:
+# ado login --method pat --org myorg --pat mytoken
 
 # One-off (never saved to disk)
 export ADO_ORG=myorg ADO_PAT=mytoken
@@ -91,7 +99,7 @@ Use when:
 ### Self-hosted Server
 
 ```bash
-ado login --method pat --server https://ado.example.com --org DefaultCollection --pat xxx
+ado login --server https://ado.example.com --org DefaultCollection --pat xxx
 # Per-command:
 ado --server https://ado.example.com --org Coll --pat xxx projects list
 ```
@@ -130,8 +138,8 @@ export ADO_ORG=myorg
 export ADO_PAT=$(cat /run/secrets/ado_pat)
 ado projects list
 
-# Or: login at job setup
-ado login --method pat --org myorg --pat $ADO_PAT
+# Or: login at job setup (--method pat inferred from --pat)
+ado login --org myorg --pat $ADO_PAT
 ado <command>  # uses saved config
 ```
 
@@ -152,8 +160,9 @@ ado <command>  # uses saved config
 
 ## Security
 
-- PATs are never written to config file (CLI flag or env var only)
-- Config file stores bearer tokens and org name
+- PATs from env vars (`ADO_PAT`) and per-command `--pat` flags are transient — never written to disk
+- PATs from `ado login --pat` (or `ado login --method pat`) ARE saved to `~/.ado_cli/config.json` for reuse
+- Config file also stores browser/device OAuth bearer tokens and the org name
 - File permissions: 0600 (owner read/write only)
 - `--pat` flag masked in error output
 

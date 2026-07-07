@@ -5,6 +5,17 @@ All notable changes to `ado` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **`ado login --pat` no longer silently opens a browser.** Previously,
+  `--method` defaulted to `browser`, so `ado login --org X --pat Y`
+  ignored the PAT and triggered an interactive browser OAuth flow. The
+  CLI now infers `pat` login when `--pat` (or `ADO_PAT`) is present
+  without an explicit `--method`. Passing `--method` still overrides
+  the inference.
+
 ## [0.4.12] - 2026-06-27
 
 ### Fixed

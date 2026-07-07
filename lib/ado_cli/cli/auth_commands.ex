@@ -73,7 +73,7 @@ defmodule AdoCli.CLI.AuthCommands do
   """
   def login(parsed) do
     opts = parsed.options
-    method = Map.get(opts, :method, "browser")
+    method = resolve_method(opts)
     org = Map.get(opts, :org) || System.get_env("ADO_ORG")
 
     if org == nil and method not in ["browser", "device"] do
@@ -86,6 +86,19 @@ defmodule AdoCli.CLI.AuthCommands do
     else
       set_server(opts)
       dispatch_login(parsed, org, opts, method)
+    end
+  end
+
+  # Infer the auth method from flags when --method is not explicitly set.
+  # Without this, `ado login --org X --pat Y` silently defaults to browser
+  # OAuth and ignores the PAT entirely.
+  defp resolve_method(opts) do
+    case Map.get(opts, :method) do
+      nil ->
+        if Map.get(opts, :pat) || System.get_env("ADO_PAT"), do: "pat", else: "browser"
+
+      method ->
+        method
     end
   end
 
