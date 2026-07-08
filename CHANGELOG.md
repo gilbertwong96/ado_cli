@@ -7,7 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`ado prs reviewers list --search QUERY`** — fuzzy-filter PR reviewers
+  by display name or email. Supports substring and subsequence
+  (fzf-style) matching, case-insensitive. Filtering is client-side
+  since the Azure DevOps reviewers API returns all reviewers for a PR.
+
 ### Fixed
+
+- **Switching auth methods no longer leaves stale credentials in the
+  config file.** Previously `ConfigFile.save/1` merged new config over
+  old, so logging in with a PAT then switching to browser OAuth left
+  the `pat` field in `~/.ado_cli/config.json`. `Auth.resolve_auth/0`
+  reads `pat` before `token`, so the stale (possibly invalid) PAT
+  shadowed the valid browser token, causing "Auth required (302)"
+  errors. Now clears `pat`/`token` when the `method` changes.
 
 - **`ado login --pat` no longer silently opens a browser.** Previously,
   `--method` defaulted to `browser`, so `ado login --org X --pat Y`

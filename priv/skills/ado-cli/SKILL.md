@@ -301,6 +301,7 @@ ado prs comments resolve MyProject MyRepo 42 THREAD_ID --resolved-by-me --status
 
 # Reviewers
 ado prs reviewers list MyProject MyRepo 42
+ado prs reviewers list MyProject MyRepo 42 --search alice   # fuzzy filter by name/email
 ado prs reviewers add MyProject MyRepo 42 --reviewer USER_GUID
 ado prs reviewers remove MyProject MyRepo 42 --reviewer USER_GUID
 ```

@@ -459,14 +459,20 @@ defmodule AdoCli.CLI.PullRequests do
             list: [
               name: "ado prs reviewers list",
               doc:
-                "List reviewers on a pull request. Output is a table (Display Name, Email, Vote, Status). Vote values: 10 (approved), 5 (approved w/ suggestions), -5 (waiting), -10 (rejected), 0 (no vote, or reset).",
+                "List reviewers on a pull request. Output is a table (Display Name, Email, Vote, Status). Vote values: 10 (approved), 5 (approved w/ suggestions), -5 (waiting), -10 (rejected), 0 (no vote, or reset). Use --search for fuzzy filtering by name or email (client-side, since the API returns all reviewers).",
               arguments: [
                 project: [type: :string, doc: "Project name or ID"],
                 repo_id: [type: :string, doc: "Repository name or ID"],
                 pr_id: [type: :integer, doc: "Numeric PR ID"]
               ],
               options: [
-                json: [type: :boolean, default: false, doc: "Output as JSON envelope"]
+                json: [type: :boolean, default: false, doc: "Output as JSON envelope"],
+                search: [
+                  type: :string,
+                  doc:
+                    "Fuzzy-filter reviewers by display name or email. Supports substring and subsequence (fzf-style) matching. Case-insensitive.",
+                  doc_arg: "QUERY"
+                ]
               ],
               execute: &list_reviewers/1
             ],
@@ -1324,13 +1330,21 @@ defmodule AdoCli.CLI.PullRequests do
     project = parsed.arguments.project
     repo_id = parsed.arguments.repo_id
     pr_id = parsed.arguments.pr_id
+    search = Map.get(parsed.options, :search)
 
     path =
       "/#{URI.encode(project)}/_apis/git/repositories/#{URI.encode(repo_id)}/pullrequests/#{pr_id}/reviewers"
 
     case Client.get(path) do
       {:ok, %{"value" => reviewers}} ->
-        Helpers.json_or_format(reviewers, parsed, fn reviewers ->
+        reviewers =
+          if search do
+            AdoCli.Fuzzy.match_fields(reviewers, search, ["displayName", "uniqueName"])
+          else
+            reviewers
+          end
+
+        Helpers.json_or_format_list(reviewers, parsed, fn reviewers ->
           writeln("")
 
           if reviewers == [] do

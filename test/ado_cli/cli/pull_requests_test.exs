@@ -1858,4 +1858,131 @@ defmodule AdoCli.CLI.PullRequestsTest do
       assert body == %{"status" => "fixed", "resolvedBy" => %{"id" => "user-guid-123"}}
     end
   end
+
+  describe "list_reviewers (prs reviewers list)" do
+    @reviewers ~s({"value":[
+      {"id":"g1","displayName":"Alice Smith","uniqueName":"alice@example.com","vote":10,"isRequired":false},
+      {"id":"g2","displayName":"Bob Jones","uniqueName":"bob@example.com","vote":0,"isRequired":true},
+      {"id":"g3","displayName":"Alicia Keys","uniqueName":"alicia@example.com","vote":-5,"isRequired":false}
+    ]})
+
+    defp expect_reviewers(server) do
+      TestServer.expect(
+        server,
+        "GET",
+        "/testorg/MyProject/_apis/git/repositories/test/pullrequests/1/reviewers",
+        fn conn ->
+          Plug.Conn.resp(conn, 200, @reviewers)
+        end
+      )
+    end
+
+    test "halts 0 with no search filter", %{server: server} do
+      expect_reviewers(server)
+
+      capture_io(fn ->
+        AdoCli.CLI.PullRequests.list_reviewers(%{
+          options: %{json: true, search: nil},
+          arguments: %{project: "MyProject", repo_id: "test", pr_id: 1}
+        })
+      end)
+
+      assert_receive {:cli_mate_shell, :halt, 0}, 500
+    end
+
+    test "search filters by display name (fuzzy)", %{server: server} do
+      expect_reviewers(server)
+
+      output =
+        capture_io(fn ->
+          AdoCli.CLI.PullRequests.list_reviewers(%{
+            options: %{json: true, search: "alice"},
+            arguments: %{project: "MyProject", repo_id: "test", pr_id: 1}
+          })
+        end)
+
+      result = JSON.decode!(output)
+      assert result["count"] == 2
+      names = Enum.map(result["items"], & &1["displayName"])
+      assert "Alice Smith" in names
+      assert "Alicia Keys" in names
+      refute "Bob Jones" in names
+    end
+
+    test "search filters by email (substring)", %{server: server} do
+      expect_reviewers(server)
+
+      output =
+        capture_io(fn ->
+          AdoCli.CLI.PullRequests.list_reviewers(%{
+            options: %{json: true, search: "bob@example.com"},
+            arguments: %{project: "MyProject", repo_id: "test", pr_id: 1}
+          })
+        end)
+
+      result = JSON.decode!(output)
+      assert result["count"] == 1
+      assert hd(result["items"])["displayName"] == "Bob Jones"
+    end
+
+    test "search supports subsequence (fzf-style)", %{server: server} do
+      expect_reviewers(server)
+
+      # 'asmith' is a subsequence of 'Alice Smith'
+      output =
+        capture_io(fn ->
+          AdoCli.CLI.PullRequests.list_reviewers(%{
+            options: %{json: true, search: "asmith"},
+            arguments: %{project: "MyProject", repo_id: "test", pr_id: 1}
+          })
+        end)
+
+      result = JSON.decode!(output)
+      assert result["count"] == 1
+      assert hd(result["items"])["displayName"] == "Alice Smith"
+    end
+
+    test "search with no matches returns empty", %{server: server} do
+      expect_reviewers(server)
+
+      output =
+        capture_io(fn ->
+          AdoCli.CLI.PullRequests.list_reviewers(%{
+            options: %{json: true, search: "nobody"},
+            arguments: %{project: "MyProject", repo_id: "test", pr_id: 1}
+          })
+        end)
+
+      result = JSON.decode!(output)
+      assert result["count"] == 0
+    end
+
+    test "search filters table output", %{server: server} do
+      expect_reviewers(server)
+
+      AdoCli.CLI.PullRequests.list_reviewers(%{
+        options: %{json: false, search: "alice"},
+        arguments: %{project: "MyProject", repo_id: "test", pr_id: 1}
+      })
+
+      assert_receive {:cli_mate_shell, :halt, 0}, 500
+
+      out =
+        receive_all_info()
+        |> Enum.join()
+        |> IO.iodata_to_binary()
+
+      assert out =~ "Alice Smith"
+      assert out =~ "Alicia Keys"
+      refute out =~ "Bob Jones"
+    end
+
+    defp receive_all_info(acc \\ []) do
+      receive do
+        {:cli_mate_shell, :info, msg} -> receive_all_info([msg | acc])
+      after
+        0 -> Enum.reverse(acc)
+      end
+    end
+  end
 end
