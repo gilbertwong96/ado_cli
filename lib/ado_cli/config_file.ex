@@ -27,16 +27,34 @@ defmodule AdoCli.ConfigFile do
     Path.dirname(config_path())
   end
 
+  @credential_keys ["pat", "token"]
+
   @doc """
-  Saves configuration to the config file. Merges with existing configuration.
+  Saves configuration to the config file.
+
+  Merges with existing config, preserving non-credential fields like
+  `server` and `org`. When the `method` changes, stale credential
+  fields (`pat`, `token`) from the previous method are cleared so
+  they don't shadow the new auth method in `Auth.resolve_auth/0`.
   """
   def save(new_config) do
     existing = load() || %{}
-    merged = Map.merge(existing, new_config)
+
+    base =
+      if method_changed?(existing, new_config),
+        do: Map.drop(existing, @credential_keys),
+        else: existing
+
+    merged = Map.merge(base, new_config)
+
     File.mkdir_p!(config_dir())
     File.write!(config_path(), JSON.encode!(merged))
     :ok
   end
+
+  defp method_changed?(%{"method" => old}, %{method: new}) when old != new, do: true
+  defp method_changed?(%{"method" => old}, %{"method" => new}) when old != new, do: true
+  defp method_changed?(_existing, _new), do: false
 
   @doc """
   Loads the current configuration. Returns a map or `nil` if no config exists.

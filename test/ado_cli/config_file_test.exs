@@ -47,6 +47,45 @@ defmodule AdoCli.ConfigFileTest do
       assert config["extra"] == "value"
     end
 
+    test "clears stale credentials when switching auth method (pat -> browser)" do
+      ConfigFile.save(%{"org" => "myorg", "method" => "pat", "pat" => "secret123"})
+      ConfigFile.save(%{"org" => "myorg", "method" => "browser", "token" => "bearer456"})
+
+      config = ConfigFile.load()
+      assert config["method"] == "browser"
+      assert config["token"] == "bearer456"
+
+      refute Map.has_key?(config, "pat"),
+             "stale pat must be removed when switching to browser"
+    end
+
+    test "clears stale token when switching auth method (browser -> pat)" do
+      ConfigFile.save(%{"org" => "myorg", "method" => "browser", "token" => "bearer789"})
+      ConfigFile.save(%{"org" => "myorg", "method" => "pat", "pat" => "pat000"})
+
+      config = ConfigFile.load()
+      assert config["method"] == "pat"
+      assert config["pat"] == "pat000"
+
+      refute Map.has_key?(config, "token"),
+             "stale token must be removed when switching to pat"
+    end
+
+    test "preserves server across method switches" do
+      ConfigFile.save(%{
+        "org" => "myorg",
+        "method" => "pat",
+        "pat" => "p1",
+        "server" => "https://ado.example.com"
+      })
+
+      ConfigFile.save(%{"org" => "myorg", "method" => "browser", "token" => "t1"})
+
+      config = ConfigFile.load()
+      assert config["server"] == "https://ado.example.com"
+      assert config["method"] == "browser"
+    end
+
     test "overwrites scalar values" do
       ConfigFile.save(%{org: "old_org"})
       ConfigFile.save(%{org: "new_org"})
