@@ -166,10 +166,6 @@ ado <command>  # uses saved config
 | `Identity not materialized` | New MSA org, user never visited in browser | Visit `https://dev.azure.com/{org}` once, then re-login |
 | `Organization not found` | Wrong org name | Check spelling; `ado whoami` to verify |
 | Browser OAuth times out | Firewall/Zscaler blocks | Use PAT or device code instead |
-| Device code login crashes with `WithClauseError` | API response uses `verification_url` (not `_uri`) | Fixed in v0.4.2+ |
-| Device code login prints garbled text | `CLI.color` returns IO list | Fixed in v0.4.2+ |
-| `connectionData` returns 400 with `api-version=7.1` | Some orgs reject versioned calls | Fixed in v0.4.2+ — now calls without version |
-| `Cannot record a vote for someone else` | PR created by someone else, user not in reviewer list | Fixed in v0.4.3 — CLI uses `current_user_id()` instead of `createdBy.id` |
 
 ## Security
 

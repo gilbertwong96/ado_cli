@@ -66,24 +66,18 @@ ado projects list
 ## Downloading the binary
 
 ```bash
-# macOS arm64 (Apple Silicon)
-curl -L -o ado https://github.com/gilbertwong96/ado_cli/releases/latest/download/ado-0.4.3-macos-aarch64
-chmod +x ado && sudo mv ado /usr/local/bin/
+# Download the latest release binary (check the releases page for exact filenames):
+# https://github.com/gilbertwong96/ado_cli/releases/latest
 
 # Linux x86_64
-curl -L -o ado https://github.com/gilbertwong96/ado_cli/releases/latest/download/ado-0.4.3-linux-x86_64
+curl -L -o ado https://github.com/gilbertwong96/ado_cli/releases/latest/download/ado-linux-x86_64
 chmod +x ado && sudo mv ado /usr/local/bin/
 
-# Linux aarch64 (ARM servers, Raspberry Pi 4/5)
-curl -L -o ado https://github.com/gilbertwong96/ado_cli/releases/latest/download/ado-0.4.3-linux-aarch64
+# macOS arm64 (Apple Silicon)
+curl -L -o ado https://github.com/gilbertwong96/ado_cli/releases/latest/download/ado-macos-aarch64
 chmod +x ado && sudo mv ado /usr/local/bin/
 
-# macOS x86_64 (Intel)
-curl -L -o ado https://github.com/gilbertwong96/ado_cli/releases/latest/download/ado-0.4.3-macos-x86_64
-
-# Windows x86_64
-# Download from https://github.com/gilbertwong96/ado_cli/releases/latest
-# ado-0.4.3-windows-x86_64.exe
+# Or install via npm: npm install -g @gilbertwong1996/ado
 ```
 
 Or install via npm: `npm install -g @gilbertwong1996/ado`

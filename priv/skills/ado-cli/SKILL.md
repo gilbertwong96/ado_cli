@@ -100,7 +100,7 @@ Node.js dependency.
 - You want to script PR reviews, pipeline triggers, or work item workflows
 - You are behind a firewall/offline and cannot use `az devops`
 
-## Quick start (the 80% case)
+## Quick start
 
 ```bash
 # Build from source or download a binary
@@ -109,9 +109,7 @@ mix escript.build && cp ado /usr/local/bin/
 
 # Authenticate
 ado login                                                   # browser OAuth, auto-detects org
-ado login --method device                                   # device code, no --org needed
 ado login --org myorg --pat mytoken                        # PAT (--method pat inferred from --pat)
-ado login --method pat --org myorg --pat mytoken            # explicit form (same result)
 
 # Verify
 ado whoami
@@ -161,317 +159,63 @@ export ADO_ORG=myorg                        # or set env var once
 ado projects list                            # no --org needed
 ```
 
-## Full command reference
+## Command reference
 
-### Projects
+The full command reference is split into topic-focused files. Each file
+contains copy-paste-ready examples for every subcommand in that area.
 
 ```bash
-# List all projects (table: Name, ID, State, Visibility)
+# Read a reference file:
+ado skills read ado-cli references/prs.md
+
+# Or from disk:
+cat priv/skills/ado-cli/references/prs.md
+```
+
+| Area | Reference file | Commands |
+|------|---------------|----------|
+| Projects, Teams, Users, Extensions | `references/projects-teams-users.md` | `projects`, `teams`, `users`, `extensions` |
+| Repos & Branch Policies | `references/repos.md` | `repos`, `branch-policies` |
+| Work Items | `references/workitems.md` | `workitems` |
+| Pull Requests | `references/prs.md` | `prs list/show/create/complete/approve/vote/abandon`, `prs comments`, `prs reviewers`, `prs diff` |
+| Pipelines, Builds & CI Watch | `references/pipelines.md` | `pipelines`, `pipelines-builds`, `pipelines-artifacts`, `ci watch`, `pipelines vars`, `pipelines variables` |
+| Releases, Packages & Test Results | `references/artifacts.md` | `releases`, `packages`, `test-results`, `test-coverage` |
+| Administration | `references/admin.md` | `connections`, `security`, `agent-pools`, `banners`, `wikis`, `iterations`, `areas`, `skills` |
+
+Quick examples for the most common tasks:
+
+```bash
+# Projects
 ado projects list
-ado projects list --state wellFormed --top 20
+ado projects create MyProject --description "My project" --visibility private
 
-# Show a single project
-ado projects show MyProject
-
-# Create a project
-ado projects create MyNewProject --description "My new project" --visibility private
-# Visibility: private (default) or public. Process: Agile, Scrum, CMMI, Basic.
-
-# Update (rename or change description)
-ado projects update MyProject --name "Renamed Project"
-
-# Delete (--force skips confirmation)
-ado projects delete OldProject --force
-```
-
-### Repositories
-
-```bash
-# List repos in a project
+# Repos & PRs
 ado repos list MyProject
-
-# Show a single repo
-ado repos show MyProject MyRepo
-
-# Create a repo
-ado repos create MyProject --name "new-repo" --default_branch main
-
-# List branches
-ado repos branches MyProject MyRepo
-ado repos branches MyProject MyRepo --filter feature
-
-# Delete
-ado repos delete MyProject MyRepo --force
-```
-
-### Branch policies
-
-```bash
-ado branch-policies list MyProject MyRepo
-ado branch-policies show MyProject MyRepo POLICY_ID
-ado branch-policies create MyProject MyRepo --type UUID --branch refs/heads/main --blocking
-ado branch-policies update MyProject MyRepo POLICY_ID --enabled false
-ado branch-policies delete MyProject MyRepo POLICY_ID
-```
-
-### Work Items
-
-```bash
-# List work items (table: ID, Title, Type, State, Assigned To)
-ado workitems list MyProject --state Active --type Bug --top 20
-
-# Show details
-ado workitems show 42
-
-# WIQL query
-ado workitems query MyProject --wiql "SELECT [System.Id] FROM WorkItems WHERE [System.State] = 'Active'"
-
-# Create
-ado workitems create MyProject --type Bug --title "Login fails" --description "Steps to reproduce: ..." --tags "ui,critical" --priority 1
-
-# Update state or fields
-ado workitems update 42 --state Resolved --assigned_to "Jane Smith"
-
-# Delete
-ado workitems delete 42
-```
-
-### Pipelines
-
-```bash
-# List pipelines in a project
-ado pipelines list MyProject
-
-# Trigger a run
-ado pipelines run MyProject 42 --branch main
-ado pipelines run MyProject 42 --branch release --variables "ENV=staging,DEBUG=true"
-
-# Variable groups
-ado pipelines vars list MyProject
-ado pipelines vars show MyProject 5
-ado pipelines vars create MyProject --name "prod-secrets" --variables "DB_HOST=prod" --secret NPM_TOKEN
-```
-
-### Classic Builds
-
-```bash
-ado pipelines-builds queue MyProject --definition 5 --branch main
-ado pipelines-builds cancel MyProject 99
-ado pipelines-builds show MyProject 99
-```
-
-### Pull Requests
-
-```bash
-# List PRs in a repo (table: ID, Title, Source, Target, Status)
-ado prs list MyProject MyRepo --status active --creator "alice@example.com"
-
-# Show details
-ado prs show MyProject MyRepo 42
-
-# Create
-ado prs create MyProject MyRepo --title "Add feature" --source dev --target main --draft
-
-# View diff (3 modes)
-ado prs diff MyProject MyRepo 42                                    # file list with +/- counts
-ado prs diff MyProject MyRepo 42 --file src/app.ex                   # per-file unified diff
-ado prs diff MyProject MyRepo 42 --unified | delta                  # full unified diff stream
-
-# Diff handles new, edited, and deleted files correctly:
-ado prs diff MyProject MyRepo 42 --file new_file.ex                  # new file: shows all + lines
-ado prs diff MyProject MyRepo 42 --file deleted.ex                   # deleted: shows all - lines
-
-# Review and merge
-ado prs approve MyProject MyRepo 42                                 # vote +10
+ado prs create MyProject MyRepo --title "Add feature" --source dev --target main
 ado prs complete MyProject MyRepo 42 --merge-strategy squash --delete-source
-ado prs abandon MyProject MyRepo 42
-
-# Comments (multi-word content does NOT need quoting)
-ado prs comments add MyProject MyRepo 42 --content LGTM ship it
-ado prs comments add MyProject MyRepo 42 --content @notes.md        # from file
-echo "review" | ado prs comments add MyProject MyRepo 42 --content - # from stdin
-ado prs comments add MyProject MyRepo 42 --file-path src/app.ex --line 10 --content nitpick
-ado prs comments add MyProject MyRepo 42 --file-path src/app.ex --line 10 --end-line 20 --content codeblock review
-ado prs comments list MyProject MyRepo 42 --all                     # full content view
-ado prs comments update MyProject MyRepo 42 THREAD_ID COMMENT_ID --content "updated text"
-ado prs comments update MyProject MyRepo 42 THREAD_ID COMMENT_ID --status closed --resolved-by-me
-ado prs comments delete MyProject MyRepo 42 THREAD_ID               # close a thread
-ado prs comments delete MyProject MyRepo 42 THREAD_ID --comment-id 1 # delete a comment
-ado prs comments resolve MyProject MyRepo 42 THREAD_ID              # resolve as fixed
-ado prs comments resolve MyProject MyRepo 42 THREAD_ID --resolved-by-me --status wontFix
-
-# Reviewers
-ado prs reviewers list MyProject MyRepo 42
 ado prs reviewers list MyProject MyRepo 42 --search alice   # fuzzy filter by name/email
-ado prs reviewers add MyProject MyRepo 42 --reviewer USER_GUID
-ado prs reviewers remove MyProject MyRepo 42 --reviewer USER_GUID
-```
 
-### Releases
+# Work items
+ado workitems list MyProject --type Bug --state Active
+ado workitems query MyProject --wiql "SELECT [System.Id] FROM WorkItems WHERE [System.AssignedTo] = @Me"
+ado workitems create MyProject --type Bug --title "Fix login" --tags "bug,critical"
 
-```bash
-ado releases list MyProject --definition_id 5 --status active
-ado releases show MyProject 42
-```
+# Pipelines (YAML)
+ado pipelines list MyProject --top 10
+ado pipelines run MyProject 42 --branch main --variables "ENV=staging,DEBUG=true"
 
-### Iterations (Sprints)
+# Watch a build in real-time (live status + streaming logs)
+ado ci watch MyProject 99
+ado ci watch MyProject --latest --definition 42 --branch main
 
-```bash
-ado iterations list MyProject
-ado iterations show MyProject MyTeam "Sprint 23"
-ado iterations create MyProject MyTeam --name "Sprint 24" --start-date 2026-01-15 --finish-date 2026-01-29
-```
-
-### Areas
-
-```bash
-ado areas list MyProject
-ado areas show MyProject "MyArea"
-ado areas create MyProject --name "NewArea"
-```
-
-### Wikis
-
-```bash
-ado wikis list MyProject
-ado wikis pages list MyProject MyWiki
-ado wikis pages show MyProject MyWiki --path /Home
-ado wikis pages create MyProject MyWiki --path /Design --content "# Design Doc"
-```
-
-### Teams
-
-```bash
-ado teams list MyProject
-ado teams members list MyProject "My Team"
-```
-
-### Users (Entitlements)
-
-```bash
+# Users, teams, security
 ado users list
-ado users show "alice@example.com"
-ado users add --email "newuser@example.com" --license professional
-ado users remove "user_id_or_email"
-```
+ado teams members list MyProject MyTeam
+ado security groups create MyProject --name "Deployers"
+ado security permissions namespaces
 
-### Extensions
-
-```bash
-ado extensions list
-ado extensions install ms.azure-devops-utilities --publisher ms
-ado extensions uninstall "ms.azure-devops-utilities"
-```
-
-### Agent Pools
-
-```bash
-ado agent-pools list
-ado agent-pools show POOL_ID
-ado agent-pools queues POOL_ID
-```
-
-### Service Connections
-
-```bash
-# List connections (table: ID, Name, Type)
-ado connections list MyProject
-ado connections list MyProject --type github
-
-# Show details (ID, name, type, url, isReady). Secrets are never returned.
-ado connections show MyProject <connection-id>
-
-# Create a GitHub PAT connection (literal token — appears in shell history)
-ado connections create MyProject GitHubPat github https://github.com \
-    --access-token gh_xxxxx --description "CI bot PAT"
-
-# Create with token from stdin (secure — no shell history)
-echo "$GITHUB_PAT" | ado connections create MyProject GitHubPat github https://github.com \
-    --access-token -
-
-# Create with token from a file
-ado connections create MyProject GitHubPat github https://github.com \
-    --access-token @~/.github-pat --description "CI bot PAT"
-
-# Create with type-specific --data (e.g. Azure RM subscription)
-ado connections create MyProject AzureProd azure "" \
-    --data '{"subscriptionId":"11111111-2222-3333-4444-555555555555","subscriptionName":"Prod"}' \
-    --scheme UsernamePassword --access-token secret-password
-
-# Update (rename, change description, or rotate credentials)
-ado connections update MyProject <id> --name "Renamed"
-ado connections update MyProject <id> --access-token new-token
-ado connections update MyProject <id> --data '{"subscriptionId":"new-sub-id"}'
-# No fields supplied → usage error
-
-# Delete (--force skips y/N confirmation)
-ado connections delete MyProject <id> --force
-```
-
-JSON response shape for create/update (with `--json`):
-```json
-{
-  "ok": true,
-  "result": {
-    "id": "uuid",
-    "name": "string",
-    "type": "string",
-    "url": "string",
-    "isReady": true
-  }
-}
-```
-
-### Security
-
-```bash
-ado security groups list MyProject
-ado security groups create MyProject --name "Reviewers"
-ado security groups members list MyProject "vssgp.xxxxx"
-ado security permissions list "2e9eb7ed-..." --token "repoV2/projectId/repoId"
-```
-
-### Banners (Org Notifications)
-
-```bash
-ado banners show
-ado banners set --message "Maintenance window: Sat 2-4am" --type warning
-ado banners delete
-```
-
-### Packages (Universal)
-
-```bash
-ado packages list MyProject MyFeed
-ado packages versions MyProject MyFeed my-package
-ado packages show MyProject MyFeed my-package 1.0.0
-```
-
-### CI Watch (Live Pipeline Logs)
-
-```bash
-ado ci watch MyProject 99                                         # specific build
-ado ci watch MyProject --latest --definition 42 --branch main    # latest matching build
-```
-
-### Test Results and Coverage
-
-```bash
-ado test-results list MyProject
-ado test-results show MyProject 42
-ado test-results publish MyProject --name "CI Suite" --file coverage.cobertura.xml --build-id 99
-ado test-coverage show MyProject 99
-```
-
-### Skills (for AI agents)
-
-```bash
-ado skills list
-ado skills describe ado-cli
-ado skills read ado-cli
-ado skills search "pipeline"
-ado skills install                                   # install to all known agent dirs
-ado skills install --target pi --skill ado-cli
+# Banners + packages
+ado banners set --message "Maintenance in progress" --type warning
 ```
 
 ## Non-obvious behaviors
@@ -494,7 +238,7 @@ Works with `*.visualstudio.com` orgs. No special flags needed. Use browser OAuth
 ### Self-hosted Azure DevOps Server
 
 ```bash
-ado login --method pat --server https://ado.example.com --org DefaultCollection --pat xxx
+ado login --server https://ado.example.com --org DefaultCollection --pat xxx
 ado --server https://ado.example.com --org Coll projects list
 ```
 
