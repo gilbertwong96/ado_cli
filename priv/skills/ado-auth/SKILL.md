@@ -130,6 +130,19 @@ ado whoami
 ado logout    # deletes ~/.ado_cli/config.json
 ```
 
+## Switching auth methods
+
+Switching between PAT and browser/device login is safe — the CLI clears
+stale credentials (`pat`, `token`) when the `method` changes:
+
+```bash
+ado login --org myorg --pat mytoken   # saves PAT to config
+ado login                              # switch to browser OAuth
+# config now has: {"method":"browser","token":"..."} — no stale pat
+```
+
+Non-credential fields (`org`, `server`) are preserved across switches.
+
 ## CI / headless servers
 
 ```bash

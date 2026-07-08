@@ -312,6 +312,7 @@ ado repos list MyProject
 ado repos create MyProject MyRepo
 ado prs create MyProject MyRepo --title "Add feature" --source dev --target main
 ado prs complete MyProject MyRepo 42 --merge-strategy squash --delete-source
+ado prs reviewers list MyProject MyRepo 42 --search alice   # fuzzy filter by name/email
 
 # Work items
 ado workitems list MyProject --type Bug --state Active

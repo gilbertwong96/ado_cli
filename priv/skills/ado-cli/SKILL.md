@@ -53,6 +53,7 @@ commands:
   - ado prs diff PROJECT REPO PR_ID --file PATH
   - ado prs diff PROJECT REPO PR_ID --unified
   - ado prs reviewers list PROJECT REPO PR_ID
+  - ado prs reviewers list PROJECT REPO PR_ID --search QUERY  # fuzzy filter
   - ado prs reviewers add PROJECT REPO PR_ID --reviewer USER_GUID
   - ado prs reviewers remove PROJECT REPO PR_ID --reviewer USER_GUID
   - ado releases list PROJECT
