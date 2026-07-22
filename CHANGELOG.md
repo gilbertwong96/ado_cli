@@ -16,6 +16,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **EPIPE hang in Burrito binaries when piping to `head`/`less`.**
+  When stdout was piped to a command that exits early (e.g.
+  `ado schema | head -5`), the BEAM's standard_io group leader crashed
+  on EPIPE and the VM hung indefinitely trying to flush IO during
+  shutdown. Burrito's `child.wait()` blocked forever. Fixed in the
+  forked Burrito Zig wrapper: child stdout is now piped through the
+  wrapper process, and when the downstream pipe breaks (EPIPE), the
+  child is killed immediately.
+
 - **Switching auth methods no longer leaves stale credentials in the
   config file.** Previously `ConfigFile.save/1` merged new config over
   old, so logging in with a PAT then switching to browser OAuth left
