@@ -167,6 +167,15 @@ defmodule AdoCli.CLI do
     apply_global_opts(parsed.options)
 
     parsed.execute.()
+  rescue
+    _ in ErlangError ->
+      # EPIPE: standard_io group leader is dead (pipe closed by head/etc).
+      # Halt directly with flush:false to skip the IO flush that hangs
+      # in Burrito binaries and crashes with ugly stack traces in escripts.
+      :erlang.halt(0, [{:flush, false}])
+  catch
+    _, _ ->
+      :erlang.halt(1, [{:flush, false}])
   end
 
   # String options that should consume all subsequent non-flag tokens.
