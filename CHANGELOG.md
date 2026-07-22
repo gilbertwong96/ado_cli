@@ -5,7 +5,7 @@ All notable changes to `ado` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.5.0] - 2026-07-22
 
 ### Added
 
@@ -14,16 +14,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (fzf-style) matching, case-insensitive. Filtering is client-side
   since the Azure DevOps reviewers API returns all reviewers for a PR.
 
+- **`ado-cli` skill restructured into reference files.** The 540-line
+  SKILL.md is now a lean 284-line overview + 7 topic-focused reference
+  files (`references/prs.md`, `references/repos.md`, etc.) readable
+  via `ado skills read ado-cli/references/prs.md`.
+
 ### Fixed
 
-- **EPIPE hang in Burrito binaries when piping to `head`/`less`.**
-  When stdout was piped to a command that exits early (e.g.
-  `ado schema | head -5`), the BEAM's standard_io group leader crashed
-  on EPIPE and the VM hung indefinitely trying to flush IO during
-  shutdown. Burrito's `child.wait()` blocked forever. Fixed in the
-  forked Burrito Zig wrapper: child stdout is now piped through the
-  wrapper process, and when the downstream pipe breaks (EPIPE), the
-  child is killed immediately.
+- **EPIPE hang when piping to `head`/`less`.** When stdout was piped to
+  a command that exits early (e.g. `ado schema | head -5`), the BEAM's
+  standard_io group leader crashed on EPIPE and the VM hung indefinitely
+  trying to flush IO during shutdown. Fixed in two places:
+  - **Burrito binaries:** The forked Burrito Zig wrapper now pipes child
+    stdout through itself. When the downstream pipe breaks (EPIPE), the
+    copy thread kills the BEAM child immediately.
+  - **Escripts:** `CLI.run/1` catches the `ErlangError` (`:terminated`)
+    and halts with `flush:false`, avoiding the `Writer crashed (epipe)`
+    stack trace.
 
 - **Switching auth methods no longer leaves stale credentials in the
   config file.** Previously `ConfigFile.save/1` merged new config over
@@ -39,6 +46,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   CLI now infers `pat` login when `--pat` (or `ADO_PAT`) is present
   without an explicit `--method`. Passing `--method` still overrides
   the inference.
+
+### Changed
+
+- **`ado-ci` skill download URLs updated** to use version-agnostic
+  `latest/download/` links instead of pinned `ado-0.4.3-*` filenames.
+
+- **`ado-auth` skill pitfalls table cleaned up** — removed 4 historical
+  bug-fix rows (v0.4.2/v0.4.3 fixes) that are no longer actionable.
+
+- **burrito upgraded** to `30be1e1` (zig-0.16.0 branch), which includes
+  the EPIPE pipe-copy fix above.
 
 ## [0.4.12] - 2026-06-27
 
