@@ -134,7 +134,8 @@
           {ExSlop.Check.Warning.QueryInEnumMap, []},
           {ExSlop.Check.Warning.RepoAllThenFilter, []},
           {ExSlop.Check.Warning.RescueWithoutReraise, []}
-        ]
+        ] ++ Enum.map(ExSlop.recommended_checks(), &{&1, []}),
+        disabled: [{Credo.Check.Refactor.MapInto, []}]
       }
     }
   ]
