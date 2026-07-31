@@ -1112,7 +1112,7 @@ defmodule AdoCli.CLI.Pipelines do
       writeln(String.duplicate("─", 100))
 
       Enum.each(groups, fn g ->
-        var_count = g["variables"] |> Map.keys() |> length()
+        var_count = map_size(g["variables"])
 
         desc = String.slice(g["description"] || "", 0, 38)
 

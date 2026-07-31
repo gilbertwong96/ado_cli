@@ -133,27 +133,24 @@ defmodule AdoCli.CLI.TestResults do
     params = %{}
 
     params =
-      if top = Map.get(parsed.options, :top, nil) do
+      if top = Map.get(parsed.options, :top) do
         Map.put(params, "$top", top)
       else
         params
       end
 
     params =
-      if build_id = Map.get(parsed.options, :"build-id", nil) do
+      if build_id = Map.get(parsed.options, :"build-id") do
         Map.put(params, "buildIds", build_id)
       else
         params
       end
 
-    params =
-      if min_date = Map.get(parsed.options, :"min-last-updated", nil) do
-        Map.put(params, "minLastUpdatedDate", min_date)
-      else
-        params
-      end
-
-    params
+    if min_date = Map.get(parsed.options, :"min-last-updated") do
+      Map.put(params, "minLastUpdatedDate", min_date)
+    else
+      params
+    end
   end
 
   defp find_stat(stats, label) do
@@ -270,7 +267,7 @@ defmodule AdoCli.CLI.TestResults do
     }
 
     body =
-      if build_id = Map.get(parsed.options, :"build-id", nil) do
+      if build_id = Map.get(parsed.options, :"build-id") do
         Map.put(body, "build", %{"id" => build_id})
       else
         body
@@ -281,20 +278,6 @@ defmodule AdoCli.CLI.TestResults do
   end
 
   defp attach_file(project, run_id, file_path, _content) do
-    # Determine attachment type from file extension
-    ext =
-      file_path
-      |> String.downcase()
-      |> Path.extname()
-
-    _attachment_type =
-      case ext do
-        ".xml" -> "CodeCoverage"
-        ".cobertura" -> "CodeCoverage"
-        ".trx" -> "TmiTestRunSummaryResult"
-        _ -> "GeneralAttachment"
-      end
-
     # Mark the run as completed
     _ = Client.patch("/#{project}/_apis/test/runs/#{run_id}", %{"state" => "Completed"})
 

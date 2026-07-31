@@ -271,10 +271,14 @@ defmodule AdoCli.CLI.WorkItems do
       |> add_wiql_filter(Map.get(parsed.options, :state), "System.State")
 
     wiql =
-      "SELECT [System.Id], [System.Title], [System.State], [System.WorkItemType], [System.AssignedTo] " <>
-        "FROM WorkItems " <>
-        "WHERE #{Enum.join(where_clauses, " AND ")} " <>
+      IO.iodata_to_binary([
+        "SELECT [System.Id], [System.Title], [System.State], [System.WorkItemType], [System.AssignedTo] ",
+        "FROM WorkItems ",
+        "WHERE ",
+        Enum.join(where_clauses, " AND "),
+        " ",
         "ORDER BY [System.Id] DESC"
+      ])
 
     run_wiql_query(project, wiql, parsed)
   end

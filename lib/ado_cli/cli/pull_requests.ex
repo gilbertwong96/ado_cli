@@ -1110,11 +1110,8 @@ defmodule AdoCli.CLI.PullRequests do
     end
   end
 
-  defp format_unified_diff(path, old_content, new_content, base_sha, target_sha) do
-    # Ensure path has a leading "/" for consistency
+  defp format_unified_diff(path, old_content, new_content, _base_sha, _target_sha) do
     path = if String.starts_with?(path, "/"), do: path, else: "/#{path}"
-    _short_base = String.slice(base_sha, 0, 7)
-    _short_target = String.slice(target_sha, 0, 7)
 
     header = """
     diff --git a#{path} b#{path}
@@ -1940,20 +1937,23 @@ defmodule AdoCli.CLI.PullRequests do
   defp do_delete_request(:delete, path), do: Client.delete(path)
   defp do_delete_request(:patch, path), do: Client.patch(path, %{"status" => "closed"})
 
-  defp render_delete_result(result, target_label, json?, parsed) do
-    case result do
-      r when r == :ok or (is_tuple(r) and elem(r, 0) == :ok) ->
-        if json? do
-          IO.puts(JSON.encode!(%{ok: true, closed: target_label}))
-        else
-          success("Closed #{target_label}.")
-        end
+  defp render_delete_result(:ok, target_label, json?, _parsed),
+    do: render_delete_ok(target_label, json?)
 
-        halt_success("")
+  defp render_delete_result({:ok, _}, target_label, json?, _parsed),
+    do: render_delete_ok(target_label, json?)
 
-      {:error, reason} ->
-        Helpers.bail(reason, parsed)
+  defp render_delete_result({:error, reason}, _target_label, _json?, parsed),
+    do: Helpers.bail(reason, parsed)
+
+  defp render_delete_ok(target_label, json?) do
+    if json? do
+      IO.puts(JSON.encode!(%{ok: true, closed: target_label}))
+    else
+      success("Closed #{target_label}.")
     end
+
+    halt_success("")
   end
 
   @doc """
