@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.5.0] - 2026-07-22
 
+### Unreleased
+
+- **`ado pipelines secure-files`** — list, show, upload, ~~download~~, and delete
+  Secure Files in the Pipeline Library (`/_apis/distributedtask/securefiles`).
+  Useful for shipping certs, kubeconfigs, and signing keys to pipeline agents
+  via the `DownloadSecureFile@1` task. **The `download` subcommand was
+  removed in this branch** — see "Removed" below.
+
+### Removed
+
+- **`ado pipelines secure-files download` subcommand (this branch only).**
+  Microsoft's secure-files API does not issue a `downloadTicket` field in
+  the metadata response to bearer tokens for personal Microsoft accounts
+  (e.g. `outlook.com` / `hotmail.com` / `live.com`), even with the
+  `vso.securefiles_read` PAT scope and the Library/ViewSecrets permission
+  explicitly granted (verified live with `allow:63 = View|Administer|
+  Create|ViewSecrets|Use|Owner`). The web UI works because it uses
+  session-cookie auth with a different code path. Direct REST does not.
+  Re-introduce this subcommand only when either (a) Microsoft fixes the
+  platform gap, or (b) the caller authenticates with a work/school
+  Entra ID (AAD) identity rather than a personal Microsoft account.
+  The other secure-files subcommands (`list`, `show`, `upload`, `delete`)
+  are unaffected and continue to work for all account types. See
+  `ado skills read ado-cli/references/pipelines.md` for examples.
+
+
+
 ### Added
 
 - **`ado prs reviewers list --search QUERY`** — fuzzy-filter PR reviewers

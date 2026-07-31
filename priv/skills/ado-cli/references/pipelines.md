@@ -18,6 +18,26 @@ ado pipelines vars create MyProject --name "prod-secrets" --variables "DB_HOST=p
 ```
 
 
+### Secure Files
+
+```bash
+# List secure files in a project
+ado pipelines secure_files list MyProject
+
+# Show details of one secure file
+ado pipelines secure_files show MyProject <id>
+
+# Upload a local file (cert, kubeconfig, signing key)
+ado pipelines secure_files upload MyProject prod-cert.pem --file ./prod-cert.pem
+
+# Replace an existing file with the same name
+ado pipelines secure_files upload MyProject prod-cert.pem --file ./new.pem --allow-exists
+
+# Delete (requires --force to confirm)
+ado pipelines secure_files delete MyProject <id> --force
+```
+
+
 ### Classic Builds
 
 ```bash

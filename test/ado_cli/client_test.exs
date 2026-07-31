@@ -286,4 +286,29 @@ defmodule AdoCli.ClientTest do
       assert body =~ "ado login"
     end
   end
+
+  describe "post_binary/4" do
+    test "sends body as raw bytes (not JSON-encoded)", %{server: server} do
+      raw_body = <<0xDE, 0xAD, 0xBE, 0xEF>>
+
+      TestServer.expect(server, "POST", api("/_apis/test"), fn conn ->
+        {:ok, body, conn} = Plug.Conn.read_body(conn, length: byte_size(raw_body))
+        assert body == raw_body
+        Plug.Conn.resp(conn, 200, ~s({"ok":true}))
+      end)
+
+      assert {:ok, %{"ok" => true}} = Client.post_binary("/_apis/test", raw_body)
+    end
+
+    test "returns clear auth error on 302 redirect", %{server: server} do
+      TestServer.expect(server, "POST", api("/_apis/test"), fn conn ->
+        conn
+        |> Plug.Conn.put_resp_header("location", "http://example.com/signin")
+        |> Plug.Conn.resp(302, "")
+      end)
+
+      assert {:error, %{status: 302, body: body}} = Client.post_binary("/_apis/test", <<1, 2, 3>>)
+      assert body =~ "ado login"
+    end
+  end
 end

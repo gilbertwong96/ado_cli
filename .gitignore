@@ -43,3 +43,7 @@ node_modules/
 # Node.js test artifacts (root only)
 /package.json
 /package-lock.json
+.pi-subagents/
+
+# Superpowers planning/spec docs (not committed)
+docs/superpowers/

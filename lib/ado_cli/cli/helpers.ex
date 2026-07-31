@@ -14,6 +14,30 @@ defmodule AdoCli.CLI.Helpers do
   alias AdoCli.CLI.Output
 
   @doc """
+  Surfaces an API error to the user and halts with a non-zero exit code.
+
+  Shared by `AdoCli.CLI.Pipelines`, `AdoCli.CLI.WorkItems`, and
+  `AdoCli.CLI.PullRequests`. Previously duplicated in each module.
+  """
+  def bail(reason, parsed) do
+    handle_api_result({:error, reason}, parsed, nil)
+  end
+
+  @doc """
+  Extracts the human-readable `message` field from an Azure DevOps
+  error body. Returns `nil` if the body doesn't have one.
+
+      iex> extract_error_message(%{"message" => "Forbidden"})
+      "Forbidden"
+      iex> extract_error_message(%{"other" => "stuff"})
+      nil
+      iex> extract_error_message("not a map")
+      nil
+  """
+  def extract_error_message(%{"message" => m}) when is_binary(m), do: m
+  def extract_error_message(_), do: nil
+
+  @doc """
   Handles a `{:ok, data} | {:error, reason}` result from the API client.
 
   On success, calls `success_fn` with the data. The success_fn is

@@ -795,7 +795,7 @@ defmodule AdoCli.CLI.PullRequests do
           halt_error(msg)
 
         {:error, reason} ->
-          bail(reason, parsed)
+          Helpers.bail(reason, parsed)
       end
     end
   end
@@ -922,11 +922,11 @@ defmodule AdoCli.CLI.PullRequests do
             :ok
 
           {:error, reason} ->
-            bail(reason, parsed)
+            Helpers.bail(reason, parsed)
         end
 
       {:error, reason} ->
-        bail(reason, parsed)
+        Helpers.bail(reason, parsed)
     end
   end
 
@@ -970,11 +970,11 @@ defmodule AdoCli.CLI.PullRequests do
             :ok
 
           {:error, reason} ->
-            bail(reason, parsed)
+            Helpers.bail(reason, parsed)
         end
 
       {:error, reason} ->
-        bail(reason, parsed)
+        Helpers.bail(reason, parsed)
     end
   end
 
@@ -1369,7 +1369,7 @@ defmodule AdoCli.CLI.PullRequests do
         halt_success("Done.")
 
       {:error, reason} ->
-        bail(reason, parsed)
+        Helpers.bail(reason, parsed)
     end
   end
 
@@ -1396,7 +1396,7 @@ defmodule AdoCli.CLI.PullRequests do
         halt_error("Reviewer not found: #{reviewer}. Use the user's GUID from Azure DevOps.")
 
       {:error, reason} ->
-        bail(reason, parsed)
+        Helpers.bail(reason, parsed)
     end
   end
 
@@ -1502,7 +1502,7 @@ defmodule AdoCli.CLI.PullRequests do
         end)
 
       {:error, reason} ->
-        bail(reason, parsed)
+        Helpers.bail(reason, parsed)
     end
 
     halt_success("Done.")
@@ -1771,7 +1771,7 @@ defmodule AdoCli.CLI.PullRequests do
         render_fn.(nil, result)
 
       {:error, reason} ->
-        bail(reason, parsed)
+        Helpers.bail(reason, parsed)
     end
   end
 
@@ -1952,7 +1952,7 @@ defmodule AdoCli.CLI.PullRequests do
         halt_success("")
 
       {:error, reason} ->
-        bail(reason, parsed)
+        Helpers.bail(reason, parsed)
     end
   end
 
@@ -1989,7 +1989,7 @@ defmodule AdoCli.CLI.PullRequests do
         halt_success("")
 
       {:error, reason} ->
-        bail(reason, parsed)
+        Helpers.bail(reason, parsed)
     end
   end
 
@@ -2113,7 +2113,7 @@ defmodule AdoCli.CLI.PullRequests do
         render_add_result(result, "Reply added to thread #{thread_id}.", json?)
 
       {:error, reason} ->
-        bail(reason, parsed)
+        Helpers.bail(reason, parsed)
     end
   end
 
@@ -2155,7 +2155,7 @@ defmodule AdoCli.CLI.PullRequests do
         render_add_result(result, "Comment added to #{canonical_path}:#{range_label}.", json?)
 
       {:error, reason} ->
-        bail(reason, parsed)
+        Helpers.bail(reason, parsed)
     end
   end
 
@@ -2182,7 +2182,7 @@ defmodule AdoCli.CLI.PullRequests do
         render_add_result(result, "Comment added.", json?)
 
       {:error, reason} ->
-        bail(reason, parsed)
+        Helpers.bail(reason, parsed)
     end
   end
 
@@ -2248,9 +2248,4 @@ defmodule AdoCli.CLI.PullRequests do
   # Local helper for the unreachable error path. Centralizes the
   # call to Helpers.handle_api_result/3 so the case branches stay
   # tidy. Returns whatever handle_api_result returns (always
-  # :no_return() in practice since it halts on error), so the
-  # call site still effectively aborts the surrounding function.
-  defp bail(reason, parsed) do
-    Helpers.handle_api_result({:error, reason}, parsed, nil)
-  end
 end

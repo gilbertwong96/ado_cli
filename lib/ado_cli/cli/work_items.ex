@@ -531,7 +531,7 @@ defmodule AdoCli.CLI.WorkItems do
         writeln("No comments found.")
 
       {:error, reason} ->
-        bail(reason, parsed)
+        Helpers.bail(reason, parsed)
     end
 
     halt_success("Done.")
@@ -555,7 +555,7 @@ defmodule AdoCli.CLI.WorkItems do
         success("Comment added to work item ##{id}.\n\n")
 
       {:error, reason} ->
-        bail(reason, parsed)
+        Helpers.bail(reason, parsed)
     end
 
     halt_success("Done.")
@@ -579,7 +579,7 @@ defmodule AdoCli.CLI.WorkItems do
         success("Comment updated on work item ##{id}.\n\n")
 
       {:error, reason} ->
-        bail(reason, parsed)
+        Helpers.bail(reason, parsed)
     end
 
     halt_success("Done.")
@@ -620,7 +620,7 @@ defmodule AdoCli.CLI.WorkItems do
         writeln("No attachments found.")
 
       {:error, reason} ->
-        bail(reason, parsed)
+        Helpers.bail(reason, parsed)
     end
 
     halt_success("Done.")
@@ -650,11 +650,11 @@ defmodule AdoCli.CLI.WorkItems do
             success("Downloaded #{byte_size(body)} bytes to #{file_name}\n\n")
 
           {:error, reason} ->
-            bail(reason, parsed)
+            Helpers.bail(reason, parsed)
         end
 
       {:error, reason} ->
-        bail(reason, parsed)
+        Helpers.bail(reason, parsed)
     end
 
     halt_success("Done.")
@@ -663,9 +663,4 @@ defmodule AdoCli.CLI.WorkItems do
   # Local helper for the unreachable error path. Centralizes the
   # call to Helpers.handle_api_result/3 so the case branches stay
   # tidy. Returns whatever handle_api_result returns (always
-  # :no_return() in practice since it halts on error), so the
-  # call site still effectively aborts the surrounding function.
-  defp bail(reason, parsed) do
-    Helpers.handle_api_result({:error, reason}, parsed, nil)
-  end
 end

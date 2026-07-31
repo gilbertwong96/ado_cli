@@ -97,6 +97,7 @@ defmodule AdoCli.CLI do
       areas: Areas,
       connections: Connections,
       extensions: Extensions,
+      security: Security,
       iterations: Iterations,
       imports: Imports,
       pipelines: Pipelines,

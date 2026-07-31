@@ -53,6 +53,14 @@ defmodule AdoCli.Client do
   end
 
   @doc """
+  Makes a POST request with a raw binary body (no JSON encoding).
+  Used for uploading binary files (e.g. secure files, attachments).
+  """
+  def post_binary(path, body, params \\ %{}, content_type \\ "application/octet-stream") do
+    handle_response(do_request_binary(:post, path, body, params, content_type))
+  end
+
+  @doc """
   Makes a PATCH request.
   """
   def patch(path, body, params \\ %{}),
@@ -133,14 +141,10 @@ defmodule AdoCli.Client do
          path,
          body,
          params,
-         content_type_or_extra_headers \\ "application/json",
-         attempt \\ 0
+         content_type_or_extra_headers \\ "application/json"
        )
 
-  defp do_request(_method, _path, _body, _params, _content_type_or_extra_headers, 3),
-    do: {:error, %{status: 302, body: "Too many redirects"}}
-
-  defp do_request(method, path, body, params, content_type_or_extra_headers, attempt)
+  defp do_request(method, path, body, params, content_type_or_extra_headers)
        when is_list(content_type_or_extra_headers) do
     with {:ok, org, auth_headers} <- AdoCli.Auth.resolve_auth() do
       do_request_with_auth(
@@ -148,7 +152,6 @@ defmodule AdoCli.Client do
         path,
         body,
         params,
-        attempt,
         {org, auth_headers},
         "application/json",
         content_type_or_extra_headers
@@ -156,7 +159,7 @@ defmodule AdoCli.Client do
     end
   end
 
-  defp do_request(method, path, body, params, content_type, attempt)
+  defp do_request(method, path, body, params, content_type)
        when is_binary(content_type) do
     with {:ok, org, auth_headers} <- AdoCli.Auth.resolve_auth() do
       do_request_with_auth(
@@ -164,7 +167,6 @@ defmodule AdoCli.Client do
         path,
         body,
         params,
-        attempt,
         {org, auth_headers},
         content_type,
         []
@@ -177,7 +179,6 @@ defmodule AdoCli.Client do
          path,
          body,
          params,
-         attempt,
          {org, auth_headers},
          content_type,
          extra_headers
@@ -186,43 +187,14 @@ defmodule AdoCli.Client do
     full_url = inject_org(url, org)
     headers = [{"Content-Type", content_type} | auth_headers] ++ extra_headers
     encoded = if body, do: JSON.encode!(body)
-
-    case Finch.request(Finch.build(method, full_url, headers, encoded), AdoCli.Finch) do
-      {:ok, %Finch.Response{status: status, headers: resp_headers}}
-      when status in [301, 302, 307, 308] ->
-        handle_redirect(
-          method,
-          path,
-          body,
-          params,
-          resp_headers,
-          auth_headers,
-          attempt,
-          extra_headers
-        )
-
-      {:ok, %Finch.Response{status: status, body: resp_body}} ->
-        {:ok, %{status: status, body: resp_body}}
-
-      {:error, reason} ->
-        {:error, reason}
-    end
+    dispatch_finch_request(method, full_url, headers, encoded)
   end
 
-  # The DevOps API may return 302 to a sign-in page for orgs that require
+  # The DevOps API may return 3xx to a sign-in page for orgs that require
   # browser-based identity establishment (MSA personal orgs, etc.).
   # This cannot be automated — the user must authenticate interactively
   # via `ado login` first.
-  defp handle_redirect(
-         _method,
-         _path,
-         _body,
-         _params,
-         resp_headers,
-         _auth_headers,
-         _attempt,
-         _extra_headers
-       ) do
+  defp handle_redirect(resp_headers) do
     location =
       Enum.find_value(resp_headers, fn
         {"location", v} -> v
@@ -238,6 +210,29 @@ defmodule AdoCli.Client do
     {:error, %{status: 302, body: body}}
   end
 
+  defp do_request_binary(method, path, body, params, content_type) do
+    with {:ok, org, auth_headers} <- AdoCli.Auth.resolve_auth() do
+      url = build_url(path, params)
+      full_url = inject_org(url, org)
+      headers = [{"Content-Type", content_type} | auth_headers]
+      dispatch_finch_request(method, full_url, headers, body)
+    end
+  end
+
+  defp dispatch_finch_request(method, full_url, headers, body) do
+    case Finch.request(Finch.build(method, full_url, headers, body), AdoCli.Finch) do
+      {:ok, %Finch.Response{status: status, headers: resp_headers}}
+      when status in [301, 302, 307, 308] ->
+        handle_redirect(resp_headers)
+
+      {:ok, %Finch.Response{status: status, body: resp_body}} ->
+        {:ok, %{status: status, body: resp_body}}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
   defp do_request_raw(method, path, _body, params) do
     url = build_url(path, params)
 
@@ -249,7 +244,10 @@ defmodule AdoCli.Client do
   end
 
   defp build_url(path, params) do
-    query = URI.encode_query(Map.merge(params, %{"api-version" => @api_version}))
+    # Caller's params take precedence — useful for endpoints that need
+    # a non-default api-version (e.g. preview endpoints like
+    # /_apis/connectionData and /_apis/accesscontrollists).
+    query = URI.encode_query(Map.merge(%{"api-version" => @api_version}, params))
     base = base_url()
     "#{base}/#{String.trim_leading(path, "/")}?#{query}"
   end

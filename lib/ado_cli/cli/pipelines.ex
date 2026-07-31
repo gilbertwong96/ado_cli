@@ -10,6 +10,15 @@ defmodule AdoCli.CLI.Pipelines do
     ado pipelines vars create PROJECT             --name NAME [--description DESC] [--variables KEY=VALUE,...] [--secret KEY,...]
     ado pipelines vars update PROJECT GROUP_ID    [--name NAME] [--description DESC] [--variables KEY=VALUE,...] [--secret KEY,...]
     ado pipelines vars delete PROJECT GROUP_ID
+    ado pipelines secure-files list PROJECT      [--top N]
+    ado pipelines secure-files show PROJECT ID
+    ado pipelines secure-files upload PROJECT NAME --file PATH [--allow-exists]
+    ado pipelines secure-files delete PROJECT ID [--force]
+    # NOTE: 'secure-files download' was removed. The Microsoft secure-files
+    # API does not issue a downloadTicket to bearer tokens for personal
+    # Microsoft accounts, even with vso.securefiles_read, the right scope,
+    # and Library/ViewSecrets granted. Re-introduce only when (a) Microsoft
+    # fixes the platform gap or (b) a work/school AAD identity is used.
   """
 
   @behaviour CliMate.CLI.Command
@@ -20,6 +29,7 @@ defmodule AdoCli.CLI.Pipelines do
   alias AdoCli.Client
 
   @impl true
+  # credo:disable-for-next-line Credo.Check.Refactor.ABCSize
   def command do
     [
       name: "ado pipelines",
@@ -304,6 +314,99 @@ defmodule AdoCli.CLI.Pipelines do
                 ]
               ],
               execute: &delete_pipeline_var/1
+            ]
+          ]
+        ],
+        secure_files: [
+          name: "ado pipelines secure-files",
+          doc:
+            "Manage Secure Files in the Pipeline Library. Secure files are binary blobs (certificates, kubeconfigs, signing keys) referenced by pipelines via the DownloadSecureFile@1 task. (The 'download' subcommand is intentionally absent — see CHANGELOG for the Azure DevOps platform gap that prevents ticket issuance for personal Microsoft accounts.)",
+          subcommands: [
+            list: [
+              name: "ado pipelines secure-files list",
+              doc:
+                "List all Secure Files in a project. Output is a table (ID, Name, Size, Modified). Use --top to limit. Pass --json for raw data.",
+              arguments: [project: [type: :string, doc: "Project name or ID"]],
+              options: [
+                top: [
+                  type: :integer,
+                  doc: "Maximum number to return. Default 50.",
+                  doc_arg: "N"
+                ]
+              ],
+              execute: &secure_files_list/1
+            ],
+            show: [
+              name: "ado pipelines secure-files show",
+              doc:
+                "Show details of a single Secure File: ID, name, size, created/modified by and on. The ID is a GUID string (from `list`).",
+              arguments: [
+                project: [type: :string, doc: "Project name or ID"],
+                secure_file_id: [
+                  type: :string,
+                  doc: "Secure File ID (GUID string, from `list`)"
+                ]
+              ],
+              execute: &secure_files_show/1
+            ],
+            upload: [
+              name: "ado pipelines secure-files upload",
+              doc:
+                "Upload a local file as a Secure File to the Library. The file content is sent as raw bytes (application/octet-stream). If a Secure File with the same name already exists and --allow-exists is passed, the existing one is deleted first; otherwise the command fails with a 409 error.",
+              arguments: [
+                project: [type: :string, doc: "Project name or ID"],
+                name: [
+                  type: :string,
+                  doc:
+                    "Name for the Secure File (e.g. 'prod-cert.pem'). Must be unique within the project."
+                ]
+              ],
+              options: [
+                file: [
+                  type: :string,
+                  required: true,
+                  doc: "Path to the local file to upload",
+                  doc_arg: "PATH"
+                ],
+                allow_exists: [
+                  type: :boolean,
+                  default: false,
+                  doc:
+                    "If a Secure File with this name already exists, delete it first before uploading. Without this flag, the command fails on name conflict."
+                ]
+              ],
+              execute: &secure_files_upload/1
+            ],
+            # NOTE: 'download' was removed in this branch. The Microsoft
+            # secure-files API does not issue a downloadTicket to bearer
+            # tokens for personal Microsoft accounts (e.g. outlook.com /
+            # hotmail.com / live.com), even with vso.securefiles_read,
+            # the right scope, and the Library/ViewSecrets permission
+            # explicitly granted. Live-tested against GilbertsCode/Employee
+            # Management with a full-access PAT: metadata endpoint
+            # returned 200 but the 'downloadTicket' field was absent
+            # from the JSON body. Re-introduce this subcommand only when
+            # either (a) Microsoft fixes the platform gap, or (b) a
+            # work/school AAD identity is used to authenticate.
+            delete: [
+              name: "ado pipelines secure-files delete",
+              doc:
+                "Permanently delete a Secure File. Pipelines referencing it will fail until updated. Use --force to skip the confirmation prompt.",
+              arguments: [
+                project: [type: :string, doc: "Project name or ID"],
+                secure_file_id: [
+                  type: :string,
+                  doc: "Secure File ID (GUID string, from `list`)"
+                ]
+              ],
+              options: [
+                force: [
+                  type: :boolean,
+                  default: false,
+                  doc: "Skip the interactive confirmation prompt."
+                ]
+              ],
+              execute: &secure_files_delete/1
             ]
           ]
         ]
@@ -749,6 +852,195 @@ defmodule AdoCli.CLI.Pipelines do
       error ->
         Helpers.handle_api_result(error, parsed, fn _ -> :ok end)
     end
+  end
+
+  # ── Secure Files ──────────────────────────────────────────────────────
+
+  @doc """
+  Lists Secure Files in a project.
+
+  Supports `--top` for pagination.
+  """
+  def secure_files_list(parsed) do
+    project = parsed.arguments.project
+    params = put_if(%{}, Map.get(parsed.options, :top), "$top")
+    result = Client.list("/#{URI.encode(project)}/_apis/distributedtask/securefiles", params)
+
+    Helpers.handle_api_result(result, parsed, fn files ->
+      Helpers.json_or_format(files, parsed, &print_secure_files_table/1)
+    end)
+  end
+
+  @doc """
+  Shows details of a specific Secure File.
+  """
+  def secure_files_show(parsed) do
+    project = parsed.arguments.project
+    secure_file_id = parsed.arguments.secure_file_id
+
+    case Client.get("/#{URI.encode(project)}/_apis/distributedtask/securefiles/#{secure_file_id}") do
+      {:ok, file} ->
+        Helpers.json_or_format(file, parsed, &print_secure_file_detail/1)
+
+      {:error, %{status: 404}} ->
+        halt_error("Secure file #{secure_file_id} not found in project '#{project}'")
+
+      error ->
+        Helpers.handle_api_result(error, parsed, fn _ -> :ok end)
+    end
+  end
+
+  @doc """
+  Uploads a local file as a new Secure File.
+
+  If `allow_exists` is true and a Secure File with the same name exists,
+  the existing one is deleted first.
+  """
+  def secure_files_upload(parsed) do
+    project = parsed.arguments.project
+    name = parsed.arguments.name
+    file_path = Map.fetch!(parsed.options, :file)
+    allow_exists = Map.get(parsed.options, :allow_exists, false)
+
+    unless File.regular?(file_path) do
+      halt_error("File not found: #{file_path}")
+    end
+
+    if allow_exists do
+      case find_secure_file_id_by_name(project, name) do
+        {:ok, existing_id} ->
+          case Client.delete(
+                 "/#{URI.encode(project)}/_apis/distributedtask/securefiles/#{existing_id}"
+               ) do
+            :ok ->
+              success("Deleted existing '#{name}' (id: #{existing_id}).\n")
+
+            {:error, reason} ->
+              Helpers.bail(reason, parsed)
+          end
+
+        :not_found ->
+          :ok
+      end
+    end
+
+    upload_bytes(project, name, file_path, parsed)
+  end
+
+  defp upload_bytes(project, name, file_path, parsed) do
+    bytes = File.read!(file_path)
+    path = "/#{URI.encode(project)}/_apis/distributedtask/securefiles"
+
+    case Client.post_binary(path, bytes, %{"name" => name}) do
+      {:ok, file} ->
+        success(
+          "Secure file '#{file["name"]}' uploaded (ID: #{file["id"]}, #{byte_size(bytes)} bytes).\n"
+        )
+
+        halt_success("")
+
+      {:error, %{status: 409, body: body}} ->
+        msg = Helpers.extract_error_message(body) || "name conflict"
+
+        halt_error(
+          "A secure file named '#{name}' already exists. " <>
+            "Re-run with --allow-exists to replace it, or use a different name. (#{msg})"
+        )
+
+      error ->
+        Helpers.handle_api_result(error, parsed, fn _ -> :ok end)
+    end
+  end
+
+  def secure_files_delete(parsed) do
+    project = parsed.arguments.project
+    secure_file_id = parsed.arguments.secure_file_id
+    force = Map.get(parsed.options, :force, false)
+
+    unless force do
+      writeln("This will permanently delete the Secure File. Pass --force to confirm.")
+      halt_success("")
+    end
+
+    case Client.delete(
+           "/#{URI.encode(project)}/_apis/distributedtask/securefiles/#{secure_file_id}"
+         ) do
+      :ok ->
+        success("Secure file #{secure_file_id} deleted.\n")
+        halt_success("")
+
+      {:error, %{status: 404}} ->
+        halt_error("Secure file #{secure_file_id} not found in project '#{project}'")
+
+      error ->
+        Helpers.handle_api_result(error, parsed, fn _ -> :ok end)
+    end
+  end
+
+  defp find_secure_file_id_by_name(project, name) do
+    # Use the server-side namePattern filter (ADO supports wildcards) so
+    # we don't fetch the whole library just to look up one file.
+    case Client.list(
+           "/#{URI.encode(project)}/_apis/distributedtask/securefiles",
+           %{"namePattern" => name}
+         ) do
+      {:ok, files} ->
+        case Enum.find(files, &(&1["name"] == name)) do
+          %{"id" => id} -> {:ok, id}
+          nil -> :not_found
+        end
+
+      _ ->
+        :not_found
+    end
+  end
+
+  defp print_secure_files_table(files) do
+    if Enum.empty?(files) do
+      writeln("No secure files found.")
+    else
+      writeln("")
+
+      writeln(
+        "#{String.pad_trailing("ID", 36)}  #{String.pad_trailing("Name", 30)}  #{String.pad_trailing("Size", 10)}  Modified"
+      )
+
+      writeln(String.duplicate("─", 100))
+
+      Enum.each(files, fn f ->
+        size =
+          case f["contentLength"] do
+            nil -> "?"
+            n -> to_string(n)
+          end
+
+        writeln(
+          "#{String.pad_trailing(to_string(f["id"] || ""), 36)}  #{String.pad_trailing(f["name"] || "", 30)}  #{String.pad_trailing(size, 10)}  #{f["modifiedOn"] || "?"}"
+        )
+      end)
+
+      writeln("")
+      writeln("#{length(files)} secure file(s)")
+    end
+  end
+
+  defp print_secure_file_detail(file) do
+    writeln("")
+    success("Secure File Details\n")
+    writeln(String.duplicate("─", 60))
+    writeln("  ID:        #{file["id"]}")
+    writeln("  Name:      #{file["name"]}")
+    writeln("  Size:      #{file["contentLength"]} bytes")
+
+    writeln(
+      "  Created:   #{file["createdOn"]} by #{get_in(file, ["createdBy", "displayName"]) || "?"}"
+    )
+
+    writeln(
+      "  Modified:  #{file["modifiedOn"]} by #{get_in(file, ["modifiedBy", "displayName"]) || "?"}"
+    )
+
+    writeln("")
   end
 
   # ── Generic Helpers ───────────────────────────────────────────────────

@@ -34,6 +34,18 @@ commands:
   - ado pipelines show PROJECT ID
   - ado pipelines run PROJECT ID --branch B --variables K=V
   - ado pipelines vars create PROJECT --name N --variables K=V --secret K
+  - ado pipelines secure_files list PROJECT
+  - ado pipelines secure_files show PROJECT ID
+  - ado pipelines secure_files upload PROJECT NAME --file PATH [--allow-exists]
+  - ado pipelines secure_files delete PROJECT ID [--force]
+  # NOTE: 'download' was removed in the current branch. Microsoft
+  # secure-files API does not issue a downloadTicket to bearer tokens
+  # for personal Microsoft accounts, even with vso.securefiles_read,
+  # the right scope, and Library/ViewSecrets granted. Re-introduce
+  # the subcommand only when (a) Microsoft fixes the platform gap
+  # or (b) a work/school AAD identity is used to authenticate.
+  - ado security grant --project X --permission ViewSecrets --yes-this-mutates-secret-read
+  - ado security revoke --project X --permission ViewSecrets --yes-this-mutates-secret-read
   - ado pipelines-builds queue PROJECT --definition D --branch B
   - ado pipelines-builds cancel PROJECT BUILD_ID
   - ado pipelines-artifacts list PROJECT BUILD_ID
