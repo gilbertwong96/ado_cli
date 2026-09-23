@@ -31,7 +31,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Set up Elixir
         uses: erlef/setup-beam@v1
@@ -40,7 +40,7 @@ jobs:
           elixir-version: ${{ env.ELIXIR_VERSION }}
 
       - name: Cache build artifacts
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: |
             _build
@@ -90,30 +90,19 @@ jobs:
         run: mix test --cover
 
       - name: Post coverage to Codecov
-        # Push the JSON to codecov.io using their bash uploader. This
-        # is the path recommended by excoveralls for Codecov.
+        # Codecov's own action. The bash uploader that used to sit here is
+        # deprecated upstream, which is why the download-and-run dance is gone.
         #
-        # Requires CODECOV_TOKEN in repo Settings -> Secrets -> Actions.
-        # Get the token at https://codecov.io/gh/gilbertwong96/ado_cli
-        # -> Settings -> Upload Token. The bash uploader reads it from
-        # the CODECOV_TOKEN env var.
-        #
-        # Skip the step if the secret is not set. We don't fail the
-        # build over missing coverage uploads — coverage is still
-        # available as an action artifact download.
-        env:
-          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
-        run: |
-          if [ -z "$CODECOV_TOKEN" ]; then
-            echo "::notice::CODECOV_TOKEN not set — skipping Codecov upload."
-            echo "Add it at https://codecov.io/gh/gilbertwong96/ado_cli"
-            echo "to enable the coverage badge."
-            exit 0
-          fi
-          curl -Os https://uploader.codecov.io/latest/linux/codecov
-          chmod +x codecov
-          ./codecov --token "$CODECOV_TOKEN" --file ./cover/excoveralls.json
+        # Requires CODECOV_TOKEN in repo Settings -> Secrets -> Actions. Get it at
+        # https://codecov.io/gh/gilbertwong96/ado_cli -> Settings -> Upload Token.
+        # A fork's pull request gets no secret at all, so the step stays
+        # non-fatal and the JSON remains available as an action artifact.
+        uses: codecov/codecov-action@v7
         continue-on-error: true
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./cover/excoveralls.json
+          verbose: true
 
       - name: Upload coverage artifact
         if: always()
@@ -129,7 +118,7 @@ jobs:
     runs-on: macos-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Set up Elixir
         uses: erlef/setup-beam@v1
@@ -138,7 +127,7 @@ jobs:
           elixir-version: ${{ env.ELIXIR_VERSION }}
 
       - name: Cache build artifacts
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: |
             _build
@@ -246,7 +235,7 @@ jobs:
             imageos: win22
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Set up Elixir
         uses: erlef/setup-beam@v1
@@ -302,7 +291,7 @@ jobs:
           xz --version
 
       - name: Cache build artifacts
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: |
             _build
@@ -423,7 +412,7 @@ jobs:
         run: ls -lh dist/
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ github.ref_name }}
           name: "AdoCli ${{ github.ref_name }}"

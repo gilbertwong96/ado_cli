@@ -4,10 +4,10 @@ name: Deploy GitHub Pages
 #
 # Workflow:
 #   1. On push to main, run on ubuntu-latest
-#   2. actions/checkout@v6 fetches the source
-#   3. actions/configure-pages@v5 sets up the Pages env (URL, build dir)
-#   4. actions/upload-pages-artifact@v3 bundles github-page/ as a Pages artifact
-#   5. actions/deploy-pages@v4 deploys the artifact to the Pages environment
+#   2. actions/checkout@v7 fetches the source
+#   3. actions/configure-pages@v6 sets up the Pages env (URL, build dir)
+#   4. actions/upload-pages-artifact@v5 bundles github-page/ as a Pages artifact
+#   5. actions/deploy-pages@v5 deploys the artifact to the Pages environment
 #
 # After the first successful run, the site is live at:
 #   https://<org>.github.io/<repo>/
@@ -46,14 +46,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Setup Pages
         id: pages
-        uses: actions/configure-pages@v5
+        uses: actions/configure-pages@v6
 
       - name: Build Pages artifact
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@v5
         with:
           # github-page/ is the static-site source directory.
           # No build step needed — files are served as-is.
@@ -61,4 +61,4 @@ jobs:
 
       - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
