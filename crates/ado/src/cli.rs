@@ -5,14 +5,44 @@ pub fn command() -> Command {
         .about("Azure DevOps CLI - Manage Azure DevOps projects, repos, work items, and pipelines from the terminal.")
         .disable_version_flag(true)
         .disable_help_subcommand(true)
-        .subcommand(
-            Command::new("version")
-                .about("Print the ado version and exit.")
-                .arg(
-                    Arg::new("json")
-                        .long("json")
-                        .action(ArgAction::SetTrue)
-                        .help("Output as JSON envelope"),
-                ),
+        .arg(
+            Arg::new("org")
+                .short('o')
+                .long("org")
+                .value_name("ORG")
+                .global(true)
+                .help("Azure DevOps organization name (or set ADO_ORG env var)"),
         )
+        .arg(
+            Arg::new("pat")
+                .short('t')
+                .long("pat")
+                .value_name("TOKEN")
+                .global(true)
+                .help("Personal Access Token (or set ADO_PAT env var)"),
+        )
+        .arg(
+            Arg::new("server")
+                .short('s')
+                .long("server")
+                .value_name("URL")
+                .global(true)
+                .help("Azure DevOps Server URL for self-hosted (or set ADO_SERVER env var)"),
+        )
+        .arg(
+            Arg::new("verbose")
+                .short('v')
+                .long("verbose")
+                .action(ArgAction::SetTrue)
+                .global(true)
+                .help("Enable verbose output"),
+        )
+        .arg(
+            Arg::new("json")
+                .long("json")
+                .action(ArgAction::SetTrue)
+                .global(true)
+                .help("Output raw JSON"),
+        )
+        .subcommand(Command::new("version").about("Print the ado version and exit."))
 }
