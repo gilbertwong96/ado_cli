@@ -31,7 +31,11 @@ const {
 } = require(POSTINSTALL);
 
 function tempDir(label) {
-  return fs.mkdtempSync(path.join(os.tmpdir(), `ado-artifact-test-${label}-`));
+  // Realpath'd so paths compare equal to the ones Node hands out through
+  // __dirname / require.resolve (macOS temp dirs are behind symlinks).
+  return fs.realpathSync(
+    fs.mkdtempSync(path.join(os.tmpdir(), `ado-artifact-test-${label}-`))
+  );
 }
 
 function hasTar() {
@@ -155,7 +159,9 @@ test('the release URL rejects an unsupported platform', () => {
   );
 });
 
-test('platformBinaryPath resolves the sibling platform package', () => {
+test('platformBinaryPath resolves the repo staging package', () => {
+  // The package copy in the repo is not an npm install: its platform packages
+  // are the npm/ directories scripts/npm-publish.sh populates.
   assert.equal(
     platformBinaryPath('darwin', 'arm64'),
     path.join(
@@ -243,6 +249,29 @@ test('downloadFile fails on a non-2xx response', async () => {
       /HTTP 404/
     );
   } finally {
+    server.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('downloadFile gives up on a stalled response', async () => {
+  const dir = tempDir('download-stall');
+  const server = http.createServer(() => {
+    // Never responds: the timeout must end the fetch.
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+
+  try {
+    await assert.rejects(
+      downloadFile(
+        `http://127.0.0.1:${server.address().port}/stalled.tar.gz`,
+        path.join(dir, 'stalled.tar.gz'),
+        50
+      ),
+      /timeout|abort/i
+    );
+  } finally {
+    server.closeAllConnections();
     server.close();
     fs.rmSync(dir, { recursive: true, force: true });
   }
@@ -430,48 +459,180 @@ test('the repo-root copy resolves the same artifact and never fetches', (t) => {
   assert.doesNotMatch(stdout, /^ado: downloaded /m);
 });
 
-test('the repo-root copy skips the fetch in place', (t) => {
+test('the repo copies skip the fetch in place', (t) => {
   const rootCopy = rootCopyPath();
   if (!rootCopy) {
     t.skip('not running from the repo checkout');
     return;
   }
 
-  const stdout = execFileSync(process.execPath, [rootCopy], {
-    encoding: 'utf8',
-    env: {
-      ...process.env,
-      ADO_NO_COMPLETION: '1',
-      ADO_NO_DOWNLOAD: '',
-      ADO_BIN: ''
-    }
-  });
-
-  assert.match(stdout, /running from the source tree, skipping the platform/);
-  assert.doesNotMatch(stdout, /^ado: downloaded /m);
-});
-
-test(
-  'ADO_NO_DOWNLOAD=1 skips the fetch',
-  { skip: !hostArtifactSupported() },
-  (t) => {
-    if (fs.existsSync(platformBinaryPath(process.platform, process.arch))) {
-      t.skip('the platform binary is already present in the checkout');
-      return;
-    }
-
-    const stdout = execFileSync(process.execPath, [POSTINSTALL], {
+  // Both repo copies stage their platform packages in npm/ and must never
+  // reach the network, with or without ADO_NO_DOWNLOAD.
+  for (const copy of [rootCopy, POSTINSTALL]) {
+    const stdout = execFileSync(process.execPath, [copy], {
       encoding: 'utf8',
       env: {
         ...process.env,
         ADO_NO_COMPLETION: '1',
-        ADO_NO_DOWNLOAD: '1',
+        ADO_NO_DOWNLOAD: '',
         ADO_BIN: ''
       }
     });
 
-    assert.match(stdout, /ADO_NO_DOWNLOAD=1 set, skipping/);
+    assert.match(stdout, /running from the source tree, skipping the platform/);
     assert.doesNotMatch(stdout, /^ado: downloaded /m);
+  }
+});
+
+// ── installed layout ─────────────────────────────────────────────────
+
+// Lays out node_modules/@gilbertwong1996/ado the way npm installs it, with the
+// real manifest, launcher and postinstall inside.
+function simulatedInstallLayout(label) {
+  const root = tempDir(label);
+  const packageRoot = path.join(
+    root,
+    'node_modules',
+    '@gilbertwong1996',
+    'ado'
+  );
+  fs.mkdirSync(path.join(packageRoot, 'scripts'), { recursive: true });
+  fs.mkdirSync(path.join(packageRoot, 'bin'), { recursive: true });
+  fs.copyFileSync(
+    POSTINSTALL,
+    path.join(packageRoot, 'scripts', 'postinstall.js')
+  );
+  fs.copyFileSync(
+    path.join(__dirname, '..', 'package.json'),
+    path.join(packageRoot, 'package.json')
+  );
+  fs.copyFileSync(
+    path.join(__dirname, '..', 'bin', 'ado'),
+    path.join(packageRoot, 'bin', 'ado')
+  );
+  return { root, packageRoot };
+}
+
+// The launcher's lookup, as bin/ado performs it.
+function launcherResolves(packageRoot, platform, binary) {
+  return fs.realpathSync(
+    require.resolve(
+      `@gilbertwong1996/ado-${platform}-${process.arch}/bin/${binary}`,
+      { paths: [packageRoot] }
+    )
+  );
+}
+
+test(
+  'the installed layout installs where the launcher resolves',
+  async (t) => {
+    if (!hasTar()) {
+      t.skip('tar is not available');
+      return;
+    }
+    if (!hostArtifactSupported()) {
+      t.skip(`no artifact for ${process.platform}/${process.arch}`);
+      return;
+    }
+
+    const platform = process.platform;
+    const binary = binaryName(platform);
+    const { root, packageRoot } = simulatedInstallLayout('layout');
+    const sim = require(path.join(packageRoot, 'scripts', 'postinstall.js'));
+
+    try {
+      // 1. No platform package installed (--omit=optional): the destination is
+      // the hoisted path npm would have used — the scope directory beside
+      // this package, never a scoped-looking name inside it.
+      const dest = sim.platformBinaryPath(platform, process.arch);
+      assert.equal(
+        dest,
+        path.join(
+          root,
+          'node_modules',
+          '@gilbertwong1996',
+          `ado-${platform}-${process.arch}`,
+          'bin',
+          binary
+        )
+      );
+
+      // 2. Installed there, the launcher's own lookup finds it — with no
+      // package.json beside it, exactly as the fetch leaves it.
+      fs.mkdirSync(path.dirname(dest), { recursive: true });
+      fs.writeFileSync(dest, 'stub-binary\n');
+      assert.equal(launcherResolves(packageRoot, platform, binary), dest);
+
+      // 3. With the binary present the postinstall fetches nothing.
+      const stdout = execFileSync(
+        process.execPath,
+        [path.join(packageRoot, 'scripts', 'postinstall.js')],
+        {
+          encoding: 'utf8',
+          env: { ...process.env, ADO_NO_COMPLETION: '1', ADO_NO_DOWNLOAD: '' }
+        }
+      );
+      assert.doesNotMatch(stdout, /^ado: downloaded /m);
+      assert.doesNotMatch(stdout, /could not download the platform binary/);
+
+      // 4. The fetch itself lands on that same path.
+      const payload = 'fetched-binary\n';
+      const { file, target } = artifactFor(platform, process.arch);
+      const archive = makeArchive({
+        dir: root,
+        file,
+        target,
+        binary,
+        payload,
+        mode: 0o644
+      });
+      const bytes = fs.readFileSync(archive);
+      const server = http.createServer((req, res) => {
+        res.writeHead(200);
+        res.end(bytes);
+      });
+      await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+
+      const realFetch = globalThis.fetch;
+      try {
+        globalThis.fetch = (url, options) =>
+          realFetch(
+            String(url).replace(
+              /^https:\/\/github\.com\/[^/]+\/[^/]+\/releases\/download\//,
+              `http://127.0.0.1:${server.address().port}/`
+            ),
+            options
+          );
+
+        const result = await sim.installPlatformBinary('1.0.0-rc.0');
+
+        assert.equal(result.dest, dest);
+        assert.equal(launcherResolves(packageRoot, platform, binary), dest);
+        assert.equal(fs.readFileSync(dest, 'utf8'), payload);
+        if (platform !== 'win32') {
+          assert.equal(fs.statSync(dest).mode & 0o777, 0o755);
+        }
+      } finally {
+        globalThis.fetch = realFetch;
+        server.close();
+      }
+
+      // 5. ADO_NO_DOWNLOAD=1 opts out when the binary is gone again.
+      fs.rmSync(dest, { force: true });
+      const optedOut = execFileSync(
+        process.execPath,
+        [path.join(packageRoot, 'scripts', 'postinstall.js')],
+        {
+          encoding: 'utf8',
+          env: { ...process.env, ADO_NO_COMPLETION: '1', ADO_NO_DOWNLOAD: '1' }
+        }
+      );
+      assert.match(optedOut, /ADO_NO_DOWNLOAD=1 set, skipping/);
+      assert.doesNotMatch(optedOut, /^ado: downloaded /m);
+      assert.equal(fs.existsSync(dest), false);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   }
 );
 

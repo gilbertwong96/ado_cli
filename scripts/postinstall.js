@@ -104,35 +104,92 @@ function binaryName(platform) {
 // npm/@gilbertwong1996-ado in the source tree.
 const PACKAGE_ROOT = path.join(__dirname, '..');
 
-// An installed copy has its manifest next to scripts/ and the platform
-// packages beside it. The repo-root copy — the one scripts/npm-publish.sh
-// copies into the package — has no manifest of its own: its platform packages
-// are the npm/ staging directories, and it must never fetch.
-const INSTALLED = fs.existsSync(path.join(PACKAGE_ROOT, 'package.json'));
-const MANIFEST = INSTALLED
+// Layout detection. An installed copy lives under node_modules — the only
+// layout in which the launcher resolves the platform package. The two repo
+// copies (npm/@gilbertwong1996-ado, and the repo-root one npm-publish.sh
+// installs into it) stage their platform packages in npm/ and must never
+// fetch; the repo-root copy has no manifest of its own, so it reads the
+// package's.
+const IN_NODE_MODULES = PACKAGE_ROOT.split(path.sep).includes('node_modules');
+const HAS_OWN_MANIFEST = fs.existsSync(path.join(PACKAGE_ROOT, 'package.json'));
+const MANIFEST = HAS_OWN_MANIFEST
   ? path.join(PACKAGE_ROOT, 'package.json')
   : path.join(PACKAGE_ROOT, 'npm', '@gilbertwong1996-ado', 'package.json');
-const PLATFORM_PACKAGES = path.join(PACKAGE_ROOT, INSTALLED ? '..' : 'npm');
+const STAGING_DIR = HAS_OWN_MANIFEST
+  ? path.join(PACKAGE_ROOT, '..')
+  : path.join(PACKAGE_ROOT, 'npm');
+
+// A stalled connection must not hold `npm install` until undici's own timeouts
+// fire; the archives are around 1 MB, so a minute is generous.
+const DOWNLOAD_TIMEOUT_MS = 60_000;
 
 function packageVersion() {
   const manifest = JSON.parse(fs.readFileSync(MANIFEST, 'utf8'));
   return manifest.version;
 }
 
-// The platform binary lives in the sibling platform package — the same path
-// bin/ado resolves out of node_modules. That package is an optionalDependency,
-// so it may be absent; creating the directory is how it gets repaired.
-function platformBinaryPath(platform, arch) {
-  return path.join(
-    PLATFORM_PACKAGES,
-    `@gilbertwong1996-ado-${platform}-${arch}`,
-    'bin',
-    binaryName(platform)
-  );
+function platformPackageName(platform, arch) {
+  return `@gilbertwong1996/ado-${platform}-${arch}`;
 }
 
-async function downloadFile(url, destPath) {
-  const response = await fetch(url, { redirect: 'follow' });
+// The platform package as npm installed it — hoisted beside this package or
+// nested underneath it — so ask the resolver instead of guessing a directory.
+function resolvePlatformPackageDir(platform, arch) {
+  try {
+    return path.dirname(
+      require.resolve(`${platformPackageName(platform, arch)}/package.json`, {
+        paths: [PACKAGE_ROOT]
+      })
+    );
+  } catch {
+    return null;
+  }
+}
+
+// The launcher's own lookup (bin/ado:22), used as the presence guard: what
+// matters is whether the binary resolves, not whether a path we guessed
+// exists. A binary fetched into the hoisted location resolves even though no
+// package.json sits beside it.
+function resolvedPlatformBinary(platform, arch) {
+  try {
+    return require.resolve(
+      `${platformPackageName(platform, arch)}/bin/${binaryName(platform)}`,
+      { paths: [PACKAGE_ROOT] }
+    );
+  } catch {
+    return null;
+  }
+}
+
+// Where the binary has to land for bin/ado to find it.
+function platformBinaryPath(platform, arch) {
+  const binary = binaryName(platform);
+
+  if (!IN_NODE_MODULES) {
+    // Repo staging layout: scripts/npm-publish.sh puts the published binaries
+    // in these directories.
+    return path.join(
+      STAGING_DIR,
+      `@gilbertwong1996-ado-${platform}-${arch}`,
+      'bin',
+      binary
+    );
+  }
+
+  // Absent (--omit=optional, a libc npm skipped): npm hoists the platform
+  // package beside this one, which is where the fetch puts it.
+  const packageDir =
+    resolvePlatformPackageDir(platform, arch) ||
+    path.join(PACKAGE_ROOT, '..', `ado-${platform}-${arch}`);
+
+  return path.join(packageDir, 'bin', binary);
+}
+
+async function downloadFile(url, destPath, timeoutMs = DOWNLOAD_TIMEOUT_MS) {
+  const response = await fetch(url, {
+    redirect: 'follow',
+    signal: AbortSignal.timeout(timeoutMs)
+  });
   if (!response.ok) {
     throw new Error(`download failed: HTTP ${response.status} for ${url}`);
   }
@@ -176,11 +233,14 @@ async function installPlatformBinary(
 // Set ADO_NO_DOWNLOAD=1 to opt out of the fallback fetch; a failure here must
 // never fail the npm install.
 async function ensurePlatformBinary() {
-  const dest = platformBinaryPath(process.platform, process.arch);
+  // The guard is the launcher's lookup: if bin/ado would resolve it, the
+  // install is complete and nothing is fetched.
+  if (resolvedPlatformBinary(process.platform, process.arch)) return;
 
+  const dest = platformBinaryPath(process.platform, process.arch);
   if (fs.existsSync(dest)) return;
 
-  if (!INSTALLED) {
+  if (!IN_NODE_MODULES) {
     console.log(
       'ado: running from the source tree, skipping the platform binary ' +
         'download.'
