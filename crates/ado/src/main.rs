@@ -1,5 +1,6 @@
 use std::ffi::OsString;
 use std::io;
+use std::path::Path;
 use std::process::ExitCode;
 
 use ado::args::GlobalOpts;
@@ -44,6 +45,10 @@ fn main() -> ExitCode {
         Some(("schema", sub)) => {
             commands::schema::run(json, sub.get_one::<String>("name").map(String::as_str))
         }
+        Some(("completion", sub)) => commands::completion::run(
+            sub.get_one::<String>("shell").map(String::as_str),
+            sub.get_one::<String>("write-to-file").map(Path::new),
+        ),
         Some((name, _)) => Err(AdoError::validation(format!("unknown command '{name}'"))),
         None => Ok(Report::Text(cli::command().render_help().to_string())),
     };

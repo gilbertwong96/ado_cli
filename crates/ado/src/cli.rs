@@ -55,4 +55,29 @@ pub fn command() -> Command {
                         .help("Optional: dump only this command + descendants"),
                 ),
         )
+        .subcommand(
+            Command::new("completion")
+                .about(
+                    "Generate a shell completion script for the ado CLI.\n\n\
+                     Usage:\n  \
+                     eval \"$(ado completion bash)\"          # bash\n  \
+                     ado completion zsh > \"${fpath[1]}/_ado\"  # zsh\n  \
+                     ado completion fish | source            # fish\n  \
+                     ado completion powershell | Out-String | Invoke-Expression  # pwsh",
+                )
+                .arg(
+                    Arg::new("shell")
+                        .value_name("SHELL")
+                        .help("Shell to generate completion for: bash, zsh, fish, powershell. Default: bash"),
+                )
+                .arg(
+                    Arg::new("write-to-file")
+                        .short('w')
+                        .long("write-to-file")
+                        .value_name("PATH")
+                        .help(
+                            "Write the script to this file path instead of stdout. Useful for installing to a system fpath (e.g. `ado completion zsh -w ~/.zsh/completions/_ado`).",
+                        ),
+                ),
+        )
 }

@@ -90,6 +90,22 @@ fn schema_root_has_name_doc_and_subcommands() {
 }
 
 #[test]
+fn schema_root_has_exactly_the_four_wave_zero_subcommands() {
+    let root = build_tree();
+
+    let mut names = subcommands(&root)
+        .iter()
+        .map(|sub| sub["name"].as_str().expect("a subcommand name"))
+        .collect::<Vec<_>>();
+    names.sort_unstable();
+
+    assert_eq!(
+        names,
+        ["ado completion", "ado schema", "ado version", "ado whoami"]
+    );
+}
+
+#[test]
 fn schema_node_has_the_contract_keys() {
     let tree = build_tree();
 
