@@ -244,9 +244,11 @@ pub fn default_store() -> FallbackStore {
     FallbackStore::new(KeychainStore::new(), FileStore::from_config_dir())
 }
 
-/// Resolves the credential to use: `ADO_PAT` (with `ADO_ORG`) first, then the
-/// store, which is the keychain with the credentials file behind it. `ADO_SERVER`
-/// travels with those but is read by the caller.
+/// Resolves the credential to use: an organization and a `pat` from `env`, else
+/// the credential stored for that organization. `env` must be the caller's
+/// flag-first view ([`FlagEnv`]) — `--org`/`--pat` outrank `ADO_ORG`/`ADO_PAT`,
+/// and the environment outranks the organization in the config file (spec §6.6).
+/// `ADO_SERVER` travels with those but is read by the caller.
 pub fn resolve(
     env: &dyn EnvSource,
     store: &dyn SecretStore,
@@ -378,7 +380,7 @@ mod tests {
     use std::os::unix::fs::PermissionsExt;
 
     use super::*;
-    use crate::env::MapEnv;
+    use crate::env::{FlagEnv, MapEnv};
     use crate::error::ErrorCode;
     use crate::test_support::TempDir;
 
@@ -492,6 +494,57 @@ mod tests {
         assert!(
             reads(&keychain).is_empty(),
             "ADO_PAT wins without reading the store"
+        );
+    }
+
+    #[test]
+    fn resolution_prefers_flags_over_the_environment() {
+        let env = MapEnv::new()
+            .set(ENV_ORG, "envorg")
+            .set(ENV_PAT, "env-token");
+        let flags = FlagEnv::new(&env)
+            .set(ENV_ORG, Some("flagorg"))
+            .set(ENV_PAT, Some("flag-token"));
+        let store = InMemoryStore::new();
+        store
+            .set("flagorg", &stored(AuthMethod::Device, "stored-token"))
+            .expect("seed store");
+
+        let resolved = resolve(&flags, &store, None).expect("flag credentials");
+
+        assert_eq!(
+            resolved,
+            credentials("flagorg", AuthMethod::Pat, "flag-token")
+        );
+        assert!(
+            reads(&store).is_empty(),
+            "the flag PAT wins without reading the store"
+        );
+    }
+
+    #[test]
+    fn resolution_reads_the_store_for_the_flag_org() {
+        let env = MapEnv::new().set(ENV_ORG, "envorg");
+        let flags = FlagEnv::new(&env).set(ENV_ORG, Some("flagorg"));
+        let store = InMemoryStore::new();
+        store
+            .set("flagorg", &stored(AuthMethod::Browser, "stored-token"))
+            .expect("seed the flag org");
+        store
+            .set("envorg", &stored(AuthMethod::Device, "env-token"))
+            .expect("seed the environment org");
+
+        let resolved =
+            resolve(&flags, &store, Some(&config_with_org("configorg"))).expect("flag org");
+
+        assert_eq!(
+            resolved,
+            credentials("flagorg", AuthMethod::Browser, "stored-token")
+        );
+        assert_eq!(
+            reads(&store),
+            vec![StoreCall::Get("flagorg".to_owned())],
+            "the flag org, not the environment's or the config's, is looked up"
         );
     }
 

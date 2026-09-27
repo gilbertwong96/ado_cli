@@ -45,3 +45,73 @@ impl EnvSource for MapEnv {
         self.vars.get(key).cloned()
     }
 }
+
+/// The flags in front of an environment: a value set here outranks the same
+/// variable in `base`, so `--org` and `--pat` beat `ADO_ORG` and `ADO_PAT`
+/// (spec §6.6). A blank flag value means "not provided", like a blank variable.
+pub struct FlagEnv<'a> {
+    flags: BTreeMap<&'static str, String>,
+    base: &'a dyn EnvSource,
+}
+
+impl<'a> FlagEnv<'a> {
+    pub fn new(base: &'a dyn EnvSource) -> FlagEnv<'a> {
+        FlagEnv {
+            flags: BTreeMap::new(),
+            base,
+        }
+    }
+
+    /// The flag value for the variable it outranks.
+    pub fn set(mut self, key: &'static str, value: Option<&str>) -> FlagEnv<'a> {
+        if let Some(value) = value.filter(|value| !value.trim().is_empty()) {
+            self.flags.insert(key, value.to_owned());
+        }
+        self
+    }
+}
+
+impl EnvSource for FlagEnv<'_> {
+    fn get(&self, key: &str) -> Option<String> {
+        self.flags.get(key).cloned().or_else(|| self.base.get(key))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_flag_outranks_the_base_environment() {
+        let base = MapEnv::new()
+            .set(ENV_ORG, "envorg")
+            .set(ENV_SERVER, "https://env.example.com");
+        let flags = FlagEnv::new(&base).set(ENV_ORG, Some("flagorg"));
+
+        assert_eq!(flags.get(ENV_ORG).as_deref(), Some("flagorg"));
+        assert_eq!(
+            flags.get(ENV_SERVER).as_deref(),
+            Some("https://env.example.com")
+        );
+        assert_eq!(
+            FlagEnv::new(&base)
+                .set(ENV_ORG, None)
+                .get(ENV_ORG)
+                .as_deref(),
+            Some("envorg")
+        );
+    }
+
+    #[test]
+    fn a_blank_flag_is_unset() {
+        let base = MapEnv::new().set(ENV_ORG, "envorg");
+
+        assert_eq!(
+            FlagEnv::new(&base)
+                .set(ENV_ORG, Some("  "))
+                .get(ENV_ORG)
+                .as_deref(),
+            Some("envorg")
+        );
+    }
+}
