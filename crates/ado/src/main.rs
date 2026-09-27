@@ -41,6 +41,9 @@ fn main() -> ExitCode {
     let result = match matches.subcommand() {
         Some(("version", _)) => commands::version::run(json),
         Some(("whoami", _)) => commands::whoami::run(&Context::load(globals)),
+        Some(("schema", sub)) => {
+            commands::schema::run(json, sub.get_one::<String>("name").map(String::as_str))
+        }
         Some((name, _)) => Err(AdoError::validation(format!("unknown command '{name}'"))),
         None => Ok(Report::Text(cli::command().render_help().to_string())),
     };

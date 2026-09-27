@@ -1,0 +1,56 @@
+---
+source: crates/ado/tests/cli_schema.rs
+expression: value
+---
+{
+  "ok": true,
+  "schema": {
+    "arguments": [],
+    "doc": "Print the ado version and exit.",
+    "name": "ado version",
+    "options": [
+      {
+        "default": "",
+        "doc": "Azure DevOps organization name (or set ADO_ORG env var)",
+        "name": "org",
+        "required": false,
+        "short": "o",
+        "type": "string"
+      },
+      {
+        "default": "",
+        "doc": "Personal Access Token (or set ADO_PAT env var)",
+        "name": "pat",
+        "required": false,
+        "short": "t",
+        "type": "string"
+      },
+      {
+        "default": "",
+        "doc": "Azure DevOps Server URL for self-hosted (or set ADO_SERVER env var)",
+        "name": "server",
+        "required": false,
+        "short": "s",
+        "type": "string"
+      },
+      {
+        "default": "false",
+        "doc": "Enable verbose output",
+        "name": "verbose",
+        "required": false,
+        "short": "v",
+        "type": "boolean"
+      },
+      {
+        "default": "false",
+        "doc": "Output raw JSON",
+        "name": "json",
+        "required": false,
+        "short": "",
+        "type": "boolean"
+      }
+    ],
+    "subcommands": [],
+    "version": "1.0.0-rc.0"
+  }
+}

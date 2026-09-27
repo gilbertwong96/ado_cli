@@ -46,4 +46,13 @@ pub fn command() -> Command {
         )
         .subcommand(Command::new("version").about("Print the ado version and exit."))
         .subcommand(Command::new("whoami").about("Show current authentication status."))
+        .subcommand(
+            Command::new("schema")
+                .about("Dump the CLI command tree as structured JSON for LLM agents.")
+                .arg(
+                    Arg::new("name")
+                        .value_name("NAME")
+                        .help("Optional: dump only this command + descendants"),
+                ),
+        )
 }
