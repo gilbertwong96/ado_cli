@@ -1,13 +1,14 @@
 use ado_core::envelope::ok_named;
+use ado_core::error::AdoError;
 use serde_json::json;
 
 use crate::VERSION;
 use crate::output::Report;
 
-pub fn run(json: bool) -> Report {
+pub fn run(json: bool) -> Result<Report, AdoError> {
     if json {
-        Report::Json(ok_named("version", json!(VERSION)))
+        Ok(Report::Json(ok_named("version", json!(VERSION))))
     } else {
-        Report::Text(format!("ado {VERSION}"))
+        Ok(Report::Text(format!("ado {VERSION}")))
     }
 }

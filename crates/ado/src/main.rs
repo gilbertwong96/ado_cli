@@ -1,11 +1,13 @@
 use std::ffi::OsString;
+use std::io;
 use std::process::ExitCode;
 
 use ado::args::GlobalOpts;
 use ado::argv;
 use ado::cli;
 use ado::commands;
-use ado::output::{Report, WriteFailure, render};
+use ado::output::{Report, WriteFailure, render, render_error, write_bytes};
+use ado_core::error::AdoError;
 
 fn main() -> ExitCode {
     let mut raw_args = std::env::args_os();
@@ -34,16 +36,16 @@ fn main() -> ExitCode {
 
     let globals = GlobalOpts::from_matches(&matches);
 
-    let report = match matches.subcommand() {
+    let result = match matches.subcommand() {
         Some(("version", _)) => commands::version::run(globals.json),
-        Some((name, _)) => {
-            eprintln!("ado: unknown command '{name}'");
-            return ExitCode::FAILURE;
-        }
-        None => Report::Text(cli::command().render_help().to_string()),
+        Some((name, _)) => Err(AdoError::validation(format!("unknown command '{name}'"))),
+        None => Ok(Report::Text(cli::command().render_help().to_string())),
     };
 
-    emit(&report, globals.json)
+    match result {
+        Ok(report) => emit(&report, globals.json),
+        Err(error) => emit_error(&error, globals.json),
+    }
 }
 
 fn to_utf8(args: Vec<OsString>) -> Result<Vec<String>, OsString> {
@@ -65,6 +67,20 @@ fn emit(report: &Report, json: bool) -> ExitCode {
         Ok(()) | Err(WriteFailure::BrokenPipe) => ExitCode::SUCCESS,
         Err(WriteFailure::Other(message)) => {
             eprintln!("ado: {message}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+fn emit_error(error: &AdoError, json: bool) -> ExitCode {
+    match render_error(error, json) {
+        Ok(()) => ExitCode::FAILURE,
+        Err(WriteFailure::BrokenPipe) => ExitCode::SUCCESS,
+        Err(WriteFailure::Other(message)) => {
+            let _ = write_bytes(
+                &mut io::stderr().lock(),
+                format!("ado: {message}\n").as_bytes(),
+            );
             ExitCode::FAILURE
         }
     }
