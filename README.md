@@ -719,10 +719,9 @@ git tag -a v0.2.0 -m "Release 0.2.0"
 git push github main v0.2.0
 ```
 
-Pushing the tag triggers the CI `release` job, which cross-compiles
-the Burrito binary for all 5 platforms and uploads them as artifacts.
-The `release-attach` job then creates the GitHub Release with the 5
-binaries attached.
+Pushing the tag triggers the `release` workflow, which builds the
+binary for all 5 platforms on native runners and creates the GitHub
+Release with the archives and installers attached.
 
 Wait a few minutes for CI to finish. Verify the release is up:
 

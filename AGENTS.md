@@ -30,7 +30,7 @@ in `.github/workflows/ci.yml` on Linux + macOS runners:
 - **Linux (Ubuntu)** — full quality gate (steps 1–8 above) + coverage
   uploaded to Codecov via `ex_coveralls`
 - **macOS** — build the escript and run the unit test suite as a smoke test
-  (Burrito cross-compilation is exercised in a separate workflow)
+  (the separate `release` workflow builds and publishes the binaries)
 
 Coverage is tracked by Codecov. The badge in the README points to the
 Codecov dashboard; configuration lives in the `coveralls:` section of
@@ -202,7 +202,8 @@ git add -u
 git commit -m "release: v0.4.6"
 git tag -a v0.4.6 -m "Release 0.4.6"
 git push github main v0.4.6
-#    CI builds binaries and creates the GitHub Release automatically.
+#    CI (the 'release' workflow) builds the five native-target binaries
+#    and creates the GitHub Release automatically.
 
 # 5. Publish npm packages (after CI completes and binaries are uploaded)
 ./scripts/npm-publish.sh 0.4.6
