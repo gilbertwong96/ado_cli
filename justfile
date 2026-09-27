@@ -4,6 +4,24 @@
 default:
     @just --list
 
+# ── Rust (the rewrite) ─────────────────────────────────────────────────
+
+# Format Rust code
+fmt:
+    cargo fmt
+
+# Lint Rust code (clippy, warnings as errors)
+lint:
+    cargo clippy --all-targets -- -D warnings
+
+# Run Rust tests
+test:
+    cargo test --workspace
+
+# Build the Rust workspace
+build:
+    cargo build --workspace
+
 # ── Development ────────────────────────────────────────────────────────
 
 # Build the escript for local development
@@ -19,20 +37,20 @@ ci:
 quality:
     mix quality
 
-# Run tests
-test:
+# Run Elixir tests
+elixir-test:
     mix test
 
-# Run tests with coverage
-test-cover:
+# Run Elixir tests with coverage
+elixir-test-cover:
     mix test --cover
 
-# Format code
-fmt:
+# Format Elixir code
+elixir-fmt:
     mix format
 
-# Lint only (credo strict)
-lint:
+# Lint Elixir code (credo strict)
+elixir-lint:
     mix credo --strict
 
 # Generate docs

@@ -1,0 +1,20 @@
+[workspace]
+members = ["crates/ado", "crates/ado-core"]
+resolver = "3"
+
+[workspace.package]
+version = "1.0.0-rc.0"
+edition = "2024"
+rust-version = "1.98"
+license = "Apache-2.0"
+
+[workspace.dependencies]
+assert_cmd = "2.2.2"
+clap = "4.6.7"
+serde_json = "1.0.151"
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
+strip = true
+panic = "abort"

@@ -1,0 +1,14 @@
+[package]
+name = "ado"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+ado-core = { path = "../ado-core" }
+clap = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+assert_cmd = { workspace = true }
