@@ -101,6 +101,11 @@ budget: build-release
     fi
     exit "$failed"
 
+# Run the npm package's release-artifact suite (node --test): the postinstall
+# downloader and the archive resolution that fetch the dist archives.
+npm-test:
+    node --test npm/@gilbertwong1996-ado/test
+
 # ── Development ────────────────────────────────────────────────────────
 
 # Build the escript for local development
@@ -242,10 +247,11 @@ login-pat org pat:
 # ── Helpers ────────────────────────────────────────────────────────────
 
 # `check` and `all` cover both toolchains until Wave 4 deletes the Elixir
-# tree: `ci` is the Rust gate, `elixir-ci` still verifies the frozen fallback.
+# tree: `ci` is the Rust gate, `elixir-ci` still verifies the frozen fallback,
+# and `npm-test` checks the npm package that publishes the Rust binaries.
 
 # Show all checks pass
-check: ci elixir-ci
+check: ci elixir-ci npm-test
 
 # Full build + test + release
 all: ci elixir-ci release

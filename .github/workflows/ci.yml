@@ -60,6 +60,12 @@ jobs:
       - name: Run the quality gate
         run: just ci
 
+      - name: Run the npm package test suite
+        # The postinstall downloader and the archive resolution in
+        # npm/@gilbertwong1996-ado are release-artifact code; the suite needs
+        # only node, which the runner image already has.
+        run: just npm-test
+
       - name: Enforce the budgets
         # Also builds target/release/ado for the PowerShell step below.
         run: just budget
