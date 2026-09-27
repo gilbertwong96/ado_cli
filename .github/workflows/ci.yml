@@ -13,151 +13,126 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-# Opt into Node.js 24 (default after June 16, 2026).
-# mlugg/setup-zig@v2.2.1 runs on Node.js 20 which is deprecated.
-# This env var silences the deprecation warning and forces the
-# action to run on Node.js 24.
+# Opt into Node.js 24 (default after June 16, 2026). Some actions still
+# declare Node.js 20, which is deprecated; this forces Node 24 and
+# silences the deprecation warning.
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
-  MIX_ENV: test
-  OTP_VERSION: "29.0"
-  ELIXIR_VERSION: "1.20.1"
+  CARGO_TERM_COLOR: always
 
 jobs:
-  # ── Linux: full CI quality gate ─────────────────────────────────────
+  # ── Linux: the full Rust quality gate ───────────────────────────────
   linux:
-    name: "Linux · Elixir 1.20.1 · OTP 29.0"
+    name: "Linux · just ci"
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
+    env:
+      # A boolean, not the token: `secrets` is not available in step `if`
+      # expressions, and the token itself is passed only to the Codecov step.
+      HAS_CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN != '' }}
     steps:
       - uses: actions/checkout@v7
 
-      - name: Set up Elixir
-        uses: erlef/setup-beam@v1
-        with:
-          otp-version: ${{ env.OTP_VERSION }}
-          elixir-version: ${{ env.ELIXIR_VERSION }}
+      - name: Set up Rust
+        # rust-toolchain.toml pins channel = "stable" + rustfmt/clippy;
+        # `rustup show` installs that toolchain if the runner lacks it.
+        # llvm-tools-preview backs cargo-llvm-cov.
+        run: |
+          rustup show
+          rustup component add rustfmt clippy llvm-tools-preview
 
-      - name: Cache build artifacts
+      - name: Install just and the Rust CI tools
+        uses: taiki-e/install-action@v2
+        with:
+          tool: just,cargo-nextest,cargo-llvm-cov,cargo-deny,cargo-machete
+
+      - name: Cache cargo registry and target
         uses: actions/cache@v6
         with:
           path: |
-            _build
-            deps
-            priv/plts
-          key: ${{ runner.os }}-mix-${{ hashFiles('**/mix.lock') }}
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-mix-
-            ${{ runner.os }}-
+            ${{ runner.os }}-cargo-
 
-      - name: Install dependencies
-        run: mix deps.get
+      - name: Run the quality gate
+        run: just ci
 
-      - name: Compile (warnings-as-errors)
-        # We intentionally don't pass --all-warnings: that flag treats
-        # third-party dep warnings (hpax bitstring ops, yamerl's
-        # deprecated catch, etc.) as errors. We only want to enforce
-        # warnings-as-errors on our own code, which `mix compile
-        # --warnings-as-errors` already does.
-        run: mix compile --warnings-as-errors
+      - name: Enforce the budgets
+        # Also builds target/release/ado for the PowerShell step below.
+        run: just budget
 
-      - name: Check formatting
-        run: mix format --check-formatted
+      - name: PowerShell syntax smoke test
+        # GitHub's Linux runners ship pwsh; the local development machine
+        # does not, which is why this check lives in CI. Skip rather than
+        # fail if a future image drops PowerShell.
+        run: |
+          if ! command -v pwsh >/dev/null 2>&1; then
+            echo "::warning::pwsh is not available; skipping the PowerShell completion syntax check"
+            exit 0
+          fi
+          ./target/release/ado completion powershell > /tmp/ado.ps1
+          # The PowerShell snippet must reach pwsh unexpanded by bash.
+          # shellcheck disable=SC2016
+          pwsh -NoProfile -NonInteractive -Command '$null = [scriptblock]::Create((Get-Content -Raw /tmp/ado.ps1))'
 
-      - name: Credo (strict)
-        run: mix credo --strict
-
-      - name: Audit dependencies for CVEs
-        run: mix deps.audit
-
-      - name: Check for unused dependencies
-        run: mix deps.unlock --check-unused
-
-      - name: xref (no orphan modules)
-        run: mix xref graph --label compile-connected --fail-above 0
-
-      - name: Dialyzer
-        run: mix ci.dialyzer
-        timeout-minutes: 15
-
-      - name: Run tests with coverage
-        # mix test --cover runs the tests once and produces both
-        # the Elixir coverage report (cover/*.html) and the
-        # excoveralls JSON (cover/excoveralls.json via tool: ExCoveralls).
-        # The strict threshold check is disabled (threshold: 0 in
-        # mix.exs) until CLI integration tests are added.
-        run: mix test --cover
-
-      - name: Post coverage to Codecov
-        # Codecov's own action. The bash uploader that used to sit here is
-        # deprecated upstream, which is why the download-and-run dance is gone.
-        #
-        # Requires CODECOV_TOKEN in repo Settings -> Secrets -> Actions. Get it at
-        # https://codecov.io/gh/gilbertwong96/ado_cli -> Settings -> Upload Token.
-        # A fork's pull request gets no secret at all, so the step stays
-        # non-fatal and the JSON remains available as an action artifact.
-        uses: codecov/codecov-action@v7
-        continue-on-error: true
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          files: ./cover/excoveralls.json
-          verbose: true
+      - name: Export coverage for Codecov
+        run: cargo llvm-cov --workspace --codecov --output-path codecov.json
 
       - name: Upload coverage artifact
         if: always()
         uses: actions/upload-artifact@v7
         with:
           name: coverage-linux
-          path: cover/excoveralls.json
+          path: codecov.json
           retention-days: 30
 
-  # ── macOS: smoke test (the CLI is cross-compiled via Burrito) ──────
+      - name: Post coverage to Codecov
+        # Requires CODECOV_TOKEN in repo Settings -> Secrets -> Actions. Get
+        # it at https://codecov.io/gh/gilbertwong96/ado_cli -> Settings ->
+        # Upload Token. A fork's pull request gets no secret at all, so the
+        # step is skipped and the JSON stays available as an artifact.
+        if: env.HAS_CODECOV_TOKEN == 'true'
+        uses: codecov/codecov-action@v7
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./codecov.json
+          verbose: true
+
+  # ── macOS: release build + suite smoke test ─────────────────────────
   macos:
-    name: "macOS · Elixir 1.20.1"
+    name: "macOS · smoke test"
     runs-on: macos-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
 
-      - name: Set up Elixir
-        uses: erlef/setup-beam@v1
-        with:
-          otp-version: ${{ env.OTP_VERSION }}
-          elixir-version: ${{ env.ELIXIR_VERSION }}
+      - name: Set up Rust
+        run: rustup show
 
-      - name: Cache build artifacts
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest
+
+      - name: Cache cargo registry and target
         uses: actions/cache@v6
         with:
           path: |
-            _build
-            deps
-            priv/plts
-          key: ${{ runner.os }}-mix-${{ hashFiles('**/mix.lock') }}
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-mix-
-            ${{ runner.os }}-
+            ${{ runner.os }}-cargo-
 
-      - name: Install dependencies
-        run: mix deps.get
+      - name: Build the release binary
+        run: cargo build --release --locked
 
-      - name: Build escript
-        run: mix escript.build
-
-      - name: "Smoke test: --help works"
-        run: "./ado --help"
-
-
-      - name: "Smoke test: whoami with no auth returns friendly error"
-        run: |
-          rm -f "$HOME/.ado_cli/config.json"
-          ./ado whoami || true
-
-      - name: "Smoke test: logout is idempotent"
-        run: ./ado logout
-
-      - name: Run tests
-        run: mix test
+      - name: Run the test suite
+        run: cargo nextest run --workspace
 
   # ── Summary job — gate merge on all green ───────────────────────────
   ci-status:
@@ -166,272 +141,9 @@ jobs:
     needs: [linux, macos]
     runs-on: ubuntu-latest
     steps:
-      - name: Fail if any matrix job failed
+      - name: Fail if any job failed
         if: needs.linux.result != 'success' || needs.macos.result != 'success'
         run: |
           echo "Linux result: ${{ needs.linux.result }}"
           echo "macOS result: ${{ needs.macos.result }}"
           exit 1
-
-  # ── Release build: cross-compile via Burrito, rename, upload artifacts ─
-  release:
-    name: "Release · Burrito · ${{ matrix.label }}"
-    # Only build releases on pushes to main (not on PRs) and on tag pushes.
-    # Use workflow_dispatch to trigger manually for ad-hoc builds.
-    if: |
-      github.event_name == 'push' &&
-      (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/'))
-    needs: [ci-status]
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
-    strategy:
-      # Don't cancel other platforms if one fails — we want all
-      # binaries even if e.g. macOS signing fails.
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-latest
-            target: linux
-            cpu: x86_64
-            ext: ""
-            label: "Linux x86_64"
-            artifact: ado-linux-x86_64
-            # ubuntu-latest reports ImageOS='ubuntu24', so we set it
-            # explicitly to avoid surprises if it ever changes.
-            imageos: ubuntu24
-          - os: ubuntu-24.04-arm
-            target: linux_arm
-            cpu: aarch64
-            ext: ""
-            label: "Linux ARM64"
-            artifact: ado-linux-aarch64
-            # ubuntu-24.04-arm reports ImageOS='ubuntu24-arm64'
-            # which erlef/setup-beam doesn't recognize. Use 'ubuntu24'
-            # (Erlang/Elixir prebuilt binaries are arch-independent,
-            # so the ubuntu24 ones work on the arm64 runner).
-            imageos: ubuntu24
-          - os: macos-latest
-            target: macos
-            cpu: aarch64
-            ext: ""
-            label: "macOS Apple Silicon"
-            artifact: ado-macos-aarch64
-            # macos-latest currently reports ImageOS='macos15'.
-            imageos: macos15
-          - os: macos-latest
-            target: macos_x86
-            cpu: x86_64
-            ext: ""
-            label: "macOS Intel"
-            artifact: ado-macos-x86_64
-            imageos: macos15
-          - os: windows-2022
-            target: windows
-            cpu: x86_64
-            ext: ".exe"
-            label: "Windows x86_64"
-            artifact: ado-windows-x86_64
-            # windows-2022 reports ImageOS='win22'.
-            imageos: win22
-
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Set up Elixir
-        uses: erlef/setup-beam@v1
-        with:
-          otp-version: ${{ env.OTP_VERSION }}
-          elixir-version: ${{ env.ELIXIR_VERSION }}
-        env:
-          # Drive ImageOS from the matrix instead of a hardcoded
-          # value. setup-beam requires ImageOS to be one of:
-          # ubuntu22, ubuntu24, win19, win22, win25, macos13,
-          # macos14, macos15, macos26. The runner's default may
-          # be unrecognized on non-x86 runners (e.g. ubuntu-24.04-arm
-          # reports 'ubuntu24-arm64'), so we override per-matrix-entry.
-          ImageOS: ${{ matrix.imageos }}
-
-      - name: Install Zig
-        # Burrito needs a specific zig version (0.16.0) to cross-compile
-        # BEAM. Install it via mlugg/setup-zig (the recommended
-        # successor to goto-bus-stop/setup-zig, which is now
-        # deprecated and hits GitHub's cache service unreliability).
-        uses: mlugg/setup-zig@v2.2.1
-        with:
-          version: 0.16.0
-
-      - name: Install xz
-        # Burrito needs xz to extract zig's tarball and musl. xz-utils
-        # ships with the Linux build image but not always; install
-        # defensively.
-        if: runner.os == 'Linux'
-        run: sudo apt-get -y install xz-utils
-
-      - name: Install xz (macOS)
-        # macOS runners may or may not ship with xz. We check
-        # first to avoid a noisy "already installed" warning
-        # from brew.
-        if: runner.os == 'macOS'
-        run: command -v xz >/dev/null 2>&1 || brew install xz
-
-      - name: Install 7zip (Windows)
-        # Burrito requires 7z/7zz in PATH to package Windows
-        # releases. The 7zip Chocolatey package ships with xz
-        # support (7z handles both .7z and .xz archives), so
-        # installing 7zip is sufficient — no separate xz package
-        # needed. (The 'xz' choco package was removed from
-        # chocolatey.org at some point.)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: choco install -y 7zip
-
-      - name: Verify zig/xz
-        run: |
-          zig version
-          xz --version
-
-      - name: Cache build artifacts
-        uses: actions/cache@v6
-        with:
-          path: |
-            _build
-            deps
-            priv/plts
-            ~/.cache/burrito_file_cache
-          key: release-${{ runner.os }}-${{ hashFiles('**/mix.lock') }}
-          restore-keys: |
-            release-${{ runner.os }}-
-
-      - name: Install dependencies
-        run: mix deps.get
-
-      - name: Build Burrito release
-        env:
-          MIX_ENV: prod
-          # Burrito accepts BURRITO_TARGET=<target-key> to build only
-          # that target from the targets list in mix.exs. This avoids
-          # cross-compiling for all 4 platforms on each runner.
-          BURRITO_TARGET: ${{ matrix.target }}
-        # Burrito writes the binary to burrito_out/ado_<target> by
-        # convention. We rename the output below to a stable,
-        # versioned name.
-        # Use bash explicitly so the `[[ ]]` / `mkdir -p` syntax
-        # works on Windows (the default PowerShell on windows-2022
-        # doesn't understand these).
-        shell: bash
-        run: |
-          mkdir -p release_bin
-          mix release --overwrite
-          ls -lh burrito_out/
-
-      - name: Get version
-        id: version
-        # bash shell: `$(...)` is bash syntax, not PowerShell.
-        shell: bash
-        run: |
-          # Read the version from mix.exs so the release artifact name
-          # always matches the source of truth.
-          VERSION=$(grep -E '^\s*version:\s*"' mix.exs | head -1 | sed -E 's/.*"([^"]+)".*/\1/')
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-
-      - name: Rename binary
-        # Normalize the binary name to:
-        #   ado-<version>-<os>-<arch><.exe?>
-        # e.g. ado-0.1.0-macos-aarch64
-        #      ado-0.1.0-linux-x86_64
-        # Use bash explicitly so the `[[ ]]` / `case` / `mv` syntax
-        # works on Windows (PowerShell on windows-2022 doesn't
-        # understand these). The smoke test below also uses bash.
-        shell: bash
-        run: |
-          set -euo pipefail
-          VERSION="${{ steps.version.outputs.version }}"
-          # Map matrix.target to a clean {os}-{arch} string
-          case "${{ matrix.target }}" in
-            linux)      SUFFIX="linux-x86_64" ;;
-            linux_arm)  SUFFIX="linux-aarch64" ;;
-            macos)      SUFFIX="macos-aarch64" ;;
-            macos_x86)  SUFFIX="macos-x86_64" ;;
-            windows)    SUFFIX="windows-x86_64" ;;
-            *)          echo "::error::Unknown target ${{ matrix.target }}"; exit 1 ;;
-          esac
-          OUT_NAME="ado-${VERSION}-${SUFFIX}${{ matrix.ext }}"
-          SRC="burrito_out/ado_${{ matrix.target }}${{ matrix.ext }}"
-          DEST="release_bin/${OUT_NAME}"
-          if [[ ! -f "${SRC}" ]]; then
-            echo "::error::Expected Burrito output not found: ${SRC}"
-            ls -lh burrito_out
-            exit 1
-          fi
-          mv "${SRC}" "${DEST}"
-          chmod +x "${DEST}"
-          echo "Renamed ${SRC} -> ${DEST}"
-          ls -lh release_bin
-
-      - name: Smoke test the binary
-        # All release jobs run on a native runner for the target
-        # platform (e.g. ubuntu-24.04-arm for the Linux ARM build),
-        # so the binary can always be executed here.
-        # Use bash explicitly so the `[[ ]]` / `set -euo pipefail`
-        # syntax works on Windows (PowerShell doesn't understand
-        # these). On Windows the `file` command is provided by
-        # Git for Windows; the .exe is executable via bash.
-        shell: bash
-        run: |
-          set -euo pipefail
-          # Glob is intentional here — there's exactly one file in
-          # the dir, but actionlint warns about unquoted globs.
-          BINARY=$(ls release_bin/ado-*)
-          echo "Testing $BINARY"
-          file "$BINARY" || true
-          "$BINARY" --version || "$BINARY" --help | head -20
-
-      - name: Upload release binary
-        uses: actions/upload-artifact@v7
-        with:
-          name: ${{ matrix.artifact }}
-          path: release_bin/ado-*
-          retention-days: 90
-          if-no-files-found: error
-
-  # ── Attach binaries to GitHub Release on tag push ──────────────────
-  release-attach:
-    name: Publish GitHub Release
-    if: startsWith(github.ref, 'refs/tags/')
-    needs: [release]
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/download-artifact@v8
-        with:
-          path: dist/
-          merge-multiple: true
-
-      - name: Display downloaded artifacts
-        run: ls -lh dist/
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v3
-        with:
-          tag_name: ${{ github.ref_name }}
-          name: "AdoCli ${{ github.ref_name }}"
-          body: |
-            ## AdoCli ${{ github.ref_name }}
-
-            Pre-built binaries for all supported platforms.
-
-            | Platform | Architecture | Binary |
-            |----------|--------------|--------|
-            | Linux | x86_64 | `ado-*-linux-x86_64` |
-            | Linux | aarch64 | `ado-*-linux-aarch64` |
-            | macOS | Apple Silicon | `ado-*-macos-aarch64` |
-            | macOS | Intel | `ado-*-macos-x86_64` |
-            | Windows | x86_64 | `ado-*-windows-x86_64.exe` |
-
-            See [README.md](https://github.com/gilbertwong96/ado_cli) for
-            installation instructions.
-          draft: false
-          prerelease: false
-          files: |
-            dist/ado-*

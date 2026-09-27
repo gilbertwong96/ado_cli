@@ -4,6 +4,9 @@
 # Rust build artifacts
 /target/
 
+# insta leaves these next to a snapshot when a check fails locally
+*.snap.new
+
 # The directory Mix will write compiled artifacts to.
 /_build/
 

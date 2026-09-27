@@ -10,6 +10,10 @@ default:
 fmt:
     cargo fmt
 
+# Verify Rust formatting is clean
+fmt-check:
+    cargo fmt --check
+
 # Lint Rust code (clippy, warnings as errors)
 lint:
     cargo clippy --all-targets -- -D warnings
@@ -22,6 +26,81 @@ test:
 build:
     cargo build --workspace
 
+# Build with locked dependencies and warnings as errors
+build-strict:
+    RUSTFLAGS="-Dwarnings" cargo build --locked
+
+# Check for unused dependencies
+machete:
+    cargo machete
+
+# Audit dependencies: advisories, licenses, bans, sources
+deny:
+    cargo deny check advisories licenses bans sources
+
+# Run the Rust test suite on the CI runner
+nextest:
+    cargo nextest run --workspace
+
+# Line-coverage floor (rewrite spec §9)
+coverage:
+    cargo llvm-cov --workspace --fail-under-lines 85
+
+# Run the full Rust quality gate — `mix ci` parity per rewrite spec §10.
+# Fail fast, cheap checks first: format, lint, build, deps, tests, coverage.
+ci: fmt-check lint build-strict machete deny nextest coverage
+
+# Build the stripped release binary the budgets below measure
+build-release:
+    cargo build --release --locked
+
+# Enforce the rewrite spec §1 budgets: `ado --version` wall clock
+# (regression guard 50ms; design target 10ms) and stripped release binary
+# size (8MB). Measures the best of 3 runs and prints both measured values.
+budget: build-release
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    bin=target/release/ado
+    if [[ ! -x "$bin" ]]; then
+        echo "budget: $bin missing — run 'just build-release' first" >&2
+        exit 1
+    fi
+
+    startup_limit_ms=50
+    size_limit_bytes=$((8 * 1024 * 1024))
+
+    # Best of 3: a cold first run pays page-fault costs that are not the
+    # binary's startup cost.
+    TIMEFORMAT='%R'
+    best_seconds=""
+    for run in 1 2 3; do
+        seconds=$( { time "$bin" --version >/dev/null; } 2>&1 )
+        echo "budget: run $run: ${seconds}s"
+        if [[ -z "$best_seconds" ]] || awk -v a="$seconds" -v b="$best_seconds" 'BEGIN { exit !(a < b) }'; then
+            best_seconds="$seconds"
+        fi
+    done
+
+    startup_ms=$(awk -v s="$best_seconds" 'BEGIN { printf "%.1f", s * 1000 }')
+    size_bytes=$(wc -c < "$bin" | tr -d '[:space:]')
+    size_mib=$(awk -v b="$size_bytes" 'BEGIN { printf "%.2f", b / 1048576 }')
+    limit_mib=$(awk -v b="$size_limit_bytes" 'BEGIN { printf "%.0f", b / 1048576 }')
+
+    echo "budget: startup (best of 3) ${startup_ms}ms ≤ ${startup_limit_ms}ms"
+    echo "budget: release binary ${size_bytes} bytes (${size_mib}MiB) ≤ ${size_limit_bytes} bytes (${limit_mib}MiB)"
+
+    failed=0
+    if awk -v ms="$startup_ms" -v limit="$startup_limit_ms" 'BEGIN { exit !(ms > limit) }'; then
+        echo "budget: FAIL — startup ${startup_ms}ms exceeds ${startup_limit_ms}ms" >&2
+        failed=1
+    fi
+    if (( size_bytes > size_limit_bytes )); then
+        echo "budget: FAIL — release binary ${size_mib}MiB exceeds ${limit_mib}MiB" >&2
+        failed=1
+    fi
+    exit "$failed"
+
 # ── Development ────────────────────────────────────────────────────────
 
 # Build the escript for local development
@@ -29,8 +108,8 @@ dev:
     mix escript.build
     @echo "→ ./ado ready"
 
-# Run the full CI pipeline
-ci:
+# Run the full Elixir CI pipeline (frozen tree; `ci` is the Rust gate)
+elixir-ci:
     mix ci
 
 # Run the quality pipeline (ci + ex_dna + reach + tests)
@@ -162,13 +241,14 @@ login-pat org pat:
 
 # ── Helpers ────────────────────────────────────────────────────────────
 
-# Rust recipes run alongside these; the aggregates move onto the Rust gate in a later task.
+# `check` and `all` cover both toolchains until Wave 4 deletes the Elixir
+# tree: `ci` is the Rust gate, `elixir-ci` still verifies the frozen fallback.
 
 # Show all checks pass
-check: ci elixir-test
+check: ci elixir-ci
 
 # Full build + test + release
-all: ci elixir-test release
+all: ci elixir-ci release
     @echo "✅ All checks passed, release built"
 
 # ── Version Bumping ────────────────────────────────────────────────────
@@ -185,6 +265,12 @@ all: ci elixir-test release
 #
 # Does NOT auto-update (needs human input):
 #   * CHANGELOG.md             — needs a human-written entry
+#
+# Must be regenerated after every bump (it fails loudly until then):
+#   * crates/ado/tests/snapshots/
+#       cli_schema__schema_version_target_shape_matches_oracle.snap
+#     — the schema snapshot pins VERSION literally; refresh it with
+#       `INSTA_UPDATE=always cargo test -p ado` (or `cargo insta test --accept`)
 #
 # Files intentionally left alone:
 #   * npm/@*-{platform}/bin/ado{,.exe} — downloaded from the GitHub

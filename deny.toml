@@ -1,0 +1,41 @@
+# Dependency policy for the `ado` workspace.
+# Run by `just deny` (part of `just ci`):
+#   cargo deny check advisories licenses bans sources
+
+[advisories]
+# Nothing ignored: a vulnerable or unmaintained dependency fails the gate.
+
+[licenses]
+# The project is Apache-2.0; allow the permissive licenses its dependency
+# tree actually uses. Every entry below is encountered by the current graph —
+# a new license fails the gate and gets added here deliberately, with a reason.
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-3.0",
+    # option-ext (via dirs-sys -> dirs): file-level copyleft, no obligations
+    # beyond keeping its files under MPL-2.0; not linked into our code.
+    "MPL-2.0",
+    # webpki-roots (via ureq): permissive data license for the bundled
+    # CA root list.
+    "CDLA-Permissive-2.0",
+]
+
+[bans]
+# Surface duplicate major versions in the logs without failing the gate: the
+# tree is still growing and W1 will add dependencies.
+multiple-versions = "warn"
+# cargo-deny counts our workspace-internal `path` dependencies (no version
+# key) as wildcards. They are not registry requirements, so the lint stays
+# off rather than adding drifting duplicated version strings to the manifests.
+wildcards = "allow"
+
+[sources]
+# Only crates.io; no git or unknown registries in the dependency graph.
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []
