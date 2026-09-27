@@ -174,7 +174,7 @@ mod tests {
         }
     }
 
-    fn unwell(kind: io::ErrorKind) -> FailingWriter {
+    fn failing(kind: io::ErrorKind) -> FailingWriter {
         FailingWriter(kind)
     }
 
@@ -188,7 +188,7 @@ mod tests {
 
     #[test]
     fn a_failed_render_is_reported_on_stderr() {
-        let (mut stdout, mut stderr) = (unwell(io::ErrorKind::PermissionDenied), Vec::new());
+        let (mut stdout, mut stderr) = (failing(io::ErrorKind::PermissionDenied), Vec::new());
 
         let code = emit_to(&mut stdout, &mut stderr, &report(), false);
 
@@ -198,7 +198,7 @@ mod tests {
 
     #[test]
     fn a_failed_error_render_is_reported_on_stderr() {
-        let (mut stdout, mut stderr) = (unwell(io::ErrorKind::PermissionDenied), Vec::new());
+        let (mut stdout, mut stderr) = (failing(io::ErrorKind::PermissionDenied), Vec::new());
         let error = AdoError::validation("no shell");
 
         let code = emit_error_to(&mut stdout, &mut stderr, &error, true);
@@ -210,8 +210,8 @@ mod tests {
     #[test]
     fn a_failed_diagnostic_still_exits_one() {
         let (mut stdout, mut stderr) = (
-            unwell(io::ErrorKind::PermissionDenied),
-            unwell(io::ErrorKind::PermissionDenied),
+            failing(io::ErrorKind::PermissionDenied),
+            failing(io::ErrorKind::PermissionDenied),
         );
 
         assert_eq!(
@@ -226,7 +226,7 @@ mod tests {
 
     #[test]
     fn a_broken_pipe_is_a_silent_success() {
-        let (mut stdout, mut stderr) = (unwell(io::ErrorKind::BrokenPipe), Vec::new());
+        let (mut stdout, mut stderr) = (failing(io::ErrorKind::BrokenPipe), Vec::new());
 
         assert_eq!(
             emit_to(&mut stdout, &mut stderr, &report(), false),
@@ -234,7 +234,7 @@ mod tests {
         );
         assert_eq!(
             emit_error_to(
-                &mut unwell(io::ErrorKind::BrokenPipe),
+                &mut failing(io::ErrorKind::BrokenPipe),
                 &mut stderr,
                 &AdoError::validation("x"),
                 true
