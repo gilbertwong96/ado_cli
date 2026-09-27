@@ -25,7 +25,8 @@
   },
   "scripts": {
     "postinstall": "node scripts/postinstall.js",
-    "uninstall": "node scripts/postinstall.js --uninstall"
+    "uninstall": "node scripts/postinstall.js --uninstall",
+    "test": "node --test"
   },
   "files": [
     "bin/ado",

@@ -1,10 +1,15 @@
 #!/usr/bin/env node
-// ado npm postinstall — auto-installs (and uninstalls) shell completion.
+// ado npm postinstall — fetches the platform binary, then auto-installs
+// (and uninstalls) shell completion.
 //
-// Two modes, selected by argv or env:
-//   * Default:  install completion after `npm install -g`
+// Three modes, selected by argv or env:
+//   * Default:  install completion after `npm install -g`, fetching the
+//               release archive first when the optional platform package
+//               did not provide a binary
 //   * --uninstall:  remove completion when triggered by
 //                   `npm uninstall -g @gilbertwong1996/ado`
+//   * --dry-run:  print the resolved release URL and the extraction
+//                 destination, then exit without downloading anything
 //
 // Install mode: detects the user's shell, generates the right
 // completion script, and installs it to the standard auto-load
@@ -20,6 +25,8 @@
 //
 // Honors the ADO_NO_COMPLETION env var to opt out of install:
 //   ADO_NO_COMPLETION=1 npm install -g @gilbertwong1996/ado
+// and ADO_NO_DOWNLOAD to skip the release-archive download:
+//   ADO_NO_DOWNLOAD=1 npm install -g @gilbertwong1996/ado
 //
 // Idempotent: re-running the install just refreshes the completion
 // script. Skips re-appending the config line if it's already there.
@@ -34,6 +41,194 @@ const { execFileSync } = require('child_process');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+
+// ── Release artifacts ────────────────────────────────────────────────
+//
+// cargo-dist attaches one archive per target to the `v<version>` GitHub
+// release. The normal delivery path is the optional platform package; the
+// download below only runs when that package is missing (--omit=optional,
+// a libc npm considers mismatched, a skipped optional download), and it
+// unpacks with the system `tar` so the package keeps zero runtime deps.
+
+const RELEASE_REPO = 'gilbertwong96/ado_cli';
+const RELEASE_DOWNLOAD = `https://github.com/${RELEASE_REPO}/releases/download`;
+
+// platform-arch → the asset names cargo-dist produces (`target` is the
+// directory the archive unpacks to). Five targets, no alternates.
+const ARTIFACTS = {
+  'darwin-arm64': {
+    file: 'ado-aarch64-apple-darwin.tar.gz',
+    target: 'ado-aarch64-apple-darwin'
+  },
+  'darwin-x64': {
+    file: 'ado-x86_64-apple-darwin.tar.gz',
+    target: 'ado-x86_64-apple-darwin'
+  },
+  'linux-arm64': {
+    file: 'ado-aarch64-unknown-linux-musl.tar.gz',
+    target: 'ado-aarch64-unknown-linux-musl'
+  },
+  'linux-x64': {
+    file: 'ado-x86_64-unknown-linux-musl.tar.gz',
+    target: 'ado-x86_64-unknown-linux-musl'
+  },
+  'win32-x64': {
+    file: 'ado-x86_64-pc-windows-msvc.zip',
+    target: 'ado-x86_64-pc-windows-msvc'
+  }
+};
+
+function artifactFor(platform, arch) {
+  const artifact = ARTIFACTS[`${platform}-${arch}`];
+  if (!artifact) {
+    throw new Error(
+      `no ado release artifact for ${platform}/${arch} ` +
+        `(supported: ${Object.keys(ARTIFACTS).join(', ')})`
+    );
+  }
+  return { ...artifact };
+}
+
+function artifactUrl(version, platform, arch) {
+  if (!version) {
+    throw new Error('a release version is required to build the artifact URL');
+  }
+  return `${RELEASE_DOWNLOAD}/v${version}/${artifactFor(platform, arch).file}`;
+}
+
+function binaryName(platform) {
+  return platform === 'win32' ? 'ado.exe' : 'ado';
+}
+
+// This package's own directory: …/@gilbertwong1996/ado when installed,
+// npm/@gilbertwong1996-ado in the source tree.
+const PACKAGE_ROOT = path.join(__dirname, '..');
+
+// An installed copy has its manifest next to scripts/ and the platform
+// packages beside it. The repo-root copy — the one scripts/npm-publish.sh
+// copies into the package — has no manifest of its own: its platform packages
+// are the npm/ staging directories, and it must never fetch.
+const INSTALLED = fs.existsSync(path.join(PACKAGE_ROOT, 'package.json'));
+const MANIFEST = INSTALLED
+  ? path.join(PACKAGE_ROOT, 'package.json')
+  : path.join(PACKAGE_ROOT, 'npm', '@gilbertwong1996-ado', 'package.json');
+const PLATFORM_PACKAGES = path.join(PACKAGE_ROOT, INSTALLED ? '..' : 'npm');
+
+function packageVersion() {
+  const manifest = JSON.parse(fs.readFileSync(MANIFEST, 'utf8'));
+  return manifest.version;
+}
+
+// The platform binary lives in the sibling platform package — the same path
+// bin/ado resolves out of node_modules. That package is an optionalDependency,
+// so it may be absent; creating the directory is how it gets repaired.
+function platformBinaryPath(platform, arch) {
+  return path.join(
+    PLATFORM_PACKAGES,
+    `@gilbertwong1996-ado-${platform}-${arch}`,
+    'bin',
+    binaryName(platform)
+  );
+}
+
+async function downloadFile(url, destPath) {
+  const response = await fetch(url, { redirect: 'follow' });
+  if (!response.ok) {
+    throw new Error(`download failed: HTTP ${response.status} for ${url}`);
+  }
+  fs.mkdirSync(path.dirname(destPath), { recursive: true });
+  fs.writeFileSync(destPath, Buffer.from(await response.arrayBuffer()));
+  return destPath;
+}
+
+// macOS, Linux and Windows 10+ all ship a tar that reads .tar.gz; the Windows
+// tar (bsdtar) also reads the only .zip this script ever asks it to open.
+function extractArchive(archivePath, destDir) {
+  fs.mkdirSync(destDir, { recursive: true });
+  const flags = archivePath.endsWith('.zip') ? '-xf' : '-xzf';
+  execFileSync('tar', [flags, archivePath, '-C', destDir], { stdio: 'pipe' });
+  return destDir;
+}
+
+async function installPlatformBinary(
+  version,
+  platform = process.platform,
+  arch = process.arch
+) {
+  const dest = platformBinaryPath(platform, arch);
+  const { file, target } = artifactFor(platform, arch);
+  const url = artifactUrl(version, platform, arch);
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ado-postinstall-'));
+
+  try {
+    const archive = path.join(tmpDir, file);
+    await downloadFile(url, archive);
+    extractArchive(archive, tmpDir);
+    fs.mkdirSync(path.dirname(dest), { recursive: true });
+    fs.copyFileSync(path.join(tmpDir, target, binaryName(platform)), dest);
+    if (platform !== 'win32') fs.chmodSync(dest, 0o755);
+    return { url, dest };
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+}
+
+// Set ADO_NO_DOWNLOAD=1 to opt out of the fallback fetch; a failure here must
+// never fail the npm install.
+async function ensurePlatformBinary() {
+  const dest = platformBinaryPath(process.platform, process.arch);
+
+  if (fs.existsSync(dest)) return;
+
+  if (!INSTALLED) {
+    console.log(
+      'ado: running from the source tree, skipping the platform binary ' +
+        'download.'
+    );
+    return;
+  }
+
+  if (process.env.ADO_NO_DOWNLOAD === '1') {
+    console.log(
+      'ado: ADO_NO_DOWNLOAD=1 set, skipping the platform binary download.'
+    );
+    return;
+  }
+
+  try {
+    const { url } = await installPlatformBinary(packageVersion());
+    console.log(`ado: downloaded ${url}`);
+    console.log(`ado: installed the platform binary at ${dest}`);
+  } catch (err) {
+    console.error(
+      `ado: could not download the platform binary: ${err.message}`
+    );
+    console.error(
+      '     Install a pre-built binary from ' +
+        `https://github.com/${RELEASE_REPO}/releases instead.`
+    );
+  }
+}
+
+function isDryRun() {
+  return process.argv.includes('--dry-run');
+}
+
+function dryRun() {
+  const platform = process.platform;
+  const arch = process.arch;
+  const { file, target } = artifactFor(platform, arch);
+
+  const url = artifactUrl(packageVersion(), platform, arch);
+
+  console.log(`ado: dry run — platform ${platform}/${arch}`);
+  console.log(`ado: dry run — release URL ${url}`);
+  console.log(
+    `ado: dry run — ${file} unpacks to ${target}/${binaryName(platform)}, ` +
+      `installed at ${platformBinaryPath(platform, arch)}`
+  );
+  console.log('ado: dry run — nothing was downloaded');
+}
 
 // ── Configuration ────────────────────────────────────────────────────
 
@@ -447,10 +642,19 @@ function uninstall() {
 
 // ── Main ─────────────────────────────────────────────────────────────
 
-function main() {
+async function main() {
+  if (isDryRun()) {
+    return dryRun();
+  }
+
   if (isUninstallMode()) {
     return uninstall();
   }
+
+  // Before the completion install, because generating the completion script
+  // runs the binary and ADO_NO_COMPLETION is about the shell config, not about
+  // a missing binary.
+  await ensurePlatformBinary();
 
   // Opt-out
   if (process.env.ADO_NO_COMPLETION === '1') {
@@ -524,12 +728,22 @@ function main() {
   console.log('     Then press <TAB> after typing `ado ` to see it in action.');
 }
 
-try {
-  main();
-} catch (err) {
-  console.error(`ado: postinstall failed: ${err.message}`);
-  // Don't fail the install just because completion setup failed.
-  // The binary still works; users can run `ado completion <shell>`
-  // manually if they want.
-  process.exit(0);
+if (require.main === module) {
+  main().catch((err) => {
+    console.error(`ado: postinstall failed: ${err.message}`);
+    // Don't fail the install just because completion setup failed.
+    // The binary still works; users can run `ado completion <shell>`
+    // manually if they want.
+    process.exit(0);
+  });
 }
+
+module.exports = {
+  artifactFor,
+  artifactUrl,
+  binaryName,
+  downloadFile,
+  extractArchive,
+  installPlatformBinary,
+  platformBinaryPath
+};
