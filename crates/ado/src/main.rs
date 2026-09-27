@@ -11,6 +11,10 @@ use ado::context::Context;
 use ado::output::{Report, WriteFailure, render_error_to, render_to, write_bytes};
 use ado_core::error::AdoError;
 
+/// CliMate's framework wording for a bare `ado`; the Elixir oracle prints the
+/// same line, and nothing in `lib/` carries the string.
+const MISSING_SUBCOMMAND: &str = "missing sub-command";
+
 fn main() -> ExitCode {
     let mut raw_args = std::env::args_os();
     let program = raw_args.next().unwrap_or_else(|| OsString::from("ado"));
@@ -52,7 +56,7 @@ fn main() -> ExitCode {
             sub.get_one::<String>("write-to-file").map(Path::new),
         ),
         Some((name, _)) => Err(AdoError::validation(format!("unknown command '{name}'"))),
-        None => Ok(Report::Text(cli::command().render_help().to_string())),
+        None => return missing_subcommand(json),
     };
 
     match result {
@@ -72,6 +76,27 @@ fn clap_exit(error: &clap::Error) -> ExitCode {
         ExitCode::FAILURE
     } else {
         ExitCode::SUCCESS
+    }
+}
+
+/// Bare `ado` is a missing subcommand: root help on stdout and the labelled error
+/// line on stderr, exit 1. Under `--json` only the envelope is written, so stdout
+/// stays parseable JSON.
+fn missing_subcommand(json: bool) -> ExitCode {
+    let error = AdoError::validation(MISSING_SUBCOMMAND);
+
+    if json {
+        return emit_error(&error, true);
+    }
+
+    let mut stdout = io::stdout().lock();
+    let mut stderr = io::stderr().lock();
+    let help = Report::Text(cli::command().render_help().to_string());
+
+    match render_to(&mut stdout, &help, false) {
+        Ok(()) => emit_error_to(&mut stdout, &mut stderr, &error, false),
+        Err(WriteFailure::BrokenPipe) => ExitCode::SUCCESS,
+        Err(WriteFailure::Other(message)) => fail_to(&mut stderr, &message),
     }
 }
 

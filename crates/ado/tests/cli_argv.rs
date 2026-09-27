@@ -1,4 +1,5 @@
 use assert_cmd::Command;
+use serde_json::{Value, json};
 
 const VERSION_LINE: &str = "ado 1.0.0-rc.0\n";
 
@@ -74,6 +75,33 @@ fn server_short_is_s() {
 
     assert_eq!(output.status.code(), Some(0), "stderr: {}", stderr(&output));
     assert_eq!(stdout(&output), VERSION_LINE);
+}
+
+#[test]
+fn bare_ado_is_a_missing_subcommand() {
+    let output = ado().output().expect("run bare `ado`");
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        stdout(&output).contains("Usage:"),
+        "bare `ado` did not print root help: {}",
+        stdout(&output)
+    );
+    assert_eq!(stderr(&output), "[Validation error] missing sub-command\n");
+}
+
+#[test]
+fn bare_ado_json_is_the_error_envelope() {
+    let output = ado().arg("--json").output().expect("run bare `ado --json`");
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(stderr(&output).is_empty(), "stderr: {}", stderr(&output));
+
+    let envelope: Value =
+        serde_json::from_slice(&output.stdout).expect("stdout is one JSON document");
+    assert_eq!(envelope["ok"], json!(false));
+    assert_eq!(envelope["error"]["code"], json!("validation_error"));
+    assert_eq!(envelope["error"]["message"], json!("missing sub-command"));
 }
 
 #[cfg(unix)]
