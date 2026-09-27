@@ -246,9 +246,10 @@ pub fn default_store() -> FallbackStore {
 
 /// Resolves the credential to use: an organization and a `pat` from `env`, else
 /// the credential stored for that organization. `env` must be the caller's
-/// flag-first view ([`FlagEnv`]) — `--org`/`--pat` outrank `ADO_ORG`/`ADO_PAT`,
-/// and the environment outranks the organization in the config file (spec §6.6).
-/// `ADO_SERVER` travels with those but is read by the caller.
+/// flag-first view ([`FlagEnv`](crate::env::FlagEnv)) — `--org`/`--pat` outrank
+/// `ADO_ORG`/`ADO_PAT`, and the environment outranks the organization in the
+/// config file (spec §6.6). `ADO_SERVER` travels with those but is read by the
+/// caller.
 pub fn resolve(
     env: &dyn EnvSource,
     store: &dyn SecretStore,
