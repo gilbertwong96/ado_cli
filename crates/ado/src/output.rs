@@ -33,7 +33,9 @@ pub fn render(report: &Report, json: bool) -> Result<(), WriteFailure> {
     render_to(&mut io::stdout().lock(), report, json)
 }
 
-fn render_to(writer: &mut impl Write, report: &Report, json: bool) -> Result<(), WriteFailure> {
+/// [`render`] against the writers a caller owns, so binary-level failure
+/// handling can be driven by a test without touching the process's own streams.
+pub fn render_to(writer: &mut impl Write, report: &Report, json: bool) -> Result<(), WriteFailure> {
     match report {
         Report::Json(value) => {
             let serialized = if json {
@@ -70,7 +72,8 @@ pub fn render_error(error: &AdoError, json: bool) -> Result<(), WriteFailure> {
     )
 }
 
-fn render_error_to(
+/// [`render_error`] against the writers a caller owns; see [`render_to`].
+pub fn render_error_to(
     stdout: &mut impl Write,
     stderr: &mut impl Write,
     error: &AdoError,

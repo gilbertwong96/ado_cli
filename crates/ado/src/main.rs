@@ -1,5 +1,5 @@
 use std::ffi::OsString;
-use std::io;
+use std::io::{self, Write};
 use std::path::Path;
 use std::process::ExitCode;
 
@@ -8,7 +8,7 @@ use ado::argv;
 use ado::cli;
 use ado::commands;
 use ado::context::Context;
-use ado::output::{Report, WriteFailure, render, render_error, write_bytes};
+use ado::output::{Report, WriteFailure, render_error_to, render_to, write_bytes};
 use ado_core::error::AdoError;
 
 fn main() -> ExitCode {
@@ -18,8 +18,10 @@ fn main() -> ExitCode {
     let args = match to_utf8(raw_args.collect()) {
         Ok(args) => args,
         Err(arg) => {
-            eprintln!("ado: invalid UTF-8 in argument: {}", arg.to_string_lossy());
-            return ExitCode::FAILURE;
+            return fail(format!(
+                "invalid UTF-8 in argument: {}",
+                arg.to_string_lossy()
+            ));
         }
     };
 
@@ -74,25 +76,146 @@ fn clap_exit(error: &clap::Error) -> ExitCode {
 }
 
 fn emit(report: &Report, json: bool) -> ExitCode {
-    match render(report, json) {
+    emit_to(
+        &mut io::stdout().lock(),
+        &mut io::stderr().lock(),
+        report,
+        json,
+    )
+}
+
+fn emit_to(
+    stdout: &mut impl Write,
+    stderr: &mut impl Write,
+    report: &Report,
+    json: bool,
+) -> ExitCode {
+    match render_to(stdout, report, json) {
         Ok(()) | Err(WriteFailure::BrokenPipe) => ExitCode::SUCCESS,
-        Err(WriteFailure::Other(message)) => {
-            eprintln!("ado: {message}");
-            ExitCode::FAILURE
-        }
+        Err(WriteFailure::Other(message)) => fail_to(stderr, &message),
     }
 }
 
 fn emit_error(error: &AdoError, json: bool) -> ExitCode {
-    match render_error(error, json) {
+    emit_error_to(
+        &mut io::stdout().lock(),
+        &mut io::stderr().lock(),
+        error,
+        json,
+    )
+}
+
+fn emit_error_to(
+    stdout: &mut impl Write,
+    stderr: &mut impl Write,
+    error: &AdoError,
+    json: bool,
+) -> ExitCode {
+    match render_error_to(stdout, stderr, error, json) {
         Ok(()) => ExitCode::FAILURE,
         Err(WriteFailure::BrokenPipe) => ExitCode::SUCCESS,
-        Err(WriteFailure::Other(message)) => {
-            let _ = write_bytes(
-                &mut io::stderr().lock(),
-                format!("ado: {message}\n").as_bytes(),
-            );
-            ExitCode::FAILURE
+        Err(WriteFailure::Other(message)) => fail_to(stderr, &message),
+    }
+}
+
+/// A diagnostic on stderr, then exit 1.
+fn fail(message: impl AsRef<str>) -> ExitCode {
+    fail_to(&mut io::stderr().lock(), message.as_ref())
+}
+
+/// The write goes through [`write_bytes`]: `eprintln!` panics on an unwritable
+/// stream, which aborts under `panic = "abort"` instead of exiting 1 (R19). The
+/// failure being reported is already fatal, so a second one leaves nothing to do
+/// with but exit 1.
+fn fail_to(stderr: &mut impl Write, message: &str) -> ExitCode {
+    let _ = write_bytes(stderr, format!("ado: {message}\n").as_bytes());
+    ExitCode::FAILURE
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[derive(Debug)]
+    struct FailingWriter(io::ErrorKind);
+
+    impl Write for FailingWriter {
+        fn write(&mut self, _bytes: &[u8]) -> io::Result<usize> {
+            Err(io::Error::new(self.0, "write failed"))
         }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    fn unwell(kind: io::ErrorKind) -> FailingWriter {
+        FailingWriter(kind)
+    }
+
+    fn report() -> Report {
+        Report::Text(format!("ado {}", ado::VERSION))
+    }
+
+    fn written(bytes: Vec<u8>) -> String {
+        String::from_utf8(bytes).expect("utf-8")
+    }
+
+    #[test]
+    fn a_failed_render_is_reported_on_stderr() {
+        let (mut stdout, mut stderr) = (unwell(io::ErrorKind::PermissionDenied), Vec::new());
+
+        let code = emit_to(&mut stdout, &mut stderr, &report(), false);
+
+        assert_eq!(code, ExitCode::FAILURE);
+        assert_eq!(written(stderr), "ado: write failed\n");
+    }
+
+    #[test]
+    fn a_failed_error_render_is_reported_on_stderr() {
+        let (mut stdout, mut stderr) = (unwell(io::ErrorKind::PermissionDenied), Vec::new());
+        let error = AdoError::validation("no shell");
+
+        let code = emit_error_to(&mut stdout, &mut stderr, &error, true);
+
+        assert_eq!(code, ExitCode::FAILURE);
+        assert_eq!(written(stderr), "ado: write failed\n");
+    }
+
+    #[test]
+    fn a_failed_diagnostic_still_exits_one() {
+        let (mut stdout, mut stderr) = (
+            unwell(io::ErrorKind::PermissionDenied),
+            unwell(io::ErrorKind::PermissionDenied),
+        );
+
+        assert_eq!(
+            emit_to(&mut stdout, &mut stderr, &report(), false),
+            ExitCode::FAILURE
+        );
+        assert_eq!(
+            emit_error_to(&mut stdout, &mut stderr, &AdoError::validation("x"), true),
+            ExitCode::FAILURE
+        );
+    }
+
+    #[test]
+    fn a_broken_pipe_is_a_silent_success() {
+        let (mut stdout, mut stderr) = (unwell(io::ErrorKind::BrokenPipe), Vec::new());
+
+        assert_eq!(
+            emit_to(&mut stdout, &mut stderr, &report(), false),
+            ExitCode::SUCCESS
+        );
+        assert_eq!(
+            emit_error_to(
+                &mut unwell(io::ErrorKind::BrokenPipe),
+                &mut stderr,
+                &AdoError::validation("x"),
+                true
+            ),
+            ExitCode::SUCCESS
+        );
+        assert!(stderr.is_empty(), "stderr: {}", written(stderr));
     }
 }
