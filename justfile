@@ -162,11 +162,13 @@ login-pat org pat:
 
 # ── Helpers ────────────────────────────────────────────────────────────
 
+# Rust recipes run alongside these; the aggregates move onto the Rust gate in a later task.
+
 # Show all checks pass
-check: ci test
+check: ci elixir-test
 
 # Full build + test + release
-all: ci test release
+all: ci elixir-test release
     @echo "✅ All checks passed, release built"
 
 # ── Version Bumping ────────────────────────────────────────────────────
