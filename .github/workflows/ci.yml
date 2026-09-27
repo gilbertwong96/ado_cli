@@ -94,7 +94,12 @@ jobs:
         # it at https://codecov.io/gh/gilbertwong96/ado_cli -> Settings ->
         # Upload Token. A fork's pull request gets no secret at all, so the
         # step is skipped and the JSON stays available as an artifact.
+        #
+        # Non-fatal on purpose: a Codecov outage or a rotated/expired token
+        # is not a code failure and must not red-line the required ci-status
+        # check and block merges.
         if: env.HAS_CODECOV_TOKEN == 'true'
+        continue-on-error: true
         uses: codecov/codecov-action@v7
         with:
           token: ${{ secrets.CODECOV_TOKEN }}

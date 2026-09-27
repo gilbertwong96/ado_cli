@@ -16,8 +16,8 @@ allow = [
     "BSD-3-Clause",
     "ISC",
     "Unicode-3.0",
-    # option-ext (via dirs-sys -> dirs): file-level copyleft, no obligations
-    # beyond keeping its files under MPL-2.0; not linked into our code.
+    # option-ext (via dirs-sys -> dirs): file-level copyleft — the obligations
+    # attach to its own files, which we use unmodified.
     "MPL-2.0",
     # webpki-roots (via ureq): permissive data license for the bundled
     # CA root list.

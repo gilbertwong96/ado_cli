@@ -7,6 +7,9 @@
 # insta leaves these next to a snapshot when a check fails locally
 *.snap.new
 
+# cargo llvm-cov --codecov output, written to the repo root
+/codecov.json
+
 # The directory Mix will write compiled artifacts to.
 /_build/
 
