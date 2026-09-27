@@ -2,6 +2,7 @@
 //! classification, and the exit code every one of them maps to.
 
 use serde_json::{Value, json};
+use thiserror::Error;
 
 /// The nine stable `error.code` values. Agents match on these strings, so the
 /// spellings are contract, not free to change (spec §6.2).
@@ -61,8 +62,11 @@ impl ErrorCode {
     }
 }
 
-/// One failure, in the shape both renderers and every command share.
-#[derive(Debug, Clone, PartialEq)]
+/// One failure, in the shape both renderers and every command share. The single
+/// error style in `ado-core` is `thiserror` (spec D11), so `Display` is the
+/// message every renderer prints and the type is usable with `?`.
+#[derive(Debug, Clone, PartialEq, Error)]
+#[error("{message}")]
 pub struct AdoError {
     pub code: ErrorCode,
     pub status: Option<u16>,
@@ -379,6 +383,14 @@ mod tests {
                 "scopes": "PAT must have: vso.work, vso.code, vso.project, vso.build, vso.release",
             }))
         );
+    }
+
+    #[test]
+    fn the_error_type_displays_its_message() {
+        let error = AdoError::validation("Unknown shell 'x'.");
+
+        let as_std: &dyn std::error::Error = &error;
+        assert_eq!(as_std.to_string(), "Unknown shell 'x'.");
     }
 
     #[test]
