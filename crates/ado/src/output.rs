@@ -7,7 +7,10 @@ use serde_json::Value;
 /// What a command produced, before the output layer writes it.
 #[derive(Debug, PartialEq)]
 pub enum Report {
-    /// A JSON payload: compact and newline-terminated under `--json`, pretty otherwise.
+    /// A JSON payload, emitted **only** when `--json` is set: a command that also
+    /// has a human form picks [`Report::Text`] when `Context::json()` is false,
+    /// because the renderer has no `--json` to consult — its other branch is the
+    /// pretty printer the renderer's own tests use (spec §6.1).
     Json(Value),
     /// Human text, written with a trailing newline when non-empty.
     Text(String),
