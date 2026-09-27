@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/ado", "crates/ado-core"]
+members = ["crates/ado", "crates/ado-core", "crates/ado-testkit"]
 resolver = "3"
 
 [workspace.package]
@@ -10,12 +10,14 @@ license = "Apache-2.0"
 
 [workspace.dependencies]
 assert_cmd = "2.2.2"
+axum = "0.8.9"
 base64 = "0.23.1"
 clap = "4.6.7"
 dirs = "7.0.0"
 keyring = { version = "4.2.0", default-features = false, features = ["v1"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
+tokio = { version = "1.53.1", features = ["net", "rt", "sync"] }
 toml = "1.1.6"
 ureq = { version = "3.4.2", default-features = false }
 

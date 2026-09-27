@@ -1,0 +1,25 @@
+{
+  "count": 2,
+  "value": [
+    {
+      "id": "6a1f8f6e-2b8d-4b9e-9d2a-1c3f5e7a9b0c",
+      "name": "Alpha",
+      "description": "The first project",
+      "url": "https://dev.azure.com/myorg/_apis/projects/6a1f8f6e-2b8d-4b9e-9d2a-1c3f5e7a9b0c",
+      "state": "wellFormed",
+      "revision": 12,
+      "visibility": "private",
+      "lastUpdateTime": "2026-09-01T09:12:44.413Z"
+    },
+    {
+      "id": "b7c2d0a4-5e6f-4a1b-8c9d-0e1f2a3b4c5d",
+      "name": "Beta",
+      "description": "The second project",
+      "url": "https://dev.azure.com/myorg/_apis/projects/b7c2d0a4-5e6f-4a1b-8c9d-0e1f2a3b4c5d",
+      "state": "wellFormed",
+      "revision": 4,
+      "visibility": "public",
+      "lastUpdateTime": "2026-09-10T15:02:10.117Z"
+    }
+  ]
+}

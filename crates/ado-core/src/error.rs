@@ -115,6 +115,25 @@ impl AdoError {
             details: Some(json!({ "status": status, "body": body })),
         }
     }
+
+    /// The error for a request that produced no usable response — a transport
+    /// failure, or a status error that leaked past the client's own status
+    /// handling. `details` carries the reason, mirroring the Elixir CLI's
+    /// `%{"reason" => inspect(reason)}` (spec §6.2).
+    pub fn from_transport(error: &ureq::Error) -> AdoError {
+        let (code, message) = classify_transport(error);
+        let status = match error {
+            ureq::Error::StatusCode(status) => Some(*status),
+            _ => None,
+        };
+
+        AdoError {
+            code,
+            status,
+            message,
+            details: Some(json!({ "reason": format!("{error:?}") })),
+        }
+    }
 }
 
 pub fn classify_status(status: u16) -> ErrorCode {
@@ -141,6 +160,14 @@ pub fn classify_transport(error: &ureq::Error) -> (ErrorCode, String) {
         ureq::Error::Io(io) if io.kind() == std::io::ErrorKind::ConnectionRefused => (
             ErrorCode::NetworkError,
             "Connection refused. Is the server reachable?".to_owned(),
+        ),
+        // Defense in depth: a status that leaked through as an error is still a
+        // status, and it must classify by the §6.2 table, never as a network error.
+        ureq::Error::StatusCode(status) => (
+            classify_status(*status),
+            status_message(*status)
+                .map(str::to_owned)
+                .unwrap_or_else(|| format!("API error {status}")),
         ),
         other => (ErrorCode::NetworkError, format!("Request failed: {other}")),
     }
@@ -245,6 +272,47 @@ mod tests {
 
         assert_eq!(code, ErrorCode::NetworkError);
         assert_eq!(message, "Request failed: too many redirects");
+    }
+
+    #[test]
+    fn classify_transport_a_leaked_status_is_never_a_network_error() {
+        let (code, message) = classify_transport(&ureq::Error::StatusCode(404));
+        assert_eq!(code, ErrorCode::NotFound);
+        assert_eq!(
+            message,
+            "Resource not found. Check the project/repo/build ID and your permissions."
+        );
+
+        let (code, message) = classify_transport(&ureq::Error::StatusCode(503));
+        assert_eq!(code, ErrorCode::ApiError);
+        assert_eq!(message, "Azure DevOps server error. Retry later.");
+
+        let (code, message) = classify_transport(&ureq::Error::StatusCode(418));
+        assert_eq!(code, ErrorCode::ApiError);
+        assert_eq!(message, "API error 418");
+    }
+
+    #[test]
+    fn from_transport_carries_the_reason() {
+        let refused = ureq::Error::Io(io::Error::new(io::ErrorKind::ConnectionRefused, "refused"));
+        let error = AdoError::from_transport(&refused);
+
+        assert_eq!(error.code, ErrorCode::NetworkError);
+        assert_eq!(error.status, None);
+        assert_eq!(
+            error.message,
+            "Connection refused. Is the server reachable?"
+        );
+        assert!(
+            error.details.expect("the reason")["reason"]
+                .as_str()
+                .expect("a string reason")
+                .contains("refused")
+        );
+
+        let leaked = AdoError::from_transport(&ureq::Error::StatusCode(404));
+        assert_eq!(leaked.code, ErrorCode::NotFound);
+        assert_eq!(leaked.status, Some(404));
     }
 
     #[test]

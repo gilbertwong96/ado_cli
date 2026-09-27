@@ -1,0 +1,9 @@
+{
+  "$id": "1",
+  "innerException": null,
+  "message": "TF400813: The project with id 'missing' does not exist or you do not have permission to access it.",
+  "typeName": "Microsoft.TeamFoundation.Framework.Server.ProjectDoesNotExistException, Microsoft.TeamFoundation.Framework.Server",
+  "typeKey": "ProjectDoesNotExistException",
+  "errorCode": 0,
+  "eventId": 3000
+}

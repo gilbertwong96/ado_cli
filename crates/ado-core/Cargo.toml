@@ -12,4 +12,7 @@ keyring = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 toml = { workspace = true }
-ureq = { workspace = true }
+ureq = { workspace = true, features = ["rustls"] }
+
+[dev-dependencies]
+ado-testkit = { path = "../ado-testkit" }
