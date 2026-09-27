@@ -7,8 +7,9 @@
 #   scripts/npm-publish.sh 0.1.0 --dry-run
 #
 # What it does:
-#   1. Downloads the 5 platform binaries from GitHub Releases (tagged v<version>)
-#      and copies them into npm/@gilbertwong1996-ado-<platform>-<arch>/bin/.
+#   1. Downloads the 5 platform archives from GitHub Releases (tagged v<version>),
+#      unpacks each one and copies the binary into
+#      npm/@gilbertwong1996-ado-<platform>-<arch>/bin/.
 #   2. Updates the version field in all 6 package.json files to <version>.
 #   3. Publishes the 5 platform packages first, then the main
 #      @gilbertwong1996/ado.
@@ -17,6 +18,8 @@
 #   - gh (GitHub CLI, authenticated)
 #   - npm (authenticated, with publish rights on @gilbertwong1996/*)
 #   - jq (for JSON manipulation)
+#   - tar (system tar; bsdtar on macOS and Windows reads the .tar.gz and .zip
+#     artifacts the release ships)
 #
 # Scope note:
 #   - npm: @gilbertwong1996 (the maintainer's npm username)
@@ -69,35 +72,40 @@ echo "    all $(ls "$NPM_DIR"/@gilbertwong1996-ado*/package.json | wc -l | tr -d
 if [[ -n "$SKIP_DOWNLOAD" ]]; then
     echo "==> Skipping download (--skip-download); using binaries already in place"
 else
-    echo "==> Downloading ado v${VERSION} binaries from GitHub Release..."
+    echo "==> Downloading ado v${VERSION} archives from GitHub Release..."
     gh release download "v${VERSION}" \
         --repo gilbertwong96/ado_cli \
-        --pattern "ado-${VERSION}-*" \
+        --pattern "ado-*.tar.gz" \
+        --pattern "ado-*.zip" \
         --dir "$TMP_DIR"
 fi
 
-# ── step 2: copy binaries into platform packages ─────────────────────
+# ── step 2: unpack the archives into the platform packages ──────────
 # Default behavior: overwrite any existing binary in the target dir
 # (so a previous run's binary doesn't linger). With --skip-download,
 # the binary is already in place from a previous run — just verify it.
+#
+# Each entry is platform-arch:release-archive:directory-inside-the-archive.
+# The archive names are the cargo-dist target archives (five targets, one
+# archive each); the directory is always the archive name minus its suffix.
 PLATFORM_MAP=(
-    "darwin-arm64:ado-${VERSION}-macos-aarch64"
-    "darwin-x64:ado-${VERSION}-macos-x86_64"
-    "linux-arm64:ado-${VERSION}-linux-aarch64"
-    "linux-x64:ado-${VERSION}-linux-x86_64"
-    "win32-x64:ado-${VERSION}-windows-x86_64.exe"
+    "darwin-arm64:ado-aarch64-apple-darwin.tar.gz:ado-aarch64-apple-darwin"
+    "darwin-x64:ado-x86_64-apple-darwin.tar.gz:ado-x86_64-apple-darwin"
+    "linux-arm64:ado-aarch64-unknown-linux-musl.tar.gz:ado-aarch64-unknown-linux-musl"
+    "linux-x64:ado-x86_64-unknown-linux-musl.tar.gz:ado-x86_64-unknown-linux-musl"
+    "win32-x64:ado-x86_64-pc-windows-msvc.zip:ado-x86_64-pc-windows-msvc"
 )
 
 for entry in "${PLATFORM_MAP[@]}"; do
-    platform_arch="${entry%%:*}"
-    artifact_name="${entry##*:}"
+    IFS=':' read -r platform_arch archive target <<< "$entry"
 
     pkg_dir="$NPM_DIR/@gilbertwong1996-ado-${platform_arch}"
     if [[ "$platform_arch" == "win32-x64" ]]; then
-        dest="$pkg_dir/bin/ado.exe"
+        binary="ado.exe"
     else
-        dest="$pkg_dir/bin/ado"
+        binary="ado"
     fi
+    dest="$pkg_dir/bin/$binary"
 
     mkdir -p "$pkg_dir/bin"
 
@@ -108,21 +116,24 @@ for entry in "${PLATFORM_MAP[@]}"; do
             echo "ERROR: $dest not found" >&2
             echo "       --skip-download was set but the binary is not in place." >&2
             echo "       Run without --skip-download first, or run" >&2
-            echo "       'gh release download v${VERSION} --pattern \"ado-${VERSION}-*\"' manually." >&2
+            echo "       'gh release download v${VERSION} --pattern \"ado-*\"' manually." >&2
             exit 1
         fi
-        echo "    kept $artifact_name → $dest (--skip-download)"
+        echo "    kept $archive → $dest (--skip-download)"
     else
-        # Copy from the downloaded release artifact to the package bin.
-        src="$TMP_DIR/${artifact_name}"
+        # Unpack the release archive, then copy the binary out of it.
+        src="$TMP_DIR/${archive}"
         if [[ ! -f "$src" ]]; then
             echo "ERROR: $src not found" >&2
-            echo "       Make sure the release v${VERSION} has all 5 binaries." >&2
+            echo "       Make sure the release v${VERSION} has all 5 archives." >&2
             exit 1
         fi
-        cp "$src" "$dest"
+        unpack="$TMP_DIR/unpacked-${platform_arch}"
+        mkdir -p "$unpack"
+        tar -xf "$src" -C "$unpack"
+        cp "$unpack/${target}/${binary}" "$dest"
         chmod +x "$dest"
-        echo "    copied $artifact_name → $dest"
+        echo "    unpacked $archive → $dest"
     fi
 done
 
