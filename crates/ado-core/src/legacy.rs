@@ -82,7 +82,8 @@ fn import_with(
         },
     );
 
-    save_at(target, config)?;
+    // The credential goes in first: if it fails, no marker is left behind and the
+    // next run imports again. Storing twice is harmless, dropping the token is not.
     store.set(
         &legacy.org,
         &Stored {
@@ -90,6 +91,7 @@ fn import_with(
             token: legacy.token,
         },
     )?;
+    save_at(target, config)?;
 
     Ok(true)
 }
@@ -255,6 +257,26 @@ mod tests {
         assert!(
             store.calls().is_empty(),
             "a skipped import must not touch the store"
+        );
+    }
+
+    #[test]
+    fn legacy_import_stores_the_credential_before_the_config_marker() {
+        let dir = TempDir::new("legacy-failing-store");
+        let legacy = legacy_file(&dir, r#"{"org":"myorg","method":"pat","pat":"legacy-pat"}"#);
+        let config_file = dir.path().join("ado").join("config.toml");
+
+        let imported = import_with(
+            &mut Config::default(),
+            &InMemoryStore::unavailable(),
+            Some(&config_file),
+            Some(&legacy),
+        );
+
+        assert!(imported.is_err(), "an unusable store must fail the import");
+        assert!(
+            !config_file.exists(),
+            "a failed import must not leave the config marker, or the token is dropped forever"
         );
     }
 
