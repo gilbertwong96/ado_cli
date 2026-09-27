@@ -79,7 +79,7 @@ impl AdoError {
         AdoError {
             code: ErrorCode::AuthRequired,
             status: None,
-            message: "Not authenticated. Run 'ado_cli login --method pat --org ORG --pat TOKEN' or set ADO_ORG+ADO_PAT.".to_owned(),
+            message: "Not authenticated. Run 'ado login --method pat --org ORG --pat TOKEN' or set ADO_ORG+ADO_PAT.".to_owned(),
             details: Some(json!({
                 "hint": "Set ADO_ORG and ADO_PAT env vars, or run `ado login --method pat --org ORG --pat TOKEN`",
                 "scopes": "PAT must have: vso.work, vso.code, vso.project, vso.build, vso.release",
@@ -374,7 +374,16 @@ mod tests {
         assert_eq!(error.status, None);
         assert_eq!(
             error.message,
-            "Not authenticated. Run 'ado_cli login --method pat --org ORG --pat TOKEN' or set ADO_ORG+ADO_PAT."
+            "Not authenticated. Run 'ado login --method pat --org ORG --pat TOKEN' or set ADO_ORG+ADO_PAT."
+        );
+        assert!(
+            error
+                .details
+                .as_ref()
+                .expect("the hint")
+                .to_string()
+                .contains("ado login"),
+            "message and hint disagree on the login command: {error:?}"
         );
         assert_eq!(
             error.details,
