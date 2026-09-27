@@ -11,4 +11,5 @@ clap = { workspace = true }
 serde_json = { workspace = true }
 
 [dev-dependencies]
+ado-testkit = { path = "../ado-testkit" }
 assert_cmd = { workspace = true }

@@ -6,6 +6,7 @@ use ado::args::GlobalOpts;
 use ado::argv;
 use ado::cli;
 use ado::commands;
+use ado::context::Context;
 use ado::output::{Report, WriteFailure, render, render_error, write_bytes};
 use ado_core::error::AdoError;
 
@@ -35,16 +36,18 @@ fn main() -> ExitCode {
     };
 
     let globals = GlobalOpts::from_matches(&matches);
+    let json = globals.json;
 
     let result = match matches.subcommand() {
-        Some(("version", _)) => commands::version::run(globals.json),
+        Some(("version", _)) => commands::version::run(json),
+        Some(("whoami", _)) => commands::whoami::run(&Context::load(globals)),
         Some((name, _)) => Err(AdoError::validation(format!("unknown command '{name}'"))),
         None => Ok(Report::Text(cli::command().render_help().to_string())),
     };
 
     match result {
-        Ok(report) => emit(&report, globals.json),
-        Err(error) => emit_error(&error, globals.json),
+        Ok(report) => emit(&report, json),
+        Err(error) => emit_error(&error, json),
     }
 }
 

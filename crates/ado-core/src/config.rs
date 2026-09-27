@@ -21,6 +21,17 @@ pub enum AuthMethod {
     Browser,
 }
 
+impl AuthMethod {
+    /// The wire spelling serde already emits: `"pat"`, `"device"`, `"browser"`.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            AuthMethod::Pat => "pat",
+            AuthMethod::Device => "device",
+            AuthMethod::Browser => "browser",
+        }
+    }
+}
+
 /// The non-secret settings for one organization.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OrgEntry {
@@ -111,6 +122,17 @@ mod tests {
                     auth: AuthMethod::Pat,
                 },
             )]),
+        }
+    }
+
+    #[test]
+    fn auth_method_as_str_matches_the_serde_wire_form() {
+        for method in [AuthMethod::Pat, AuthMethod::Device, AuthMethod::Browser] {
+            assert_eq!(
+                serde_json::to_value(method).expect("serialise"),
+                serde_json::json!(method.as_str()),
+                "{method:?}"
+            );
         }
     }
 

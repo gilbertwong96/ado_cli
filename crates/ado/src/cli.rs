@@ -45,4 +45,5 @@ pub fn command() -> Command {
                 .help("Output raw JSON"),
         )
         .subcommand(Command::new("version").about("Print the ado version and exit."))
+        .subcommand(Command::new("whoami").about("Show current authentication status."))
 }
