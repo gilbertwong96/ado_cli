@@ -1,0 +1,653 @@
+//! The standalone shape of the mock: a scenario file of routes plus a request log
+//! a harness reads between the two CLI runs it compares. [`MockServer`] is the
+//! in-process shape the integration suites drive; this is the one
+//! `scripts/oracle-diff.sh --mock` starts as its own process.
+//!
+//! Matching is the same rule as [`MockServer::expect`](crate::MockServer::expect):
+//! method (case-insensitive) and exact path, with the query ignored — so the
+//! frozen CLI's `state`/`top`/`skip` and this build's `stateFilter`/`$top`/`$skip`
+//! (D19) both reach the same route, and the difference is read from the request
+//! log instead. Routes repeat: a case may hit the same path as often as it likes.
+//!
+//! [`MockServer`]: crate::MockServer
+
+use std::fs::{File, OpenOptions};
+use std::io::Write;
+use std::net::TcpListener;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
+use std::thread;
+
+use axum::Router;
+use axum::body::Body;
+use axum::extract::{Request, State};
+use axum::http::StatusCode;
+use axum::response::Response;
+use axum::routing::any;
+use serde_json::Value;
+use tokio::sync::oneshot;
+
+use crate::{MockResponse, RecordedRequest, headers_of, lock, respond};
+
+/// One route a scenario file declares.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Route {
+    pub method: String,
+    pub path: String,
+    pub response: MockResponse,
+}
+
+impl Route {
+    fn matches(&self, method: &str, path: &str) -> bool {
+        self.method.eq_ignore_ascii_case(method) && self.path == path
+    }
+}
+
+/// The route table a standalone mock serves, parsed from a scenario file.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Scenario {
+    routes: Vec<Route>,
+}
+
+/// The origin placeholder a scenario can write wherever the CLI is expected to
+/// name the mock's own URL (an absolute artifact `downloadUrl`, say): it expands
+/// to the running server's origin once the port is known.
+pub const BASE_PLACEHOLDER: &str = "{base}";
+
+impl Scenario {
+    /// Parses a scenario: `{"responses": [{"method": …, "path": …}]}` where a
+    /// response carries `status` (default 200) and either `fixture` (a file under
+    /// `crates/ado-testkit/fixtures/`) or `json` (an inline body), plus optional
+    /// `set` edits — `[{"pointer": "/value/0/resource/downloadUrl", "value": …}]` —
+    /// applied to the body before it is served.
+    pub fn from_json(text: &str) -> Result<Scenario, String> {
+        let document: Value = serde_json::from_str(text)
+            .map_err(|error| format!("the scenario is not JSON: {error}"))?;
+
+        let responses = document
+            .get("responses")
+            .and_then(Value::as_array)
+            .ok_or_else(|| "the scenario has no `responses` array".to_owned())?;
+
+        let routes = responses
+            .iter()
+            .map(parse_route)
+            .collect::<Result<Vec<Route>, String>>()?;
+
+        if routes.is_empty() {
+            return Err("the scenario has no routes".to_owned());
+        }
+
+        Ok(Scenario { routes })
+    }
+
+    pub fn load(path: &Path) -> Result<Scenario, String> {
+        let text = std::fs::read_to_string(path)
+            .map_err(|error| format!("cannot read {}: {error}", path.display()))?;
+
+        Scenario::from_json(&text).map_err(|error| format!("{}: {error}", path.display()))
+    }
+
+    pub fn routes(&self) -> &[Route] {
+        &self.routes
+    }
+
+    /// The same scenario with every [`BASE_PLACEHOLDER`] in a path or a body
+    /// replaced by `base`.
+    pub fn expand(&self, base: &str) -> Scenario {
+        Scenario {
+            routes: self
+                .routes
+                .iter()
+                .map(|route| Route {
+                    method: route.method.clone(),
+                    path: route.path.replace(BASE_PLACEHOLDER, base),
+                    response: MockResponse {
+                        status: route.response.status,
+                        body: substitute_body(&route.response.body, base),
+                        headers: route.response.headers.clone(),
+                    },
+                })
+                .collect(),
+        }
+    }
+}
+
+/// Replaces the placeholder in a body's strings, and only then reparses it: a body
+/// without one keeps its captured bytes verbatim.
+fn substitute_body(body: &[u8], base: &str) -> Vec<u8> {
+    if !body
+        .windows(BASE_PLACEHOLDER.len())
+        .any(|window| window == BASE_PLACEHOLDER.as_bytes())
+    {
+        return body.to_vec();
+    }
+
+    match serde_json::from_slice::<Value>(body) {
+        Ok(mut document) => {
+            substitute_strings(&mut document, base);
+            serde_json::to_vec(&document).unwrap_or_else(|_| body.to_vec())
+        }
+        Err(_) => body.to_vec(),
+    }
+}
+
+fn substitute_strings(value: &mut Value, base: &str) {
+    match value {
+        Value::String(text) => *text = text.replace(BASE_PLACEHOLDER, base),
+        Value::Array(items) => {
+            for item in items {
+                substitute_strings(item, base);
+            }
+        }
+        Value::Object(entries) => {
+            for entry in entries.values_mut() {
+                substitute_strings(entry, base);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn parse_route(value: &Value) -> Result<Route, String> {
+    let method = value
+        .get("method")
+        .and_then(Value::as_str)
+        .ok_or_else(|| format!("a route has no `method`: {value}"))?
+        .to_owned();
+    let path = value
+        .get("path")
+        .and_then(Value::as_str)
+        .ok_or_else(|| format!("the {method} route has no `path`"))?
+        .to_owned();
+    let status = value.get("status").and_then(Value::as_u64).unwrap_or(200) as u16;
+
+    let (body, content_type) = match (value.get("fixture"), value.get("json")) {
+        (Some(fixture), None) => {
+            let name = fixture
+                .as_str()
+                .ok_or_else(|| format!("the {method} {path} route's `fixture` is not a string"))?;
+
+            fixture_body(name)?
+        }
+        (None, Some(inline)) => (
+            serde_json::to_vec(inline)
+                .map_err(|error| format!("cannot encode the body: {error}"))?,
+            "application/json",
+        ),
+        (None, None) => {
+            return Err(format!(
+                "the {method} {path} route has neither `fixture` nor `json`"
+            ));
+        }
+        (Some(_), Some(_)) => {
+            return Err(format!(
+                "the {method} {path} route has both `fixture` and `json`"
+            ));
+        }
+    };
+
+    let body = match value.get("set") {
+        Some(edits) => {
+            apply_edits(&body, edits).map_err(|error| format!("{method} {path}: {error}"))?
+        }
+        None => body,
+    };
+
+    Ok(Route {
+        method,
+        path,
+        response: MockResponse {
+            status,
+            body,
+            headers: vec![("content-type".to_owned(), content_type.to_owned())],
+        },
+    })
+}
+
+/// A fixture served with the content type its bytes deserve: a JSON fixture as JSON,
+/// anything else (the artifact zip) as opaque bytes.
+fn fixture_body(name: &str) -> Result<(Vec<u8>, &'static str), String> {
+    let path = fixture_path(name);
+    let body = std::fs::read(&path)
+        .map_err(|error| format!("cannot read fixture {}: {error}", path.display()))?;
+
+    let content_type = if serde_json::from_slice::<Value>(&body).is_ok() {
+        "application/json"
+    } else {
+        "application/octet-stream"
+    };
+
+    Ok((body, content_type))
+}
+
+fn fixture_path(name: &str) -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("fixtures")
+        .join(name)
+}
+
+fn apply_edits(body: &[u8], edits: &Value) -> Result<Vec<u8>, String> {
+    let mut document: Value = serde_json::from_slice(body)
+        .map_err(|error| format!("`set` needs a JSON body: {error}"))?;
+
+    for edit in edits
+        .as_array()
+        .ok_or_else(|| "`set` is not an array".to_owned())?
+    {
+        let pointer = edit
+            .get("pointer")
+            .and_then(Value::as_str)
+            .ok_or_else(|| format!("a `set` edit has no `pointer`: {edit}"))?;
+        let value = edit
+            .get("value")
+            .ok_or_else(|| format!("the {pointer} edit has no `value`"))?;
+
+        match document.pointer_mut(pointer) {
+            Some(slot) => *slot = value.clone(),
+            None => return Err(format!("the pointer {pointer} matches nothing in the body")),
+        }
+    }
+
+    serde_json::to_vec(&document).map_err(|error| format!("cannot encode the edited body: {error}"))
+}
+
+/// A scenario-driven mock server, alive until dropped.
+pub struct StandaloneMock {
+    base_url: String,
+    state: Arc<StandaloneState>,
+    shutdown: Option<oneshot::Sender<()>>,
+    thread: Option<thread::JoinHandle<()>>,
+}
+
+struct StandaloneState {
+    routes: Vec<Route>,
+    requests: Mutex<Vec<RecordedRequest>>,
+    log: Mutex<Option<File>>,
+}
+
+impl StandaloneMock {
+    /// Starts the mock on `port` (0 takes an ephemeral one). With `record`, every
+    /// request is appended to that file as one JSON object per line and flushed as
+    /// it arrives, so a harness can read the log the moment a CLI run exits — and
+    /// can split it per run by counting lines before and after.
+    pub fn start(scenario: Scenario, record: Option<&Path>, port: u16) -> StandaloneMock {
+        let listener = TcpListener::bind(("127.0.0.1", port)).expect("bind the mock port");
+        listener
+            .set_nonblocking(true)
+            .expect("a non-blocking listener");
+        let address = listener.local_addr().expect("the bound address");
+        let base_url = format!("http://{address}");
+
+        let log = record.map(|path| {
+            OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(path)
+                .unwrap_or_else(|error| {
+                    panic!("cannot open the request log {}: {error}", path.display())
+                })
+        });
+
+        let state = Arc::new(StandaloneState {
+            routes: scenario.expand(&base_url).routes,
+            requests: Mutex::new(Vec::new()),
+            log: Mutex::new(log),
+        });
+        let router = Router::new()
+            .fallback(any(handle))
+            .with_state(state.clone());
+        let (shutdown, shutdown_rx) = oneshot::channel();
+
+        let thread = thread::spawn(move || {
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("the mock server runtime");
+            runtime.block_on(async move {
+                let listener =
+                    tokio::net::TcpListener::from_std(listener).expect("a tokio listener");
+                tokio::spawn(async move {
+                    let _ = axum::serve(listener, router).await;
+                });
+                let _ = shutdown_rx.await;
+            });
+        });
+
+        StandaloneMock {
+            base_url,
+            state,
+            shutdown: Some(shutdown),
+            thread: Some(thread),
+        }
+    }
+
+    /// The server's origin, e.g. `http://127.0.0.1:52341` — point `ADO_SERVER` at it.
+    pub fn base_url(&self) -> &str {
+        &self.base_url
+    }
+
+    /// Everything the server received so far, in arrival order.
+    pub fn received(&self) -> Vec<RecordedRequest> {
+        lock(&self.state.requests).clone()
+    }
+}
+
+impl StandaloneState {
+    fn record(&self, request: &RecordedRequest, matched: bool) {
+        lock(&self.requests).push(request.clone());
+
+        let mut log = lock(&self.log);
+        if let Some(file) = log.as_mut() {
+            let line = serde_json::json!({
+                "method": request.method,
+                "path": request.path,
+                "query": request.query,
+                "body": request.body,
+                "matched": matched,
+            });
+
+            writeln!(file, "{line}")
+                .and_then(|()| file.flush())
+                .unwrap_or_else(|error| panic!("cannot write the request log: {error}"));
+        }
+    }
+}
+
+impl Drop for StandaloneMock {
+    fn drop(&mut self) {
+        if let Some(shutdown) = self.shutdown.take() {
+            let _ = shutdown.send(());
+        }
+        if let Some(thread) = self.thread.take() {
+            let _ = thread.join();
+        }
+    }
+}
+
+async fn handle(State(state): State<Arc<StandaloneState>>, request: Request) -> Response {
+    let (parts, body) = request.into_parts();
+    let bytes = axum::body::to_bytes(body, usize::MAX)
+        .await
+        .expect("read the request body");
+
+    let recorded = RecordedRequest {
+        method: parts.method.as_str().to_owned(),
+        path: parts.uri.path().to_owned(),
+        query: parts.uri.query().unwrap_or_default().to_owned(),
+        headers: headers_of(&parts.headers),
+        body: (!bytes.is_empty()).then(|| String::from_utf8_lossy(&bytes).into_owned()),
+    };
+
+    let matched = state
+        .routes
+        .iter()
+        .find(|route| route.matches(&recorded.method, &recorded.path))
+        .map(|route| route.response.clone());
+
+    state.record(&recorded, matched.is_some());
+
+    match matched {
+        Some(response) => respond(response),
+        None => Response::builder()
+            .status(StatusCode::NOT_FOUND)
+            .header("content-type", "application/json")
+            .body(Body::from(
+                serde_json::json!({
+                    "message": format!("no route for {} {}", recorded.method, recorded.path),
+                })
+                .to_string(),
+            ))
+            .expect("a valid response"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::{Read, Write};
+    use std::net::TcpStream;
+
+    use serde_json::json;
+
+    use super::*;
+
+    static COUNTER: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+    /// A raw HTTP/1.1 GET, so the tests exercise the mock exactly as a client does.
+    fn http_get(mock: &StandaloneMock, target: &str) -> (u16, String) {
+        let address = mock
+            .base_url()
+            .strip_prefix("http://")
+            .expect("an http origin");
+        let mut stream = TcpStream::connect(address).expect("connect to the mock");
+        write!(
+            stream,
+            "GET {target} HTTP/1.1\r\nhost: localhost\r\nconnection: close\r\n\r\n"
+        )
+        .expect("write the request");
+        let mut response = String::new();
+        stream
+            .read_to_string(&mut response)
+            .expect("read the response");
+
+        let (head, body) = response
+            .split_once("\r\n\r\n")
+            .expect("a response head and body");
+        let status = head
+            .lines()
+            .next()
+            .and_then(|line| line.split_whitespace().nth(1))
+            .expect("a status line")
+            .parse()
+            .expect("a numeric status");
+
+        (status, body.to_owned())
+    }
+
+    fn scenario(text: &str) -> Scenario {
+        Scenario::from_json(text).expect("a valid scenario")
+    }
+
+    fn scratch(name: &str) -> PathBuf {
+        let unique = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        std::env::temp_dir().join(format!(
+            "ado-standalone-{name}-{}-{unique}",
+            std::process::id()
+        ))
+    }
+
+    fn request_log(path: &Path) -> Vec<Value> {
+        std::fs::read_to_string(path)
+            .expect("the request log")
+            .lines()
+            .map(|line| serde_json::from_str(line).expect("a JSON line"))
+            .collect()
+    }
+
+    #[test]
+    fn a_scenario_loads_a_fixture_and_an_inline_body() {
+        let parsed = scenario(
+            r#"{"responses": [
+                {"method": "GET", "path": "/a", "fixture": "projects_list.json"},
+                {"method": "POST", "path": "/b", "status": 404, "json": {"message": "gone"}}
+            ]}"#,
+        );
+
+        assert_eq!(parsed.routes().len(), 2);
+        assert_eq!(parsed.routes()[0].method, "GET");
+        assert_eq!(parsed.routes()[0].path, "/a");
+        assert_eq!(parsed.routes()[0].response.status, 200);
+        assert_eq!(
+            parsed.routes()[0].response.headers,
+            vec![("content-type".to_owned(), "application/json".to_owned())]
+        );
+        assert_eq!(parsed.routes()[1].response.status, 404);
+        assert_eq!(parsed.routes()[1].response.body, br#"{"message":"gone"}"#);
+    }
+
+    #[test]
+    fn a_scenario_rejects_a_response_with_no_body() {
+        let error = Scenario::from_json(r#"{"responses": [{"method": "GET", "path": "/a"}]}"#)
+            .expect_err("a bodyless route is invalid");
+
+        assert!(
+            error.contains("neither `fixture` nor `json`"),
+            "error: {error}"
+        );
+    }
+
+    #[test]
+    fn a_scenario_reports_a_missing_responses_array() {
+        let error = Scenario::from_json("{}").expect_err("no responses");
+
+        assert!(error.contains("no `responses` array"), "error: {error}");
+    }
+
+    #[test]
+    fn set_edits_replace_a_nested_value() {
+        let parsed = scenario(
+            r#"{"responses": [{
+                "method": "GET",
+                "path": "/artifacts",
+                "fixture": "artifacts_list.json",
+                "set": [{
+                    "pointer": "/value/0/resource/downloadUrl",
+                    "value": "{base}/blob/drop.zip"
+                }]
+            }]}"#,
+        );
+
+        let body: Value = serde_json::from_slice(&parsed.routes()[0].response.body).expect("JSON");
+        assert_eq!(
+            body["value"][0]["resource"]["downloadUrl"],
+            json!("{base}/blob/drop.zip")
+        );
+        assert_eq!(
+            body["value"][1]["name"],
+            json!("TestResults"),
+            "the rest is untouched"
+        );
+    }
+
+    #[test]
+    fn set_reports_a_pointer_that_matches_nothing() {
+        let error = Scenario::from_json(
+            r#"{"responses": [{"method": "GET", "path": "/a", "json": {}, "set": [
+                {"pointer": "/missing", "value": 1}
+            ]}]}"#,
+        )
+        .expect_err("a bad pointer is invalid");
+
+        assert!(error.contains("matches nothing"), "error: {error}");
+    }
+
+    #[test]
+    fn expand_rewrites_the_placeholder_in_paths_and_bodies() {
+        let parsed = scenario(
+            r#"{"responses": [{
+                "method": "GET",
+                "path": "/{base}/blob",
+                "json": {"url": "{base}/blob"}
+            }]}"#,
+        )
+        .expand("http://127.0.0.1:9999");
+
+        assert_eq!(parsed.routes()[0].path, "/http://127.0.0.1:9999/blob");
+        assert_eq!(
+            parsed.routes()[0].response.body,
+            br#"{"url":"http://127.0.0.1:9999/blob"}"#
+        );
+    }
+
+    #[test]
+    fn the_mock_serves_a_route_and_records_the_request() {
+        let mock = StandaloneMock::start(
+            scenario(r#"{"responses": [{"method": "GET", "path": "/x", "json": {"ok": true}}]}"#),
+            None,
+            0,
+        );
+
+        let (status, body) = http_get(&mock, "/x?$top=10");
+
+        assert_eq!(status, 200);
+        assert_eq!(body, r#"{"ok":true}"#);
+        assert_eq!(mock.received().len(), 1);
+        assert_eq!(mock.received()[0].path, "/x");
+        assert_eq!(mock.received()[0].query, "$top=10");
+        assert_eq!(mock.received()[0].method, "GET");
+    }
+
+    #[test]
+    fn the_mock_answers_an_unrouted_request_with_404() {
+        let mock = StandaloneMock::start(
+            scenario(r#"{"responses": [{"method": "GET", "path": "/x", "json": {}}]}"#),
+            None,
+            0,
+        );
+
+        let (status, body) = http_get(&mock, "/nope");
+
+        assert_eq!(status, 404);
+        assert!(body.contains("no route for GET /nope"), "body: {body}");
+    }
+
+    #[test]
+    fn the_mock_answers_the_same_route_twice() {
+        let mock = StandaloneMock::start(
+            scenario(r#"{"responses": [{"method": "GET", "path": "/x", "json": {"ok": true}}]}"#),
+            None,
+            0,
+        );
+
+        assert_eq!(http_get(&mock, "/x").0, 200);
+        assert_eq!(http_get(&mock, "/x").0, 200);
+        assert_eq!(mock.received().len(), 2);
+    }
+
+    #[test]
+    fn the_mock_writes_one_json_line_per_request_flushed() {
+        let path = scratch("log");
+        let mock = StandaloneMock::start(
+            scenario(r#"{"responses": [{"method": "GET", "path": "/x", "json": {"ok": true}}]}"#),
+            Some(&path),
+            0,
+        );
+
+        let _ = http_get(&mock, "/x?a=b");
+        let _ = http_get(&mock, "/nope");
+
+        let lines = request_log(&path);
+        assert_eq!(lines.len(), 2);
+        assert_eq!(
+            lines[0],
+            json!({"method": "GET", "path": "/x", "query": "a=b", "body": null, "matched": true})
+        );
+        assert_eq!(
+            lines[1],
+            json!({"method": "GET", "path": "/nope", "query": "", "body": null, "matched": false})
+        );
+
+        drop(mock);
+        std::fs::remove_file(&path).expect("remove the log");
+    }
+
+    #[test]
+    fn the_mock_binds_the_port_it_is_given() {
+        let mock = StandaloneMock::start(
+            scenario(r#"{"responses": [{"method": "GET", "path": "/x", "json": {}}]}"#),
+            None,
+            0,
+        );
+
+        let port: u16 = mock
+            .base_url()
+            .rsplit(':')
+            .next()
+            .expect("a port")
+            .parse()
+            .expect("a numeric port");
+
+        assert_ne!(port, 0);
+        assert_eq!(mock.base_url(), format!("http://127.0.0.1:{port}"));
+    }
+}

@@ -1,0 +1,52 @@
+{
+  "note": [
+    "Routes for scripts/oracle-diff.sh --mock: the Wave 1 command surface, one",
+    "response per method+path, served to both binaries from one instance.",
+    "Matching ignores the query, so the frozen CLI's state/top/skip and this",
+    "build's stateFilter/$top/$skip (D19) reach the same route and the difference",
+    "is read from the request log instead. `{base}` expands to the mock's own",
+    "origin, for the absolute artifact downloadUrl the CLI is asked to fetch (D25)."
+  ],
+  "responses": [
+    {"method": "GET", "path": "/ado-harness/_apis/projects", "fixture": "projects_list.json"},
+    {"method": "GET", "path": "/ado-harness/_apis/projects/Alpha", "fixture": "projects_show.json"},
+
+    {"method": "GET", "path": "/ado-harness/Alpha/_apis/git/repositories", "fixture": "repos_list.json"},
+    {"method": "GET", "path": "/ado-harness/Broken/_apis/git/repositories", "status": 500, "json": {"message": "TF400813: The user is not authorized."}},
+    {"method": "GET", "path": "/ado-harness/Alpha/_apis/git/repositories/Alpha.Core", "fixture": "repo_show.json"},
+    {"method": "GET", "path": "/ado-harness/Alpha/_apis/git/repositories/Alpha.Core/refs", "fixture": "branches.json"},
+
+    {"method": "POST", "path": "/ado-harness/Alpha/_apis/wit/wiql", "json": {"queryType": "flat", "queryResultType": "workItem", "asOf": "2026-09-20T12:00:00.000Z", "workItems": [{"id": 42, "url": "https://dev.azure.com/myorg/_apis/wit/workItems/42"}, {"id": 43, "url": "https://dev.azure.com/myorg/_apis/wit/workItems/43"}]}},
+    {"method": "POST", "path": "/ado-harness/Empty/_apis/wit/wiql", "json": {"queryType": "flat", "queryResultType": "workItem", "asOf": "2026-09-20T12:00:00.000Z", "workItems": []}},
+    {"method": "GET", "path": "/ado-harness/_apis/wit/workitems", "fixture": "workitems_list.json"},
+    {"method": "GET", "path": "/ado-harness/_apis/wit/workitems/42", "fixture": "workitems_show.json"},
+
+    {"method": "GET", "path": "/ado-harness/Alpha/_apis/git/repositories/Alpha.Core/pullrequests", "fixture": "prs_list.json"},
+    {"method": "GET", "path": "/ado-harness/Alpha/_apis/git/repositories/Alpha.Core/pullrequests/137", "fixture": "prs_show.json"},
+    {"method": "GET", "path": "/ado-harness/Alpha/_apis/git/repositories/Alpha.Core/pullrequests/999", "status": 404, "fixture": "error_404.json"},
+
+    {"method": "GET", "path": "/ado-harness/Alpha/_apis/pipelines", "fixture": "pipelines_list.json"},
+    {"method": "GET", "path": "/ado-harness/Alpha/_apis/pipelines/12", "fixture": "pipelines_show.json"},
+    {"method": "GET", "path": "/ado-harness/Alpha/_apis/pipelines/999", "status": 404, "fixture": "error_404.json"},
+
+    {"method": "GET", "path": "/ado-harness/Alpha/_apis/build/builds", "fixture": "builds_list.json"},
+    {"method": "GET", "path": "/ado-harness/Alpha/_apis/build/builds/128", "fixture": "builds_show.json"},
+    {"method": "GET", "path": "/ado-harness/Alpha/_apis/build/builds/128/tags", "fixture": "builds_tags.json"},
+    {"method": "GET", "path": "/ado-harness/Alpha/_apis/build/definitions", "fixture": "builds_definitions.json"},
+
+    {
+      "method": "GET",
+      "path": "/ado-harness/Alpha/_apis/pipelines/7/runs/99/artifacts",
+      "fixture": "artifacts_list.json",
+      "set": [{"pointer": "/value/0/resource/downloadUrl", "value": "{base}/blob/drop.zip"}]
+    },
+    {
+      "method": "GET",
+      "path": "/ado-harness/Alpha/_apis/pipelines/8/runs/99/artifacts",
+      "json": {"count": 1, "value": [{"id": 1, "name": "drop", "resource": {"data": "#/8/99/drop", "downloadUrl": "blob/drop2.zip", "type": "Container", "url": "/ado-harness/Alpha/_apis/resources/Containers/2222222?itemPath=drop"}, "source": null}]}
+    },
+    {"method": "GET", "path": "/ado-harness/blob/drop2.zip", "fixture": "artifacts_download.zip"},
+    {"method": "GET", "path": "/blob/drop.zip", "fixture": "artifacts_download.zip"},
+    {"method": "GET", "path": "/ado-harness/{base}/blob/drop.zip", "fixture": "artifacts_download.zip"}
+  ]
+}

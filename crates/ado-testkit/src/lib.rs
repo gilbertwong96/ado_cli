@@ -25,6 +25,10 @@ use axum::routing::any;
 use serde_json::Value;
 use tokio::sync::oneshot;
 
+mod standalone;
+
+pub use standalone::{Route, Scenario, StandaloneMock};
+
 static COUNTER: AtomicUsize = AtomicUsize::new(0);
 
 /// One response the mock is configured to send.

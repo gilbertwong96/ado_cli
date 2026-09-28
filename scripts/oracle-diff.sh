@@ -3,6 +3,10 @@
 # release binary, for every command Wave 0 ported: `version`, `whoami`, `schema`
 # and `completion`.
 #
+# `--mock` is the Wave 1 mode: every Wave 1 command, both binaries, one instance of
+# the testkit's standalone mock with `ADO_SERVER` pointed at it. See its section
+# below.
+#
 # Both sides run with an isolated HOME and XDG_CONFIG_HOME and with ADO_ORG,
 # ADO_PAT and ADO_SERVER unset, so neither binary can read a developer's config
 # or environment. JSON is normalised with `jq -S` before it is compared, because
@@ -18,17 +22,30 @@
 #   DIFF           they differ for a reason nothing records
 #
 # Exit status: 0 when every difference is recorded, 1 when at least one is not,
-# 2 when the script cannot run (missing binary or jq).
+# 2 when the script cannot run (missing binary, mock or jq).
 #
-# Usage: scripts/oracle-diff.sh
+# Usage: scripts/oracle-diff.sh [--mock]
 #   ADO_ORACLE_ELIXIR=<path>   override the oracle   (default ./ado)
 #   ADO_ORACLE_RUST=<path>     override the candidate (default target/release/ado)
+#   ADO_ORACLE_MOCK=<path>     override the mock     (default target/debug/mock)
+#   ADO_ORACLE_SCENARIO=<path> override the mock's route table
+#                              (default scripts/oracle-mock-scenario.json)
 
 set -uo pipefail
 
 root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 elixir_bin=${ADO_ORACLE_ELIXIR:-$root/ado}
 rust_bin=${ADO_ORACLE_RUST:-$root/target/release/ado}
+
+mode=wave0
+case ${1:-} in
+    --mock) mode=mock ;;
+    "") ;;
+    *)
+        printf 'usage: %s [--mock]\n' "${BASH_SOURCE[0]}" >&2
+        exit 2
+        ;;
+esac
 
 for binary in "$elixir_bin" "$rust_bin"; do
     if [[ ! -x $binary ]]; then
@@ -46,7 +63,8 @@ fi
 scratch=${TMPDIR:-/tmp}
 scratch=${scratch%/}
 work=$(mktemp -d "$scratch/ado-oracle-diff.XXXXXX")
-trap 'rm -rf "$work"' EXIT
+mock_pid=
+trap 'stop_mock; rm -rf "$work"' EXIT
 
 mkdir -p "$work/home-elixir" "$work/home-rust"
 
@@ -117,6 +135,18 @@ finish_case() {
         EXPECTED-DIFF) expected=$((expected + 1)) ;;
         DIFF) differences=$((differences + 1)) ;;
     esac
+}
+
+summary() {
+    printf '\noracle-diff: %d cases — %d match, %d expected-diff, %d unrecorded diff\n' \
+        "$((matches + expected + differences))" "$matches" "$expected" "$differences"
+
+    if (( differences > 0 )); then
+        printf 'oracle-diff: FAIL — %d unrecorded difference(s); update docs/rust-rewrite/contract-inventory.md or fix the drift\n' "$differences" >&2
+        exit 1
+    fi
+
+    printf 'oracle-diff: OK — every difference is recorded in docs/rust-rewrite/contract-inventory.md §9/§10\n'
 }
 
 # ── comparison helpers ───────────────────────────────────────────────────
@@ -200,6 +230,459 @@ parse_check() {
 
     return 0
 }
+
+# ── Wave 1: both binaries against one mock ───────────────────────────────
+#
+# `--mock` runs every Wave 1 command twice — the frozen escript and the release
+# binary — against one instance of the testkit's standalone mock
+# (`cargo build -p ado-testkit --bin mock`; ADO_ORACLE_MOCK overrides the path,
+# ADO_ORACLE_SCENARIO the route table). ADO_SERVER points at the mock, so neither
+# binary reaches Azure, and ADO_ORG/ADO_PAT are synthetic. Unlike the Wave 0 cases,
+# each case gets its own home, config directory and working directory per side:
+# `login` writes a config and a credential, and `download` writes a file, so one
+# case must not hand state to the next.
+#
+# For every case the harness compares
+#
+#   * the exit status;
+#   * the requests the mock recorded — method, path, the query as parsed pairs
+#     (D12: Rust's merged-then-caller order and the Elixir's key-sorted map are the
+#     same pairs, so this compares semantics rather than bytes), the body as JSON
+#     when it is one, and whether a route answered it;
+#   * the JSON envelope on stdout (`jq -S`, D1);
+#
+# and prints MATCH / EXPECTED-DIFF / DIFF exactly as the Wave 0 cases do. Human
+# output is compared only where it is the whole output (`pipelines-artifacts
+# download`'s success line), with the oracle's ANSI colour stripped first (§8, D11).
+# A case may set `rest_rule`, `envelope_rule`, `status_rule`, `stdout_mode`,
+# `case_org`, `case_pat`, `case_extra` or `compare_files` immediately before it;
+# `mock_case` clears them afterwards, so a rule cannot leak into the next case. A
+# case that meets a difference no rule covers is a finding, not a row to invent.
+
+mock_bin=${ADO_ORACLE_MOCK:-$root/target/debug/mock}
+mock_scenario=${ADO_ORACLE_SCENARIO:-$root/scripts/oracle-mock-scenario.json}
+mock_url=
+mock_log=
+mock_requests=
+mock_org=ado-harness
+mock_pat=harness-pat
+
+rest_rule=
+envelope_rule=
+status_rule=
+stdout_mode=json
+case_org=$mock_org
+case_pat=$mock_pat
+case_extra=()
+compare_files=()
+
+start_mock() {
+    if [[ ! -x $mock_bin ]]; then
+        printf 'oracle-diff: %s is missing; run `cargo build -p ado-testkit --bin mock` first\n' "$mock_bin" >&2
+        exit 2
+    fi
+
+    if [[ ! -f $mock_scenario ]]; then
+        printf 'oracle-diff: the scenario %s is missing\n' "$mock_scenario" >&2
+        exit 2
+    fi
+
+    mock_log=$work/mock.log
+    mock_requests=$work/mock-requests.jsonl
+    : >"$mock_requests"
+
+    "$mock_bin" --scenario "$mock_scenario" --record "$mock_requests" --port 0 >"$mock_log" 2>&1 &
+    mock_pid=$!
+
+    local waited=0
+    while (( waited < 100 )); do
+        mock_url=$(head -n1 "$mock_log" 2>/dev/null)
+        [[ $mock_url =~ ^http://127\.0\.0\.1:[0-9]+$ ]] && return 0
+        sleep 0.1
+        waited=$((waited + 1))
+    done
+
+    printf 'oracle-diff: the mock did not report its origin; its log:\n' >&2
+    cat "$mock_log" >&2
+    exit 2
+}
+
+stop_mock() {
+    if [[ -n $mock_pid ]]; then
+        kill "$mock_pid" 2>/dev/null
+        wait "$mock_pid" 2>/dev/null
+        mock_pid=
+    fi
+}
+
+mock_request_count() {
+    if [[ -f $mock_requests ]]; then
+        wc -l <"$mock_requests" | tr -d ' '
+    else
+        printf '0'
+    fi
+}
+
+# One side of one case: a fresh home, config directory and working directory; the
+# case's environment; and the slice of the mock's log the run appended.
+mock_run() { # mock_run <name> <side> <binary> <args...>
+    local name=$1 side=$2 binary=$3
+    shift 3
+    local home=$work/homes/$name.$side cwd=$work/run/$name.$side before after
+    mkdir -p "$home" "$cwd"
+
+    local -a environment=(
+        -u ADO_ORG -u ADO_PAT -u ADO_SERVER
+        "HOME=$home" "XDG_CONFIG_HOME=$home/config" "ADO_SERVER=$mock_url"
+    )
+    [[ -n $case_org ]] && environment+=("ADO_ORG=$case_org")
+    [[ -n $case_pat ]] && environment+=("ADO_PAT=$case_pat")
+    environment+=(${case_extra[@]+"${case_extra[@]}"})
+
+    before=$(mock_request_count)
+    (
+        cd "$cwd" || exit 2
+        env "${environment[@]}" "$binary" "$@" >"$work/$name.$side" 2>"$work/$name.$side.err"
+    )
+    printf '%s' "$?" >"$work/$name.$side.status"
+
+    after=$(mock_request_count)
+    sed -n "$((before + 1)),$((after))p" "$mock_requests" >"$work/$name.$side.requests"
+}
+
+# One case: <slug> <label> <args...>.
+mock_case() {
+    local slug=$1 label=$2
+    shift 2
+
+    start_case "$label"
+    mock_run "$slug" elixir "$elixir_bin" "$@"
+    mock_run "$slug" rust "$rust_bin" "$@"
+    mock_exit_check "$slug"
+    mock_requests_check "$slug"
+    mock_stdout_check "$slug"
+    mock_files_check "$slug"
+
+    rest_rule=
+    envelope_rule=
+    status_rule=
+    stdout_mode=json
+    case_org=$mock_org
+    case_pat=$mock_pat
+    case_extra=()
+    compare_files=()
+
+    finish_case
+}
+
+mock_exit_check() { # the status is contract: 0 success, 1 every error (§6.3)
+    local slug=$1 elixir_status rust_status
+    elixir_status=$(cat "$work/$slug.elixir.status")
+    rust_status=$(cat "$work/$slug.rust.status")
+
+    if [[ $elixir_status == "$rust_status" ]]; then
+        note "exit $rust_status on both"
+    elif [[ -n $status_rule ]]; then
+        ruled "$status_rule: oracle $elixir_status, rust $rust_status"
+    else
+        fail "exit status: oracle $elixir_status, rust $rust_status ($(head -c 160 "$work/$slug.rust.err" | tr '\n' ' '))"
+    fi
+}
+
+# The query as parsed, decoded pairs: `+` is a space (both encoders write form
+# encoding) and every pair is percent-decoded, so the Elixir's key-sorted map and
+# Rust's merged order compare equal (§10, D12).
+query_pairs_filter='[.query | split("&")[] | select(. != "")
+    | (split("=")) as $pair
+    | (($pair[0] | gsub("\\+"; "%20") | @urid) + "="
+       + (($pair[1:] | join("=")) | gsub("\\+"; "%20") | @urid))] | sort'
+requests_filter="map({
+    method,
+    path,
+    query: $query_pairs_filter,
+    body: (if .body == null then null else (.body | fromjson? // .) end),
+    matched
+})"
+
+mock_requests_check() {
+    local slug=$1 unmatched
+
+    jq -s -c "$requests_filter" "$work/$slug.elixir.requests" >"$work/$slug.requests.elixir"
+    jq -s -c "$requests_filter" "$work/$slug.rust.requests" >"$work/$slug.requests.rust"
+
+    unmatched=$(
+        cat "$work/$slug.elixir.requests" "$work/$slug.rust.requests" |
+            jq -r 'select(.matched == false) | "\(.method) \(.path)"' | sort -u | tr '\n' ' '
+    )
+    unmatched=${unmatched% }
+
+    if [[ -n $unmatched ]]; then
+        fail "the mock has no route for: $unmatched"
+        return
+    fi
+
+    if same "$work/$slug.requests.elixir" "$work/$slug.requests.rust"; then
+        local requests
+        requests=$(wc -l <"$work/$slug.elixir.requests" | tr -d ' ')
+
+        if [[ $requests == 0 ]]; then
+            note "no request on either side"
+        else
+            note "requests identical ($requests)"
+        fi
+        return
+    fi
+
+    if [[ -n $rest_rule ]]; then
+        ruled "$rest_rule"
+    else
+        fail "the recorded requests differ: $(first_difference "$work/$slug.requests.elixir" "$work/$slug.requests.rust")"
+    fi
+}
+
+# stdout with the ANSI colour the oracle wraps its lines in removed (§8, D11) and
+# trailing blank lines dropped (its halt-success artefact).
+strip_colour() {
+    sed -E 's/\x1b\[[0-9;]*m//g; s/[[:space:]]+$//' "$1" |
+        awk '{ if ($0 == "") { blanks++ } else { while (blanks > 0) { print ""; blanks-- } print } }'
+}
+
+mock_stdout_check() {
+    local slug=$1
+
+    if [[ $stdout_mode == text ]]; then
+        strip_colour "$work/$slug.elixir" >"$work/$slug.stdout.elixir"
+        strip_colour "$work/$slug.rust" >"$work/$slug.stdout.rust"
+
+        if same "$work/$slug.stdout.elixir" "$work/$slug.stdout.rust"; then
+            note "stdout: '$(head -n1 "$work/$slug.stdout.rust" 2>/dev/null | head -c 60)'"
+        elif [[ -n $envelope_rule ]]; then
+            ruled "$envelope_rule"
+        else
+            fail "stdout differs: $(first_difference "$work/$slug.stdout.elixir" "$work/$slug.stdout.rust")"
+        fi
+        return
+    fi
+
+    if ! jq -e . "$work/$slug.rust" >/dev/null 2>&1; then
+        fail "the Rust stdout is not a JSON envelope: $(head -c 120 "$work/$slug.rust" | tr '\n' ' ')"
+        return
+    fi
+
+    if ! jq -e . "$work/$slug.elixir" >/dev/null 2>&1; then
+        # The oracle's halt_error paths print their error on stderr and no envelope
+        # at all, even under --json (D4).
+        if [[ ! -s $work/$slug.elixir && -s $work/$slug.elixir.err ]]; then
+            if [[ -n $envelope_rule ]]; then
+                ruled "$envelope_rule"
+            else
+                fail "the oracle emitted no envelope and no stdout: $(head -c 120 "$work/$slug.elixir.err" | tr '\n' ' ')"
+            fi
+        elif [[ -n $envelope_rule ]]; then
+            ruled "$envelope_rule"
+        else
+            fail "the oracle's stdout is not a JSON envelope: $(head -c 120 "$work/$slug.elixir" | tr '\n' ' ')"
+        fi
+        return
+    fi
+
+    jq -S . "$work/$slug.elixir" >"$work/$slug.envelope.elixir"
+    jq -S . "$work/$slug.rust" >"$work/$slug.envelope.rust"
+
+    if same "$work/$slug.envelope.elixir" "$work/$slug.envelope.rust"; then
+        note "envelope identical ($(wc -c <"$work/$slug.envelope.rust" | tr -d ' ') bytes normalised)"
+    elif [[ -n $envelope_rule ]]; then
+        ruled "$envelope_rule"
+    else
+        fail "the envelopes differ: $(first_difference "$work/$slug.envelope.elixir" "$work/$slug.envelope.rust")"
+    fi
+}
+
+# The bytes a download wrote — which no envelope carries — and the temp file the
+# streamed write uses, which must not survive it (T9's round 2/3).
+mock_files_check() {
+    local slug=$1 file elixir_file rust_file leftovers
+
+    for file in ${compare_files[@]+"${compare_files[@]}"}; do
+        elixir_file=$work/run/$slug.elixir/$file
+        rust_file=$work/run/$slug.rust/$file
+
+        if [[ ! -f $elixir_file || ! -f $rust_file ]]; then
+            fail "$file: oracle $([[ -f $elixir_file ]] && printf 'wrote it' || printf 'did not'), rust $([[ -f $rust_file ]] && printf 'wrote it' || printf 'did not')"
+            continue
+        fi
+
+        if same "$elixir_file" "$rust_file"; then
+            note "$file: $(wc -c <"$rust_file" | tr -d ' ') bytes identical"
+        else
+            fail "$file differs: $(cmp "$elixir_file" "$rust_file" 2>&1 | head -n1)"
+        fi
+
+        leftovers=$(find "$work/run/$slug.elixir" "$work/run/$slug.rust" -name '*.tmp' -print | tr '\n' ' ')
+        leftovers=${leftovers% }
+
+        if [[ -n $leftovers ]]; then
+            fail "a temp file survived the download: $leftovers"
+        else
+            note "no .tmp sibling left behind"
+        fi
+    done
+}
+
+# The scenario's own coverage: every route it declares was requested at least once,
+# so a route no case exercises cannot hide a missing case.
+mock_scenario_check() {
+    local missing total
+
+    start_case "scenario coverage"
+
+    jq -r '.responses[] | "\(.method) \(.path)"' "$mock_scenario" | sort -u >"$work/scenario.declared"
+    jq -r 'select(.matched) | "\(.method) \(.path)"' "$mock_requests" |
+        sed "s|$mock_url|{base}|g" | sort -u >"$work/scenario.exercised"
+
+    total=$(wc -l <"$work/scenario.declared" | tr -d ' ')
+    missing=$(comm -13 "$work/scenario.exercised" "$work/scenario.declared" | tr '\n' ' ')
+    missing=${missing% }
+
+    if [[ -n $missing ]]; then
+        fail "routes no case exercised: $missing"
+    else
+        note "every one of the $total scenario routes was exercised"
+    fi
+
+    finish_case
+}
+
+# Every Wave 1 command, in the order of the spec's §2 scope table. The ruled
+# differences are the inventory's: D4 (the oracle's halt_error paths under --json),
+# D11b (our config file is the new one), D12 (query pair order), D16 (blank values
+# read as unset), D18 (the hyphenated invocation), D19 (projects list's parameter
+# names), D20 (the repaired WIQL), D21 (an empty WIQL result under --json), D24 (the
+# error body stays the upstream bytes), D25 (the absolute artifact downloadUrl) and
+# D27c (logout's message).
+run_mock_cases() {
+    start_mock
+    printf 'oracle-diff: --mock: %s serving %s\n' "$mock_url" "$mock_scenario"
+    printf 'oracle-diff: oracle %s, candidate %s\n\n' "$elixir_bin" "$rust_bin"
+
+    # ── projects ──
+
+    mock_case projects-list "projects list" projects list --json
+
+    rest_rule='D19: the frozen CLI sends state/top/skip where this build sends the intended stateFilter/$top/$skip'
+    mock_case projects-list-filters "projects list --state/--top/--skip" \
+        projects list --state wellFormed --top 1 --skip 0 --json
+
+    rest_rule='D19: present means sent — the empty state and the two zeros reach the wire on both sides, under the two spellings'
+    mock_case projects-list-zeros "projects list --state '' --top 0 --skip 0" \
+        projects list --state "" --top 0 --skip 0 --json
+
+    mock_case projects-show "projects show" projects show Alpha --json
+    mock_case projects-show-capabilities "projects show --capabilities" \
+        projects show Alpha --capabilities --json
+
+    # ── repositories ──
+
+    mock_case repos-list "repos list" repos list Alpha --json
+
+    envelope_rule='D24: the error body stays the upstream bytes here, where the oracle re-renders the decoded map with inspect/2'
+    mock_case repos-list-error "repos list (500)" repos list Broken --json
+
+    mock_case repos-show "repos show" repos show Alpha Alpha.Core --json
+    mock_case repos-branches "repos branches" repos branches Alpha Alpha.Core --json
+
+    # ── work items ──
+
+    mock_case workitems-list "workitems list" workitems list Alpha --json
+
+    rest_rule='D20: the frozen CLI sends its malformed WIQL (a leading AND, doubled ANDs) where this build ships valid WIQL'
+    mock_case workitems-list-filters "workitems list --type/--state/--assigned-to" \
+        workitems list Alpha --type Bug --state Active --assigned-to alice --json
+
+    envelope_rule='D21: an empty WIQL result under --json — the frozen CLI prints human text, this build the value envelope'
+    mock_case workitems-list-empty "workitems list (empty result)" workitems list Empty --json
+
+    mock_case workitems-show "workitems show" workitems show 42 --json
+    mock_case workitems-query "workitems query" workitems query Alpha \
+        --wiql "SELECT [System.Id] FROM WorkItems WHERE [System.State] = 'Active'" --json
+
+    # ── pull requests ──
+
+    mock_case prs-list "prs list" prs list Alpha Alpha.Core --json
+    mock_case prs-show "prs show" prs show Alpha Alpha.Core 137 --json
+
+    envelope_rule='D4: the frozen CLI writes the 404 to stderr with no envelope under --json where this build emits the error envelope (W1-R27)'
+    mock_case prs-show-missing "prs show (404)" prs show Alpha Alpha.Core 999 --json
+
+    # ── pipelines ──
+
+    mock_case pipelines-list "pipelines list" pipelines list Alpha --json
+    mock_case pipelines-show "pipelines show" pipelines show Alpha 12 --json
+
+    envelope_rule='D4: the frozen CLI writes the 404 to stderr with no envelope under --json where this build emits the error envelope (W1-R27)'
+    mock_case pipelines-show-missing "pipelines show (404)" pipelines show Alpha 999 --json
+
+    # ── pipelines-builds ──
+
+    mock_case builds-list "pipelines-builds list" pipelines-builds list Alpha --json
+    mock_case builds-show "pipelines-builds show" pipelines-builds show Alpha 128 --json
+    mock_case builds-tags "pipelines-builds tags list" pipelines-builds tags list Alpha 128 --json
+    mock_case builds-definitions "pipelines-builds definitions list" \
+        pipelines-builds definitions list Alpha --json
+
+    envelope_rule='D18: the space spelling is a usage error on both sides; the wording is §8 regenerated surface (D5) and only the hyphenated spelling parses'
+    stdout_mode=text
+    mock_case builds-space-spelling "pipelines builds list (space spelling)" \
+        pipelines builds list Alpha --json
+
+    # ── pipelines-artifacts ──
+
+    mock_case artifacts-list "pipelines-artifacts list" \
+        pipelines-artifacts list Alpha 7 99 --json
+
+    stdout_mode=text
+    compare_files=(out.zip)
+    mock_case artifacts-download "pipelines-artifacts download (relative downloadUrl)" \
+        pipelines-artifacts download Alpha 8 99 drop --output out.zip --json
+
+    rest_rule='D25: an absolute downloadUrl is requested verbatim with no added api-version, where the frozen client prepends its base and org-injects'
+    stdout_mode=text
+    compare_files=(out.zip)
+    mock_case artifacts-download-absolute "pipelines-artifacts download (absolute downloadUrl)" \
+        pipelines-artifacts download Alpha 7 99 drop --output out.zip --json
+
+    # ── login and logout ──
+
+    envelope_rule='D11b: the credential is saved to <config dir>/ado/config.toml, not the legacy ~/.ado_cli/config.json'
+    mock_case login-pat "login --method pat" \
+        login --method pat --org "$mock_org" --pat "$mock_pat" --json
+
+    envelope_rule='D16: a blank value reads as unset here, so --pat "" is a validation error where the frozen CLI stores an empty token'
+    status_rule='D16: --pat "" reads as unset here (exit 1) where the frozen CLI treats it as a value and exits 0'
+    case_pat=
+    mock_case login-blank-pat "login --method pat --pat ''" \
+        login --method pat --org "$mock_org" --pat "" --json
+
+    envelope_rule='D16: a blank ADO_PAT leaves no method to infer, so this build refuses the invocation (the message wording is §8)'
+    status_rule='D16: a blank ADO_PAT reads as unset here (exit 1) where the frozen CLI infers method=pat from it and exits 0'
+    case_pat=
+    case_extra=("ADO_PAT=")
+    mock_case login-blank-env-pat "login with a blank ADO_PAT" login --json
+
+    envelope_rule='D27c: the message says what was removed instead of the legacy ~/.ado_cli/config.json path'
+    mock_case logout "logout" logout --json
+
+    envelope_rule='D27c: the message says what was removed instead of the legacy ~/.ado_cli/config.json path'
+    mock_case logout-org "logout --org" logout --org "$mock_org" --json
+
+    mock_scenario_check
+}
+
+if [[ $mode == mock ]]; then
+    run_mock_cases
+    summary
+    exit 0
+fi
 
 # ── version ──────────────────────────────────────────────────────────────
 
@@ -305,6 +788,41 @@ if exits_ok schema-json &&
     json_ok "$schema_el" '.schema.version | type == "string"' 'the oracle node has no version key' &&
     json_ok "$schema_rs" '.schema.version | type == "string"' 'the Rust node has no version key'; then
 
+    # Two Wave 1 differences are normalised away before the comparisons below, so
+    # that everything else — types, defaults, arguments, option spelling, the tree
+    # shape — is still compared exactly:
+    #
+    #   * D18 hyphenates the two group nodes the oracle spells with spaces, at the
+    #     root and in their descendants' names;
+    #   * doc values are §8 regenerated surface, and the nodes this wave wrote or
+    #     rewrote carry this build's wording. Their option and argument docs are
+    #     blanked here; their node docs are reported by the doc check further down.
+    s8_nodes='["ado login", "ado prs"]'
+    globals_names=$(jq -c '[.schema.options[].name]' "$schema_rs")
+    d18_and_s8="walk(if type == \"object\" and (.name? | type) == \"string\"
+        then .name |= gsub(\" pipelines builds\"; \" pipelines-builds\")
+                   | .name |= gsub(\" pipelines artifacts\"; \" pipelines-artifacts\")
+        else . end)
+      | (.schema.subcommands[] | select(.name as \$node | $s8_nodes | index(\$node))
+         | .options[]? | select(.name as \$o | $globals_names | index(\$o) | not) | .doc) |= \"\"
+      | (.schema.subcommands[] | select(.name as \$node | $s8_nodes | index(\$node))
+         | .arguments[]? | .doc) |= \"\""
+
+    jq -S "$d18_and_s8" "$schema_el" >"$work/schema.elixir"
+    jq -S "$d18_and_s8" "$schema_rs" >"$work/schema.rust"
+    schema_el="$work/schema.elixir"
+    schema_rs="$work/schema.rust"
+
+    # D18's premise: the oracle spells the two group nodes with spaces. If that
+    # changed, this is not the frozen oracle and the normalisation above is stale.
+    d18_renamed=$(jq -r '[.schema | recurse(.subcommands[]?) | .name | select(test(" pipelines (builds|artifacts)"))] | length' "$work/schema-json.elixir")
+
+    if (( d18_renamed > 0 )); then
+        note "D18: $d18_renamed oracle node names read as the hyphenated spelling this build reports"
+    else
+        fail "the oracle no longer spells the two group nodes with spaces (D18)"
+    fi
+
     # Node shape (§1.1): the returned node carries `version`, the rest do not.
     jq -S '.schema | keys' "$schema_el" >"$work/schema.keys.elixir"
     jq -S '.schema | keys' "$schema_rs" >"$work/schema.keys.rust"
@@ -335,20 +853,22 @@ if exits_ok schema-json &&
         ruled "version value: $el_version vs $rs_version"
     fi
 
-    # Every Rust node must be a node the oracle has (the tree only shrinks).
-    jq -r '.schema.subcommands[].name' "$schema_el" | sort -u >"$work/schema.names.elixir"
-    jq -r '.schema.subcommands[].name' "$schema_rs" | sort -u >"$work/schema.names.rust"
+    # Every Rust node, at every depth, must be a node the oracle has: the tree only
+    # shrinks (§10), and D18's spelling is normalised away above. Depth matters from
+    # Wave 1 on, because the group nodes bring children this wave did not port.
+    jq -r '.schema | recurse(.subcommands[]?) | .name' "$schema_el" | sort -u >"$work/schema.names.elixir"
+    jq -r '.schema | recurse(.subcommands[]?) | .name' "$schema_rs" | sort -u >"$work/schema.names.rust"
     unlisted=$(comm -13 "$work/schema.names.elixir" "$work/schema.names.rust" | tr '\n' ' ' | sed 's/ *$//')
 
-    el_count=$(jq '.schema.subcommands | length' "$schema_el")
-    rs_count=$(jq '.schema.subcommands | length' "$schema_rs")
+    el_count=$(jq '.schema | recurse(.subcommands[]?) | .name' "$schema_el" | sort -u | wc -l | tr -d ' ')
+    rs_count=$(jq '.schema | recurse(.subcommands[]?) | .name' "$schema_rs" | sort -u | wc -l | tr -d ' ')
 
     if [[ $rs_count == 0 ]]; then
         fail "the Rust tree has no subcommands"
     elif [[ -n $unlisted ]]; then
         fail "the Rust tree names nodes the oracle does not: $unlisted"
     else
-        note "every Rust node is an oracle node ($rs_count of $el_count)"
+        note "every Rust node is an oracle node ($rs_count of $el_count paths)"
         ruled "unported commands absent: $rs_count of $el_count nodes (§10)"
     fi
 
@@ -363,7 +883,6 @@ if exits_ok schema-json &&
     fi
 
     # Every Rust subcommand node carries the root's globals (D2).
-    globals_names=$(jq -c '[.schema.options[].name]' "$schema_rs")
     globals_entries=$(jq -cS '[.schema.options[]] | sort_by(.name)' "$schema_rs")
 
     while IFS= read -r node; do
@@ -375,32 +894,40 @@ if exits_ok schema-json &&
         fi
     done < <(jq -r '.schema.subcommands[].name' "$schema_rs")
 
-    # The nodes both sides have: name, arguments, children and the options that
-    # are not globals. Docs are compared separately, because D10 lets the Rust
-    # doc be the oracle's truncated at the end of the usage block. The only ruled
-    # value difference left is the spelling of `write-to-file` (D17), so the raw
-    # comparison is expected to fail there and the hyphen/underscore-normalised
-    # one is expected to pass.
+    # The nodes both sides have: name, arguments, the children both sides have and
+    # the options that are not globals. Docs are compared separately, because D10
+    # lets the Rust doc be the oracle's truncated at the end of the usage block (and
+    # §8 leaves the wording of the nodes this wave wrote free). The only ruled value
+    # difference left is the spelling of `write-to-file` (D17), so the raw
+    # comparison is expected to fail there and the hyphen/underscore-normalised one
+    # is expected to pass. Children are the intersection: an oracle child this wave
+    # did not port is the recorded shrink (§10), and a Rust child the oracle does
+    # not have fails the name check above.
     shared_names=$(jq -c '[.schema.subcommands[].name]' "$schema_rs")
+    shared_children=$(jq -c '[.schema.subcommands[] | {key: .name, value: [.subcommands[].name]}] | from_entries' "$schema_rs")
     node_projection='[ .schema.subcommands[]
         | select(.name as $node | $nodes | index($node))
+        | . as $self
         | { name, arguments,
             options: ([ .options[] | select(.name as $o | $names | index($o) | not) ] | sort_by(.name)),
-            subcommands: [ .subcommands[].name ] } ]
+            subcommands: ([ $self.subcommands[].name ]
+                | map(select(. as $child | ($children[$self.name] // []) | index($child))) | sort) } ]
       | sort_by(.name)'
     node_projection_normalised='[ .schema.subcommands[]
         | select(.name as $node | $nodes | index($node))
+        | . as $self
         | { name, arguments,
             options: ([ .options[]
                 | select(.name as $o | $names | index($o) | not)
                 | if .name == "write-to-file" then .name = "write_to_file" else . end ] | sort_by(.name)),
-            subcommands: [ .subcommands[].name ] } ]
+            subcommands: ([ $self.subcommands[].name ]
+                | map(select(. as $child | ($children[$self.name] // []) | index($child))) | sort) } ]
       | sort_by(.name)'
 
-    jq -S --argjson nodes "$shared_names" --argjson names "$globals_names" "$node_projection" "$schema_el" >"$work/schema.nodes.elixir"
-    jq -S --argjson nodes "$shared_names" --argjson names "$globals_names" "$node_projection" "$schema_rs" >"$work/schema.nodes.rust"
-    jq -S --argjson nodes "$shared_names" --argjson names "$globals_names" "$node_projection_normalised" "$schema_el" >"$work/schema.nodes.norm.elixir"
-    jq -S --argjson nodes "$shared_names" --argjson names "$globals_names" "$node_projection_normalised" "$schema_rs" >"$work/schema.nodes.norm.rust"
+    jq -S --argjson nodes "$shared_names" --argjson names "$globals_names" --argjson children "$shared_children" "$node_projection" "$schema_el" >"$work/schema.nodes.elixir"
+    jq -S --argjson nodes "$shared_names" --argjson names "$globals_names" --argjson children "$shared_children" "$node_projection" "$schema_rs" >"$work/schema.nodes.rust"
+    jq -S --argjson nodes "$shared_names" --argjson names "$globals_names" --argjson children "$shared_children" "$node_projection_normalised" "$schema_el" >"$work/schema.nodes.norm.elixir"
+    jq -S --argjson nodes "$shared_names" --argjson names "$globals_names" --argjson children "$shared_children" "$node_projection_normalised" "$schema_rs" >"$work/schema.nodes.norm.rust"
 
     if same "$work/schema.nodes.elixir" "$work/schema.nodes.rust"; then
         note "the shared nodes match exactly"
@@ -410,13 +937,16 @@ if exits_ok schema-json &&
         fail "the shared nodes differ beyond the ruled spelling: $(first_difference "$work/schema.nodes.norm.elixir" "$work/schema.nodes.norm.rust")"
     fi
 
-    # Node docs: equal, or the Rust doc is the oracle's prefix (D10).
+    # Node docs: equal, or this build's §8 wording for the nodes this wave wrote,
+    # or the Rust doc is the oracle's prefix (D10).
     while IFS= read -r node; do
         el_doc=$(jq -r --arg node "$node" '.schema.subcommands[] | select(.name == $node) | .doc' "$schema_el")
         rs_doc=$(jq -r --arg node "$node" '.schema.subcommands[] | select(.name == $node) | .doc' "$schema_rs")
 
         if [[ $el_doc == "$rs_doc" ]]; then
             continue
+        elif [[ $s8_nodes == *"\"$node\""* ]]; then
+            ruled "node doc is this build's §8 wording: '$node' is '${rs_doc:0:60}' where the oracle has '${el_doc:0:60}'"
         elif [[ $el_doc == "$rs_doc"* ]]; then
             ruled "node doc truncated (D10): '$node' keeps ${#rs_doc} of ${#el_doc} characters"
         else
@@ -564,12 +1094,4 @@ completion_case powershell
 
 # ── summary ──────────────────────────────────────────────────────────────
 
-printf '\noracle-diff: %d cases — %d match, %d expected-diff, %d unrecorded diff\n' \
-    "$((matches + expected + differences))" "$matches" "$expected" "$differences"
-
-if (( differences > 0 )); then
-    printf 'oracle-diff: FAIL — %d unrecorded difference(s); update docs/rust-rewrite/contract-inventory.md or fix the drift\n' "$differences" >&2
-    exit 1
-fi
-
-printf 'oracle-diff: OK — every difference is recorded in docs/rust-rewrite/contract-inventory.md §9/§10\n'
+summary
