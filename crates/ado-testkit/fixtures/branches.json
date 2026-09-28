@@ -1,0 +1,41 @@
+{
+  "count": 4,
+  "value": [
+    {
+      "name": "refs/heads/main",
+      "objectId": "1111111111111111111111111111111111111111",
+      "creator": {
+        "displayName": "Alice Example",
+        "id": "c1d2e3f4-0001-0001-0001-000000000001"
+      },
+      "url": "https://dev.azure.com/myorg/Alpha/_apis/git/repositories/Alpha.Core/refs?filter=heads%2Fmain"
+    },
+    {
+      "name": "refs/heads/feature/payments",
+      "objectId": "2222222222222222222222222222222222222222",
+      "creator": {
+        "displayName": "Bob Example",
+        "id": "c1d2e3f4-0002-0002-0002-000000000002"
+      },
+      "url": "https://dev.azure.com/myorg/Alpha/_apis/git/repositories/Alpha.Core/refs?filter=heads%2Ffeature%2Fpayments"
+    },
+    {
+      "name": "refs/tags/v1.0.0",
+      "objectId": "3333333333333333333333333333333333333333",
+      "creator": {
+        "displayName": "Alice Example",
+        "id": "c1d2e3f4-0001-0001-0001-000000000001"
+      },
+      "url": "https://dev.azure.com/myorg/Alpha/_apis/git/repositories/Alpha.Core/refs?filter=tags%2Fv1.0.0"
+    },
+    {
+      "name": "refs/heads/users/alice/experiment",
+      "objectId": "4444444444444444444444444444444444444444",
+      "creator": {
+        "displayName": "Alice Example",
+        "id": "c1d2e3f4-0001-0001-0001-000000000001"
+      },
+      "url": "https://dev.azure.com/myorg/Alpha/_apis/git/repositories/Alpha.Core/refs?filter=heads%2Fusers%2Falice%2Fexperiment"
+    }
+  ]
+}

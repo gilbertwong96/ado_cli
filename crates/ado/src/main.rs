@@ -68,6 +68,41 @@ fn main() -> ExitCode {
                 _ => Err(AdoError::validation(MISSING_SUBCOMMAND)),
             }
         }
+        Some(("repos", sub)) => {
+            let mut context = Context::load(globals);
+
+            match sub.subcommand() {
+                Some(("list", list)) => commands::repos::list(
+                    &mut context,
+                    list.get_one::<String>("project")
+                        .expect("the positional is required")
+                        .as_str(),
+                    list.get_flag("include_links"),
+                ),
+                Some(("show", show)) => commands::repos::show(
+                    &mut context,
+                    show.get_one::<String>("project")
+                        .expect("the positional is required")
+                        .as_str(),
+                    show.get_one::<String>("repo_id")
+                        .expect("the positional is required")
+                        .as_str(),
+                ),
+                Some(("branches", branches)) => commands::repos::branches(
+                    &mut context,
+                    branches
+                        .get_one::<String>("project")
+                        .expect("the positional is required")
+                        .as_str(),
+                    branches
+                        .get_one::<String>("repo_id")
+                        .expect("the positional is required")
+                        .as_str(),
+                    branches.get_one::<String>("filter").cloned(),
+                ),
+                _ => Err(AdoError::validation(MISSING_SUBCOMMAND)),
+            }
+        }
         Some(("schema", sub)) => {
             commands::schema::run(json, sub.get_one::<String>("name").map(String::as_str))
         }

@@ -1,0 +1,17 @@
+{
+  "id": "a1b2c3d4-5e6f-4a1b-8c9d-0e1f2a3b4c5d",
+  "name": "Alpha.Core",
+  "defaultBranch": "refs/heads/main",
+  "size": 204800,
+  "sshUrl": "git@ssh.dev.azure.com:v3/myorg/Alpha/Alpha.Core",
+  "webUrl": "https://dev.azure.com/myorg/Alpha/_git/Alpha.Core",
+  "remoteUrl": "https://myorg@dev.azure.com/myorg/Alpha/_git/Alpha.Core",
+  "isFork": false,
+  "project": {
+    "id": "6a1f8f6e-2b8d-4b9e-9d2a-1c3f5e7a9b0c",
+    "name": "Alpha",
+    "state": "wellFormed",
+    "visibility": "private"
+  },
+  "url": "https://dev.azure.com/myorg/Alpha/_apis/git/repositories/Alpha.Core"
+}

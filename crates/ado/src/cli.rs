@@ -105,6 +105,80 @@ pub fn command() -> Command {
                 ),
         )
         .subcommand(
+            Command::new("repos")
+                .about(
+                    "Manage Azure DevOps Git repositories. A repository holds source code, branches, commits, tags, and pull requests. The CLI manages metadata and refs; clone/push/commit is left to the `git` command itself.",
+                )
+                .subcommand(
+                    Command::new("list")
+                        .about(
+                            "List all Git repositories in a project. Output is a table (ID, Name, Default Branch). Pass --include-links to also see web URLs. Pass --json for raw data.",
+                        )
+                        .arg(
+                            Arg::new("project")
+                                .value_name("PROJECT")
+                                .required(true)
+                                .help("Project name or ID"),
+                        )
+                        .arg(
+                            Arg::new("include_links")
+                                .long("include-links")
+                                .action(ArgAction::SetTrue)
+                                .help(
+                                    "Include reference links (web, ssh, remote URLs) in the output. Adds 3 columns to the table.",
+                                ),
+                        ),
+                )
+                .subcommand(
+                    Command::new("show")
+                        .about(
+                            "Show details of a specific repository: ID, name, default branch, size in bytes, project, and URLs (SSH + web). Use the repo name (not the GUID) as the argument.",
+                        )
+                        .arg(
+                            Arg::new("project")
+                                .value_name("PROJECT")
+                                .required(true)
+                                .help("Project name or ID"),
+                        )
+                        .arg(
+                            Arg::new("repo_id")
+                                .value_name("REPO_ID")
+                                .required(true)
+                                .help(
+                                    "Repository name (preferred) or GUID. Names are case-sensitive in the URL.",
+                                ),
+                        ),
+                )
+                .subcommand(
+                    Command::new("branches")
+                        .about(
+                            "List branches in a repository. Output is a table (Name, Object ID / commit SHA). Use --filter to limit to branches whose names start with a substring (e.g. --filter feature).",
+                        )
+                        .arg(
+                            Arg::new("project")
+                                .value_name("PROJECT")
+                                .required(true)
+                                .help("Project name or ID"),
+                        )
+                        .arg(
+                            Arg::new("repo_id")
+                                .value_name("REPO_ID")
+                                .required(true)
+                                .help(
+                                    "Repository name (preferred) or GUID. Names are case-sensitive in the URL.",
+                                ),
+                        )
+                        .arg(
+                            Arg::new("filter")
+                                .long("filter")
+                                .value_name("PATTERN")
+                                .help(
+                                    "Substring to match against branch names. Default 'heads/' (all branches). Use 'feature' to match 'refs/heads/feature/*', 'users/alice/' for personal branches.",
+                                ),
+                        ),
+                ),
+        )
+        .subcommand(
             Command::new("schema")
                 .about("Dump the CLI command tree as structured JSON for LLM agents.")
                 .arg(
