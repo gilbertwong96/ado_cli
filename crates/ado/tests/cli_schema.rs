@@ -78,7 +78,7 @@ fn schema_root_has_name_doc_and_subcommands() {
 }
 
 #[test]
-fn schema_root_has_exactly_the_four_wave_zero_subcommands() {
+fn schema_root_lists_exactly_the_shipped_subcommands() {
     let root = build_tree();
 
     let mut names = subcommands(&root)
@@ -89,7 +89,13 @@ fn schema_root_has_exactly_the_four_wave_zero_subcommands() {
 
     assert_eq!(
         names,
-        ["ado completion", "ado schema", "ado version", "ado whoami"]
+        [
+            "ado completion",
+            "ado projects",
+            "ado schema",
+            "ado version",
+            "ado whoami"
+        ]
     );
 }
 

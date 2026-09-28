@@ -48,6 +48,26 @@ fn main() -> ExitCode {
     let result = match matches.subcommand() {
         Some(("version", _)) => commands::version::run(json),
         Some(("whoami", _)) => commands::whoami::run(&Context::load(globals)),
+        Some(("projects", sub)) => {
+            let mut context = Context::load(globals);
+
+            match sub.subcommand() {
+                Some(("list", list)) => commands::projects::list(
+                    &mut context,
+                    list.get_one::<String>("state").cloned(),
+                    list.get_one::<i64>("top").copied(),
+                    list.get_one::<i64>("skip").copied(),
+                ),
+                Some(("show", show)) => commands::projects::show(
+                    &mut context,
+                    show.get_one::<String>("project_id")
+                        .expect("the positional is required")
+                        .as_str(),
+                    show.get_flag("capabilities"),
+                ),
+                _ => Err(AdoError::validation(MISSING_SUBCOMMAND)),
+            }
+        }
         Some(("schema", sub)) => {
             commands::schema::run(json, sub.get_one::<String>("name").map(String::as_str))
         }

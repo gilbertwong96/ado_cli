@@ -16,8 +16,10 @@ use ado_core::credentials::{self, Credentials, SecretStore, default_store};
 use ado_core::env::{ENV_ORG, ENV_PAT, ENV_SERVER, EnvSource, FlagEnv, ProcessEnv, non_empty};
 use ado_core::error::{AdoError, ErrorCode};
 use ado_core::legacy;
+use serde_json::Value;
 
 use crate::args::GlobalOpts;
+use crate::output::Report;
 
 /// The cloud server, used when neither the flags, `ADO_SERVER` nor the config
 /// names one.
@@ -73,6 +75,17 @@ impl Context {
     /// Whether the invocation asked for JSON output.
     pub fn json(&self) -> bool {
         self.opts.json
+    }
+
+    /// The one fork between a command's `--json` envelope and its human report:
+    /// under `--json` the envelope is the whole answer and `human` is never
+    /// called, so no table can reach the JSON path (W1-3, spec §6.1).
+    pub fn json_or_report(&self, envelope: Value, human: impl FnOnce() -> Report) -> Report {
+        if self.json() {
+            Report::Json(envelope)
+        } else {
+            human()
+        }
     }
 
     /// The client for the rest of the run. The first call resolves the credential,
@@ -292,6 +305,37 @@ mod tests {
             legacy_file: Some(home.path().join(LEGACY_RELATIVE_PATH)),
             client: None,
         }
+    }
+
+    #[test]
+    fn json_or_report_forks_on_the_json_flag() {
+        let json_context = context(
+            GlobalOpts {
+                json: true,
+                ..opts()
+            },
+            None,
+        );
+
+        assert_eq!(
+            json_context.json_or_report(json!({"ok": true}), || panic!(
+                "the human report ran under --json"
+            )),
+            Report::Json(json!({"ok": true}))
+        );
+
+        let human_context = context(opts(), None);
+
+        assert_eq!(
+            human_context.json_or_report(json!({"ok": true}), || Report::Table {
+                headers: vec!["ID".to_owned()],
+                rows: vec![vec!["p1".to_owned()]],
+            }),
+            Report::Table {
+                headers: vec!["ID".to_owned()],
+                rows: vec![vec!["p1".to_owned()]],
+            }
+        );
     }
 
     #[test]

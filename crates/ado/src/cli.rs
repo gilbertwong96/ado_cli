@@ -47,6 +47,64 @@ pub fn command() -> Command {
         .subcommand(Command::new("version").about("Print the ado version and exit."))
         .subcommand(Command::new("whoami").about("Show current authentication status."))
         .subcommand(
+            Command::new("projects")
+                .about(
+                    "Manage Azure DevOps projects. A project is the top-level container for repos, pipelines, work items, and teams. Every Azure DevOps organization has at least one project.",
+                )
+                .subcommand(
+                    Command::new("list")
+                        .about(
+                            "List all projects in the organization. Output is a table (Name, ID, State, Visibility). Returns top 100 by default; use --top to change the page size. Pass --json for raw data.",
+                        )
+                        .arg(
+                            Arg::new("state")
+                                .long("state")
+                                .value_name("STATE")
+                                .help(
+                                    "Project lifecycle state. Valid: wellFormed (default — healthy and usable), creating, deleting, new (just created, being initialized), all (every state including soft-deleted)",
+                                ),
+                        )
+                        .arg(
+                            Arg::new("top")
+                                .long("top")
+                                .value_name("N")
+                                .value_parser(clap::value_parser!(i64))
+                                .help("Maximum number of projects to return. Default 100, max 1000."),
+                        )
+                        .arg(
+                            Arg::new("skip")
+                                .long("skip")
+                                .value_name("N")
+                                .value_parser(clap::value_parser!(i64))
+                                .help(
+                                    "Number of projects to skip (for pagination). Use with --top to page through results.",
+                                ),
+                        ),
+                )
+                .subcommand(
+                    Command::new("show")
+                        .about(
+                            "Show details of a single project: ID, name, description, state, visibility, process template, and capabilities (with --capabilities). The argument accepts either the project name (e.g. 'MyApp') or the GUID.",
+                        )
+                        .arg(
+                            Arg::new("project_id")
+                                .value_name("PROJECT_ID")
+                                .required(true)
+                                .help(
+                                    "Project name (e.g. 'MyApp') or GUID. Both are accepted; names are case-insensitive.",
+                                ),
+                        )
+                        .arg(
+                            Arg::new("capabilities")
+                                .long("capabilities")
+                                .action(ArgAction::SetTrue)
+                                .help(
+                                    "Include the project's capability map (whether version control, boards, pipelines, test plans are enabled). Adds ~30 lines of output.",
+                                ),
+                        ),
+                ),
+        )
+        .subcommand(
             Command::new("schema")
                 .about("Dump the CLI command tree as structured JSON for LLM agents.")
                 .arg(

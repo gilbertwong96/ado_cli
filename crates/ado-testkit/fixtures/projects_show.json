@@ -1,0 +1,28 @@
+{
+  "id": "6a1f8f6e-2b8d-4b9e-9d2a-1c3f5e7a9b0c",
+  "name": "Alpha",
+  "description": "The first project",
+  "url": "https://dev.azure.com/myorg/_apis/projects/6a1f8f6e-2b8d-4b9e-9d2a-1c3f5e7a9b0c",
+  "state": "wellFormed",
+  "revision": 12,
+  "visibility": "private",
+  "lastUpdateTime": "2026-09-01T09:12:44.413Z",
+  "defaultTeam": {
+    "id": "2b6f0f6d-3a1e-4c8e-9f21-8d4b7c5e6a90",
+    "name": "Alpha Team",
+    "url": "https://dev.azure.com/myorg/_apis/projects/6a1f8f6e-2b8d-4b9e-9d2a-1c3f5e7a9b0c/teams/2b6f0f6d-3a1e-4c8e-9f21-8d4b7c5e6a90"
+  },
+  "capabilities": {
+    "processTemplate": {
+      "templateTypeId": "adcc42ab-9882-485e-a3ed-7678f01f66bc",
+      "templateName": "Agile"
+    },
+    "versioncontrol": {
+      "sourceControlType": "Git",
+      "gitEnabled": "True"
+    },
+    "boards": {
+      "boardsEnabled": "True"
+    }
+  }
+}

@@ -10,6 +10,7 @@ repository = "https://github.com/gilbertwong96/ado_cli"
 ado-core = { path = "../ado-core" }
 clap = { workspace = true }
 clap_complete = { workspace = true }
+comfy-table = { workspace = true }
 serde_json = { workspace = true }
 
 [dev-dependencies]
