@@ -115,7 +115,8 @@ impl Client {
     ///
     /// The status is classified before any body byte is handed over: a 2xx answers
     /// an open [`RawBody`], which streams without a size cap, and anything else
-    /// classifies per spec §6.2 from a bounded read of the error body.
+    /// classifies per spec §6.2 from a bounded read of the error body, decoded
+    /// lossily so a non-text body still classifies by its status.
     pub fn get_raw(&self, url: &str) -> Result<RawBody, AdoError> {
         let request = http::Request::builder()
             .method("GET")
@@ -139,10 +140,13 @@ impl Client {
         if !is_success(status) {
             let body = response
                 .body_mut()
-                .read_to_string()
+                .read_to_vec()
                 .map_err(|error| AdoError::from_transport(&error))?;
 
-            return Err(AdoError::from_status(status, body));
+            return Err(AdoError::from_status(
+                status,
+                String::from_utf8_lossy(&body).into_owned(),
+            ));
         }
 
         Ok(RawBody {

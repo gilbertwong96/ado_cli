@@ -50,13 +50,7 @@ impl MockResponse {
     /// A `.json` fixture must read as UTF-8 text as well as parse as JSON — a
     /// corrupt capture fails loudly here rather than serving bytes.
     pub fn from_fixture(name: &str) -> MockResponse {
-        let path = fixture_path(&format!("{name}.json"));
-        let body = fs::read(&path)
-            .unwrap_or_else(|error| panic!("cannot read fixture {}: {error}", path.display()));
-        std::str::from_utf8(&body)
-            .unwrap_or_else(|error| panic!("fixture {} is not UTF-8: {error}", path.display()));
-        serde_json::from_slice::<Value>(&body)
-            .unwrap_or_else(|error| panic!("fixture {} is not JSON: {error}", path.display()));
+        let body = read_json_fixture(&fixture_path(&format!("{name}.json")));
 
         MockResponse {
             status: 200,
@@ -240,6 +234,19 @@ fn fixture_path(name: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("fixtures")
         .join(name)
+}
+
+/// The `.json` fixture guard: the capture must read as UTF-8 text and parse as
+/// JSON, so a corrupt fixture fails loudly at load time rather than serving bytes.
+fn read_json_fixture(path: &Path) -> Vec<u8> {
+    let body = fs::read(path)
+        .unwrap_or_else(|error| panic!("cannot read fixture {}: {error}", path.display()));
+    std::str::from_utf8(&body)
+        .unwrap_or_else(|error| panic!("fixture {} is not UTF-8: {error}", path.display()));
+    serde_json::from_slice::<Value>(&body)
+        .unwrap_or_else(|error| panic!("fixture {} is not JSON: {error}", path.display()));
+
+    body
 }
 
 impl Drop for MockServer {
@@ -784,10 +791,14 @@ mod tests {
 
     #[test]
     fn from_fixture_rejects_non_utf8_bytes() {
-        let path = fixture_path("not-utf8.json");
-        fs::write(&path, [0xff, 0xfe, 0x00]).expect("write a corrupt fixture");
+        let unique = COUNTER.fetch_add(1, Ordering::Relaxed);
+        let path = std::env::temp_dir().join(format!(
+            "ado-testkit-not-utf8-{}-{unique}.json",
+            std::process::id()
+        ));
+        fs::write(&path, [0xff, 0xfe, 0x00]).expect("write the corrupt fixture");
 
-        let panic = std::panic::catch_unwind(|| MockResponse::from_fixture("not-utf8"));
+        let panic = std::panic::catch_unwind(|| read_json_fixture(&path));
 
         fs::remove_file(&path).expect("remove the corrupt fixture");
         let message = panic.expect_err("a non-UTF-8 fixture panics");

@@ -100,6 +100,17 @@ fn zip_bytes() -> Vec<u8> {
     MockResponse::from_bytes_fixture("artifacts_download.zip").body
 }
 
+/// The `.tmp` files left in `home`, which must be none after any download: a
+/// successful rename removes the temp, a failed stream removes it too.
+fn temp_siblings(home: &TempHome) -> Vec<String> {
+    fs::read_dir(home.path())
+        .expect("the temp home")
+        .filter_map(Result::ok)
+        .map(|entry| entry.file_name().to_string_lossy().into_owned())
+        .filter(|name| name.ends_with(".tmp"))
+        .collect()
+}
+
 fn assert_success(output: &Output) {
     assert_eq!(
         output.status.code(),
@@ -1137,10 +1148,10 @@ fn download_streams_a_body_larger_than_the_buffering_cap() {
 }
 
 /// A connection dropped after the headers is a classified transport failure, and
-/// the partial file is removed rather than left behind — the module reads the whole
-/// body before its `File.write!`, so it never leaves a partial file either.
+/// nothing appears at the target — the body streams to a sibling temp file that is
+/// removed, so there is never a partial artifact to mistake for a real one.
 #[test]
-fn download_removes_a_partial_file_when_the_stream_breaks() {
+fn download_leaves_no_file_when_the_stream_breaks() {
     let home = TempHome::new();
     let server = MockServer::start();
     let target = home.path().join("partial.zip");
@@ -1180,5 +1191,95 @@ fn download_removes_a_partial_file_when_the_stream_breaks() {
         "the dropped connection is classified: {}",
         stderr_of(&output)
     );
-    assert!(!target.exists(), "the partial file is removed");
+    assert!(!target.exists(), "no partial file appears at the target");
+    assert!(
+        temp_siblings(&home).is_empty(),
+        "no temp sibling is left behind: {:?}",
+        temp_siblings(&home)
+    );
+}
+
+/// A failed stream must not destroy a pre-existing `--output` file: the body goes
+/// to a sibling temp file, so the target keeps its old bytes byte for byte, exactly
+/// as the module's read-then-`File.write!/2` order does.
+#[test]
+fn download_keeps_a_pre_existing_file_when_the_stream_breaks() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    let target = home.path().join("existing.zip");
+    fs::write(&target, b"old artifact bytes").expect("seed the target");
+    let port = spawn_truncating_blob(b"PK\x03\x04partial".to_vec(), 4096);
+    expect_artifacts(
+        &server,
+        &artifacts_with_download(&format!("http://127.0.0.1:{port}/blob/drop.zip")),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "pipelines-artifacts",
+            "download",
+            "Alpha",
+            "7",
+            "99",
+            "drop",
+            "--output",
+            target.to_str().expect("a utf-8 path"),
+        ],
+    );
+
+    assert_eq!(output.status.code(), Some(1), "the download failed");
+    assert_eq!(
+        fs::read(&target).expect("the pre-existing file"),
+        b"old artifact bytes",
+        "an existing target survives a failed download byte for byte"
+    );
+    assert!(
+        temp_siblings(&home).is_empty(),
+        "no temp sibling is left behind: {:?}",
+        temp_siblings(&home)
+    );
+}
+
+/// A successful stream replaces a pre-existing target with the new bytes, through
+/// the temp file's rename, and leaves no temp sibling.
+#[test]
+fn download_replaces_an_existing_file_on_success() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    let target = home.path().join("existing.zip");
+    fs::write(&target, b"stale artifact bytes").expect("seed the target");
+    expect_artifacts(
+        &server,
+        &artifacts_with_download(&format!("{}{DOWNLOAD_PATH}", server.base_url())),
+    );
+    expect_blob(&server, DOWNLOAD_PATH);
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "pipelines-artifacts",
+            "download",
+            "Alpha",
+            "7",
+            "99",
+            "drop",
+            "--output",
+            target.to_str().expect("a utf-8 path"),
+        ],
+    );
+
+    assert_success(&output);
+    assert_eq!(
+        fs::read(&target).expect("the replaced file"),
+        zip_bytes(),
+        "the download replaces the old bytes"
+    );
+    assert!(
+        temp_siblings(&home).is_empty(),
+        "no temp sibling is left behind: {:?}",
+        temp_siblings(&home)
+    );
 }

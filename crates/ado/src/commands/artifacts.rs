@@ -5,10 +5,11 @@
 //!
 //! `download` produces bytes, not an envelope: it streams the artifact to
 //! `--output` (default `./<artifact-name>.zip`) and reports the module's
-//! `Downloaded <n> bytes to <path>` line. The body goes straight to the file in
-//! 64 KiB chunks — no size cap. `--output` is always a file path — the frozen
-//! `--output -` writes a file literally named `-`, and this wave does not invent a
-//! stdout destination.
+//! `Downloaded <n> bytes to <path>` line. The body goes straight to a sibling temp
+//! file in 64 KiB chunks — no size cap — and only a fully received body is renamed
+//! onto the target. `--output` is always a file path — the frozen `--output -`
+//! writes a file literally named `-`, and this wave does not invent a stdout
+//! destination.
 
 use std::fs;
 use std::io::{self, Write};
@@ -130,23 +131,40 @@ fn write_error(path: &str, error: &io::Error) -> AdoError {
     AdoError::validation(format!("Could not write the artifact to {path}: {error}"))
 }
 
-/// Stream the open body into `target` and answer the bytes written. The file is
-/// created only once the status was accepted, and a stream that fails part-way
-/// leaves no partial artifact behind: the module reads the whole body before its
-/// `File.write!/2`, so it never leaves a partial file either, and a truncated
-/// artifact on disk is worse than none. If the removal itself fails, the original
-/// error is still the one reported.
+/// Stream the open body into a sibling temp file and rename it onto `target` only
+/// once the whole body arrived. That keeps both invariants: no partial artifact
+/// ever appears at the target, and a pre-existing target survives a failed
+/// download byte for byte — the module reads the whole body before its
+/// `File.write!/2`, so it never leaves a partial file and never destroys an
+/// existing one either. A failure while removing the temp file never masks the
+/// original error.
 fn write_artifact(target: &str, mut body: RawBody) -> Result<u64, AdoError> {
-    let mut file = fs::File::create(target).map_err(|error| write_error(target, &error))?;
+    let temp = temp_path(target);
+    let mut file = fs::File::create(&temp).map_err(|error| write_error(target, &error))?;
 
-    match copy_body(&mut body, &mut file, target) {
-        Ok(written) => Ok(written),
+    let written = match copy_body(&mut body, &mut file, target) {
+        Ok(written) => written,
         Err(error) => {
             drop(file);
-            let _ = fs::remove_file(target);
-            Err(error)
+            let _ = fs::remove_file(&temp);
+
+            return Err(error);
         }
-    }
+    };
+
+    drop(file);
+    fs::rename(&temp, target).map_err(|error| {
+        let _ = fs::remove_file(&temp);
+        write_error(target, &error)
+    })?;
+
+    Ok(written)
+}
+
+/// The temp name sits beside the target, so the successful rename is a
+/// same-directory replace of the target's bytes.
+fn temp_path(target: &str) -> String {
+    format!("{target}.tmp")
 }
 
 /// The copy loop, so a reader failure and a writer failure classify differently:

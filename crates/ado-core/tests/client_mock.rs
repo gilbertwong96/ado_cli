@@ -393,6 +393,36 @@ fn get_raw_classifies_status_errors() {
     );
 }
 
+/// A non-2xx body that is not valid UTF-8 still classifies by its status: the body
+/// is read as bounded bytes and decoded lossily for `details.body`, the way the
+/// previous `read_to_vec` + `from_utf8_lossy` did. `read_to_string` would error on
+/// such a body (its lossy decoding only applies to text content types) and lose the
+/// §6.2 classification.
+#[test]
+fn get_raw_classifies_a_non_utf8_error_body_by_status() {
+    let server = MockServer::start();
+    server.expect(
+        "GET",
+        "/blob/binary-error.zip",
+        MockResponse::bytes(404, vec![0xff, 0xfe, 0x00, 0x41]),
+    );
+    let client = client_for(&server);
+    let url = format!("{}/blob/binary-error.zip", server.base_url());
+
+    let error = client.get_raw(&url).err().expect("the status is an error");
+
+    assert_eq!(error.code, ErrorCode::NotFound);
+    assert_eq!(error.status, Some(404));
+    assert_eq!(error.message, NOT_FOUND_MESSAGE);
+    let details = error.details.expect("details carry the status and body");
+    assert_eq!(details["status"], json!(404));
+    assert_eq!(
+        details["body"],
+        json!("\u{fffd}\u{fffd}\u{0}A"),
+        "the bytes are lossily decoded, not dropped: {details}"
+    );
+}
+
 /// A 3xx off a download is the same redirect class as any other request: the
 /// status is reported as sent and the message depends on `Location` (spec §6.2;
 /// D25 keeps the classification for the download path). The oracle's `get_raw/2`
