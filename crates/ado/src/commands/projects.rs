@@ -1,7 +1,7 @@
 //! `ado projects list|show` — the read paths of `lib/ado_cli/cli/projects.ex`:
 //! the same REST surface, the same filters, and the same human layout.
 
-use ado_core::envelope::{ok_list, ok_value};
+use ado_core::envelope::ok_value;
 use ado_core::error::{AdoError, ErrorCode};
 use serde_json::Value;
 
@@ -12,7 +12,9 @@ use crate::output::Report;
 const PROJECTS_PATH: &str = "/_apis/projects";
 
 /// `ado projects list`: `GET /_apis/projects` with `stateFilter`, `$top` and
-/// `$skip`, exactly as `list_projects/1` builds them.
+/// `$skip`, exactly as `list_projects/1` builds them. Under `--json` the body is
+/// the value envelope — a bare array under `result`, the kind the module's
+/// `Helpers.json_or_format` picks (W1-R12) — not the `count`/`items` list form.
 pub fn list(
     context: &mut Context,
     state: Option<String>,
@@ -22,7 +24,11 @@ pub fn list(
     let params = list_params(state, top, skip);
     let items = items(context.client()?.list(PROJECTS_PATH, &params)?);
 
-    Ok(context.json_or_report(ok_list(items.clone()), || projects_table(&items)))
+    Ok(
+        context.json_or_report(ok_value(Value::Array(items.clone())), || {
+            projects_table(&items)
+        }),
+    )
 }
 
 /// `ado projects show`: `GET /_apis/projects/{id}`, with `includeCapabilities`
@@ -82,7 +88,8 @@ fn show_params(capabilities: bool) -> Vec<(String, String)> {
 }
 
 /// The Elixir's `Client.list/2` unwraps the `value` array; anything else is
-/// wrapped the way `List.wrap/1` wraps it, so the envelope stays a list.
+/// wrapped the way `List.wrap/1` wraps it, so the value envelope always carries
+/// an array.
 fn items(value: Value) -> Vec<Value> {
     match value {
         Value::Array(items) => items,

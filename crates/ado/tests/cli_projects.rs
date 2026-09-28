@@ -15,6 +15,12 @@ use serde_json::{Value, json};
 
 const ORG: &str = "myorg";
 
+/// The frozen escript's literal `ado projects list --json` line for the
+/// `projects_list` fixture, captured against the mock (W1-R12): the read
+/// commands' list envelope is the value form, a bare array under `result` —
+/// `Helpers.json_or_format`'s kind, not `count`/`items`.
+const ORACLE_LIST_JSON: &str = r#"{"ok":true,"result":[{"description":"The first project","id":"6a1f8f6e-2b8d-4b9e-9d2a-1c3f5e7a9b0c","lastUpdateTime":"2026-09-01T09:12:44.413Z","name":"Alpha","revision":12,"state":"wellFormed","url":"https://dev.azure.com/myorg/_apis/projects/6a1f8f6e-2b8d-4b9e-9d2a-1c3f5e7a9b0c","visibility":"private"},{"description":"The second project","id":"b7c2d0a4-5e6f-4a1b-8c9d-0e1f2a3b4c5d","lastUpdateTime":"2026-09-10T15:02:10.117Z","name":"Beta","revision":4,"state":"wellFormed","url":"https://dev.azure.com/myorg/_apis/projects/b7c2d0a4-5e6f-4a1b-8c9d-0e1f2a3b4c5d","visibility":"public"}]}"#;
+
 fn command(home: &TempHome, server: &MockServer, args: &[&str]) -> Command {
     let mut command = ado_cmd();
     home.apply(&mut command);
@@ -61,7 +67,7 @@ fn pair(key: &str, value: &str) -> (String, String) {
 /// mapping table and its help text intend `stateFilter`/`$top`/`$skip`, and
 /// Azure ignores anything else (D19).
 #[test]
-fn list_sends_the_mapped_query_and_emits_the_list_envelope() {
+fn list_sends_the_mapped_query_and_emits_the_oracle_envelope() {
     let home = TempHome::new();
     let server = MockServer::start();
     server.expect_query(
@@ -93,16 +99,20 @@ fn list_sends_the_mapped_query_and_emits_the_list_envelope() {
     );
 
     assert_success(&output);
-    let items = fixture("projects_list");
-    let expected = json!({
-        "ok": true,
-        "count": 2,
-        "items": items["value"].clone(),
-    });
+    let stdout = stdout_of(&output);
+
     assert_eq!(
-        stdout_of(&output),
-        format!("{expected}\n"),
-        "the list envelope is the whole of stdout"
+        stdout,
+        format!("{ORACLE_LIST_JSON}\n"),
+        "the oracle's exact bytes (W1-R12)"
+    );
+
+    let envelope: Value = serde_json::from_str(&stdout).expect("stdout is one JSON document");
+    let items = fixture("projects_list");
+    assert_eq!(
+        envelope,
+        json!({"ok": true, "result": items["value"].clone()}),
+        "the parsed envelope carries the fixture's array under result"
     );
     assert_eq!(
         received_query(&server),
@@ -156,6 +166,15 @@ fn list_json_emits_no_table() {
         serde_json::from_str(&stdout).expect("stdout is exactly one JSON document");
 
     assert_eq!(envelope["ok"], json!(true));
+    assert_eq!(
+        envelope["result"].as_array().map(Vec::len),
+        Some(2),
+        "the envelope is the value form"
+    );
+    assert!(
+        envelope.get("count").is_none() && envelope.get("items").is_none(),
+        "the count/items list form never ships (W1-R12): {stdout}"
+    );
     assert!(
         !stdout.lines().any(|line| line.starts_with("ID")),
         "a table header reached --json output: {stdout}"
