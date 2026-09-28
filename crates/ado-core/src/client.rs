@@ -8,7 +8,7 @@ use ureq::http;
 
 use crate::auth::auth_header;
 use crate::credentials::Credentials;
-use crate::env::{ENV_SERVER, EnvSource, ProcessEnv};
+use crate::env::{ENV_SERVER, EnvSource, ProcessEnv, non_empty};
 use crate::error::{AdoError, ErrorCode};
 
 /// The REST API version merged into every URL; a caller's own `api-version` wins.
@@ -53,7 +53,7 @@ impl Client {
         let base = match env
             .get(ENV_SERVER)
             .map(|server| server.trim_end_matches('/').to_owned())
-            .filter(|server| !server.is_empty())
+            .filter(|server| non_empty(server))
         {
             Some(server) => Base::Server(server),
             None => Base::Cloud,
@@ -332,6 +332,17 @@ mod tests {
             client(Some("https://server.test/tfs/")).url_for("_apis/projects", &[]),
             "https://server.test/myorg/tfs/_apis/projects?api-version=7.1"
         );
+    }
+
+    #[test]
+    fn a_blank_server_is_read_as_unset() {
+        for blank in ["", "  ", "///"] {
+            assert_eq!(
+                client(Some(blank)).url_for("_apis/projects", &[]),
+                "https://myorg.visualstudio.com/_apis/projects?api-version=7.1",
+                "{blank:?} is not a server"
+            );
+        }
     }
 
     #[test]

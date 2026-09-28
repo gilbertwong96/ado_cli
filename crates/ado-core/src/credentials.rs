@@ -11,7 +11,7 @@ use std::sync::{Arc, Mutex};
 use serde::{Deserialize, Serialize};
 
 use crate::config::{AuthMethod, Config, config_dir, missing_config_dir, write_failed};
-use crate::env::{ENV_ORG, ENV_PAT, EnvSource};
+use crate::env::{ENV_ORG, ENV_PAT, EnvSource, non_empty};
 use crate::error::AdoError;
 
 /// The keychain service name; the account is the organization.
@@ -233,9 +233,15 @@ impl SecretStore for FallbackStore {
         }
     }
 
+    /// Both layers are attempted: "deleted" must mean deleted in the keychain and
+    /// in the credentials file, so a failing layer cannot leave the credential
+    /// behind in the other one. The first error is returned, after the other layer
+    /// has had its turn.
     fn delete(&self, org: &str) -> Result<(), AdoError> {
-        self.fallback.delete(org)?;
-        self.primary.delete(org)
+        let primary = self.primary.delete(org);
+        let fallback = self.fallback.delete(org);
+
+        primary.and(fallback)
     }
 }
 
@@ -259,7 +265,7 @@ pub fn resolve(
         return Err(AdoError::auth_required());
     };
 
-    if let Some(token) = env.get(ENV_PAT).filter(|pat| !pat.trim().is_empty()) {
+    if let Some(token) = env.get(ENV_PAT).filter(|pat| non_empty(pat)) {
         return Ok(Credentials {
             org,
             method: AuthMethod::Pat,
@@ -278,10 +284,10 @@ pub fn resolve(
 }
 
 fn organization(env: &dyn EnvSource, config: Option<&Config>) -> Option<String> {
-    let from_env = env.get(ENV_ORG).filter(|org| !org.trim().is_empty());
+    let from_env = env.get(ENV_ORG).filter(|org| non_empty(org));
     let from_config = config
         .and_then(|config| config.default_org.clone())
-        .filter(|org| !org.trim().is_empty());
+        .filter(|org| non_empty(org));
 
     from_env.or(from_config)
 }
@@ -472,6 +478,47 @@ mod tests {
         assert_eq!(store.get("myorg").expect("get"), None);
         assert!(!path.exists(), "an empty credentials file is removed");
         file.delete("myorg").expect("delete is idempotent");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn delete_clears_both_layers_even_when_the_file_layer_fails() {
+        let dir = TempDir::new("delete-failing-file");
+        let path = dir.path().join(CREDENTIALS_FILE);
+        let file = FileStore::new(path.clone());
+        file.set("myorg", &stored(AuthMethod::Pat, "file-token"))
+            .expect("seed the file layer");
+        file.set("other", &stored(AuthMethod::Pat, "other-token"))
+            .expect("a second entry, so the file must be rewritten rather than removed");
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o444))
+            .expect("make the credentials file read-only");
+
+        if fs::write(&path, b"probe").is_ok() {
+            // Running as root: the mode bits do not apply, so there is nothing to assert.
+            return;
+        }
+
+        let keychain = InMemoryStore::new();
+        keychain
+            .set("myorg", &stored(AuthMethod::Pat, "keychain-token"))
+            .expect("seed the keychain layer");
+        let store = FallbackStore::new(keychain.clone(), file);
+
+        let error = store
+            .delete("myorg")
+            .expect_err("the file layer cannot be rewritten");
+
+        assert_eq!(error.code, ErrorCode::ValidationError);
+        assert!(
+            error.message.contains(CREDENTIALS_FILE),
+            "message: {}",
+            error.message
+        );
+        assert_eq!(
+            keychain.get("myorg").expect("the keychain is reachable"),
+            None,
+            "the keychain layer must be attempted even though the file layer failed first"
+        );
     }
 
     #[test]

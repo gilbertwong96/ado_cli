@@ -14,6 +14,16 @@ pub trait EnvSource {
     fn get(&self, key: &str) -> Option<String>;
 }
 
+/// The single blank-means-unset predicate: an empty or all-whitespace value is
+/// not a value. Every reader of `ADO_*`, a flag, or a config/legacy file value
+/// calls this, so the four implementations that disagreed on `"  "` cannot
+/// disagree again.
+///
+/// This is a deviation from the Elixir, which treats `""` as set (inventory D16).
+pub fn non_empty(value: &str) -> bool {
+    !value.trim().is_empty()
+}
+
 /// The real process environment.
 pub struct ProcessEnv;
 
@@ -64,7 +74,7 @@ impl<'a> FlagEnv<'a> {
 
     /// The flag value for the variable it outranks.
     pub fn set(mut self, key: &'static str, value: Option<&str>) -> FlagEnv<'a> {
-        if let Some(value) = value.filter(|value| !value.trim().is_empty()) {
+        if let Some(value) = value.filter(|value| non_empty(value)) {
             self.flags.insert(key, value.to_owned());
         }
         self
@@ -113,5 +123,16 @@ mod tests {
                 .as_deref(),
             Some("envorg")
         );
+    }
+
+    #[test]
+    fn non_empty_is_trim_based() {
+        for value in ["myorg", " myorg "] {
+            assert!(non_empty(value), "{value:?} is a value");
+        }
+
+        for value in ["", " ", "\t\n"] {
+            assert!(!non_empty(value), "{value:?} is not a value");
+        }
     }
 }

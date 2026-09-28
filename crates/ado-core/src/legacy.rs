@@ -6,8 +6,9 @@ use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 
-use crate::config::{AuthMethod, Config, OrgEntry, config_path, save_at};
-use crate::credentials::{SecretStore, Stored, default_store};
+use crate::config::{AuthMethod, Config, OrgEntry, save_at};
+use crate::credentials::{SecretStore, Stored};
+use crate::env::non_empty;
 use crate::error::AdoError;
 
 /// The legacy config file, relative to the home directory.
@@ -46,20 +47,17 @@ pub fn read_legacy() -> Result<Option<LegacyCreds>, AdoError> {
     Ok(legacy_path().as_deref().and_then(read_legacy_at))
 }
 
-/// Imports the legacy credential into `config` and the credential store the first
-/// time it runs, and never again once the new config file exists.
-pub fn import_once(config: &mut Config) -> Result<bool, AdoError> {
-    let config_file = config_path();
-
-    import_with(
-        config,
-        &default_store(),
-        config_file.as_deref(),
-        legacy_path().as_deref(),
-    )
-}
-
-fn import_with(
+/// Imports the legacy credential into `config` and `store` the first time it
+/// runs, and never again once the new config file exists. `config_file` is where
+/// the new config belongs — its absence is the "not imported yet" marker — and
+/// `legacy_file` is the Elixir CLI's `config.json`. Both come from the caller
+/// (`Context` in the binary), so the import reads and writes exactly the paths
+/// the run already resolved.
+///
+/// A blank value is not a value (`env::non_empty`), so a legacy file whose org,
+/// token or server is whitespace-only reads as absent where the first version of
+/// this function accepted it (ruling W1-R3).
+pub fn import_once(
     config: &mut Config,
     store: &dyn SecretStore,
     config_file: Option<&Path>,
@@ -100,13 +98,13 @@ fn read_legacy_at(path: &Path) -> Option<LegacyCreds> {
     let text = fs::read_to_string(path).ok()?;
     let file: LegacyFile = serde_json::from_str(&text).ok()?;
 
-    let org = file.org.filter(|org| !org.is_empty())?;
+    let org = file.org.filter(|org| non_empty(org))?;
     let method: AuthMethod = legacy_method(file.method.as_deref())?;
-    let token = file.pat.or(file.token).filter(|token| !token.is_empty())?;
+    let token = file.pat.or(file.token).filter(|token| non_empty(token))?;
 
     Some(LegacyCreds {
         org,
-        server: file.server.filter(|server| !server.is_empty()),
+        server: file.server.filter(|server| non_empty(server)),
         method,
         token,
     })
@@ -149,7 +147,7 @@ mod tests {
         let store = InMemoryStore::new();
         let mut config = Config::default();
 
-        let imported = import_with(&mut config, &store, Some(&config_file), Some(&legacy));
+        let imported = import_once(&mut config, &store, Some(&config_file), Some(&legacy));
 
         assert!(
             imported.expect("import"),
@@ -191,7 +189,7 @@ mod tests {
         let config_file = dir.path().join("ado").join("config.toml");
         let store = InMemoryStore::new();
 
-        let imported = import_with(
+        let imported = import_once(
             &mut Config::default(),
             &store,
             Some(&config_file),
@@ -239,7 +237,7 @@ mod tests {
         for (label, contents) in cases {
             let legacy = legacy_file(&dir, contents);
 
-            let imported = import_with(
+            let imported = import_once(
                 &mut Config::default(),
                 &store,
                 Some(&config_file),
@@ -261,12 +259,65 @@ mod tests {
     }
 
     #[test]
+    fn legacy_import_reads_whitespace_only_values_as_absent() {
+        let dir = TempDir::new("legacy-blank");
+        let config_file = dir.path().join("ado").join("config.toml");
+        let store = InMemoryStore::new();
+
+        // W1-R3: one trim-based blank-means-unset predicate everywhere, so a
+        // whitespace-only org or token is not a value and nothing imports.
+        for (label, contents) in [
+            ("org", r#"{"org":"  ","method":"pat","pat":"legacy-pat"}"#),
+            ("token", r#"{"org":"myorg","method":"pat","pat":"  "}"#),
+        ] {
+            let legacy = legacy_file(&dir, contents);
+
+            let imported = import_once(
+                &mut Config::default(),
+                &store,
+                Some(&config_file),
+                Some(&legacy),
+            )
+            .expect("a blank legacy value is not an error");
+
+            assert!(!imported, "{label}");
+            assert!(
+                !config_file.exists(),
+                "{label}: a skipped import writes nothing"
+            );
+        }
+
+        // A whitespace-only server is dropped, while the credential still imports.
+        let legacy = legacy_file(
+            &dir,
+            r#"{"org":"myorg","server":"  ","method":"pat","pat":"legacy-pat"}"#,
+        );
+
+        let imported = import_once(
+            &mut Config::default(),
+            &store,
+            Some(&config_file),
+            Some(&legacy),
+        )
+        .expect("import");
+
+        assert!(imported);
+        assert_eq!(
+            load_at(&config_file)
+                .expect("load")
+                .expect("written")
+                .server,
+            None
+        );
+    }
+
+    #[test]
     fn legacy_import_stores_the_credential_before_the_config_marker() {
         let dir = TempDir::new("legacy-failing-store");
         let legacy = legacy_file(&dir, r#"{"org":"myorg","method":"pat","pat":"legacy-pat"}"#);
         let config_file = dir.path().join("ado").join("config.toml");
 
-        let imported = import_with(
+        let imported = import_once(
             &mut Config::default(),
             &InMemoryStore::unavailable(),
             Some(&config_file),
@@ -288,14 +339,14 @@ mod tests {
         let store = InMemoryStore::new();
         let before = fs::read_to_string(&legacy).expect("read legacy");
 
-        let first = import_with(
+        let first = import_once(
             &mut Config::default(),
             &store,
             Some(&config_file),
             Some(&legacy),
         )
         .expect("first import");
-        let second = import_with(
+        let second = import_once(
             &mut Config::default(),
             &store,
             Some(&config_file),
@@ -316,7 +367,7 @@ mod tests {
             r#"{"org":"otherorg","method":"pat","pat":"other-pat"}"#,
         )
         .expect("rewrite legacy");
-        let third = import_with(
+        let third = import_once(
             &mut Config::default(),
             &store,
             Some(&config_file),
