@@ -47,6 +47,20 @@ pub fn command() -> Command {
         .subcommand(Command::new("version").about("Print the ado version and exit."))
         .subcommand(Command::new("whoami").about("Show current authentication status."))
         .subcommand(
+            Command::new("login")
+                .about(
+                    "Authenticate with Azure DevOps. Use --method pat with a Personal Access Token (required for CI and headless environments), or --method device to print a code+URL for signing in on any device. With --method omitted, a Personal Access Token on --pat or ADO_PAT selects pat. After login the token is stored in the OS credential store and the organization and method are recorded in the config file — the token is never written to that file.",
+                )
+                .arg(
+                    Arg::new("method")
+                        .long("method")
+                        .value_name("METHOD")
+                        .help(
+                            "Auth method. Valid: pat (Personal Access Token; required for CI), device (device code flow; visit URL on any device). Browser login is not available in this build.",
+                        ),
+                ),
+        )
+        .subcommand(
             Command::new("projects")
                 .about(
                     "Manage Azure DevOps projects. A project is the top-level container for repos, pipelines, work items, and teams. Every Azure DevOps organization has at least one project.",

@@ -6,10 +6,12 @@
 //! store and never imports the legacy config, so `whoami`, `schema` and
 //! `completion` cannot trigger a keychain prompt. The auth method lives in
 //! `config.toml`; the token does not. Credential resolution, and with it the
-//! one-time legacy import, happens only when a command asks for the client.
+//! one-time legacy import, happens only when a command asks for the client; the one
+//! thing that writes is `login`'s [`Context::save_login`].
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
+use ado_core::auth;
 use ado_core::client::Client;
 use ado_core::config::{self, AuthMethod, Config};
 use ado_core::credentials::{self, Credentials, SecretStore, default_store};
@@ -77,6 +79,61 @@ impl Context {
         self.opts.json
     }
 
+    /// The flag-first environment this run sees: `--org`, `--pat` and `--server` in
+    /// front of `ADO_ORG`, `ADO_PAT` and `ADO_SERVER`. The config file is
+    /// deliberately not part of it, so `login` resolves its options the way the
+    /// oracle's module does (`--org`/`ADO_ORG`, `--pat`/`ADO_PAT`,
+    /// `--server`/`ADO_SERVER`) instead of logging in against a stored default.
+    pub fn env(&self) -> FlagEnv<'_> {
+        FlagEnv::new(self.base_env.as_ref())
+            .set(ENV_ORG, self.opts.org.as_deref())
+            .set(ENV_PAT, self.opts.pat.as_deref())
+            .set(ENV_SERVER, self.opts.server.as_deref())
+    }
+
+    /// The server this run resolves — `--server`, then `ADO_SERVER`, then the
+    /// config's — and `None` when none of the three names one. `whoami` reports the
+    /// cloud default there ([`DEFAULT_SERVER`]); `login`'s envelope mirrors the
+    /// oracle, whose `server` is `null` for an unset one.
+    pub fn server(&self) -> Option<String> {
+        present(self.env().get(ENV_SERVER)).or_else(|| {
+            self.config
+                .as_ref()
+                .and_then(|config| present(config.server.clone()))
+        })
+    }
+
+    /// `<config dir>/ado/config.toml`: the file a login records itself in, and the
+    /// one `whoami` reports (D11b).
+    pub fn config_file(&self) -> Option<&Path> {
+        self.config_file.as_deref()
+    }
+
+    /// Records a completed login: the credential in the store under `org`, and the
+    /// organization and method in the config file (§7). The credential is written
+    /// first — a failed config write then leaves an unreferenced credential rather
+    /// than a login that reports an authenticated setup it cannot resolve — and the
+    /// path is the one this run already resolved, so a test writes its own temp
+    /// directory while a production run writes the OS config directory.
+    pub fn save_login(
+        &mut self,
+        org: &str,
+        method: AuthMethod,
+        token: &str,
+    ) -> Result<(), AdoError> {
+        let mut config = self.config.clone().unwrap_or_default();
+        auth::save_credential(org, method, token, self.store.as_ref(), &mut config)?;
+
+        match self.config_file.as_deref() {
+            Some(path) => config::save_at(path, &config)?,
+            None => config::save(&config)?,
+        }
+
+        self.config = Some(config);
+
+        Ok(())
+    }
+
     /// The one fork between a command's `--json` envelope and its human report:
     /// under `--json` the envelope is the whole answer and `human` is never
     /// called, so no table can reach the JSON path (W1-3, spec §6.1).
@@ -113,13 +170,7 @@ impl Context {
         let env = self.env();
         let configured = self.config.is_some();
         let org = present(env.get(ENV_ORG)).or_else(|| self.default_org());
-        let server = present(env.get(ENV_SERVER))
-            .or_else(|| {
-                self.config
-                    .as_ref()
-                    .and_then(|config| present(config.server.clone()))
-            })
-            .unwrap_or_else(|| DEFAULT_SERVER.to_owned());
+        let server = self.server().unwrap_or_else(|| DEFAULT_SERVER.to_owned());
         let method = self
             .stored_method(org.as_deref())
             .or_else(|| present(env.get(ENV_PAT)).map(|_| AuthMethod::Pat.as_str().to_owned()));
@@ -146,15 +197,6 @@ impl Context {
             .zip(org)
             .and_then(|(config, org)| config.orgs.get(org))
             .map(|entry| entry.auth.as_str().to_owned())
-    }
-
-    /// The flag-first environment: `--org`, `--pat` and `--server` in front of the
-    /// environment they outrank.
-    fn env(&self) -> FlagEnv<'_> {
-        FlagEnv::new(self.base_env.as_ref())
-            .set(ENV_ORG, self.opts.org.as_deref())
-            .set(ENV_PAT, self.opts.pat.as_deref())
-            .set(ENV_SERVER, self.opts.server.as_deref())
     }
 
     /// The credential this run uses: the flags and the environment first — neither
@@ -195,6 +237,36 @@ impl Context {
         }
 
         Ok(imported)
+    }
+}
+
+/// The constructors other modules' tests need: a context whose environment, store
+/// and home the test owns, so no test reads the process environment, the OS
+/// keychain or the developer's files.
+#[cfg(test)]
+impl Context {
+    pub(crate) fn for_test(
+        opts: GlobalOpts,
+        env: ado_core::env::MapEnv,
+        store: impl SecretStore + 'static,
+        home: &ado_testkit::TempHome,
+    ) -> Context {
+        Context {
+            opts,
+            base_env: Box::new(env),
+            config: None,
+            store: Box::new(store),
+            config_file: Some(home.config_dir().join(config::CONFIG_FILE)),
+            legacy_file: Some(home.path().join(legacy::LEGACY_RELATIVE_PATH)),
+            client: None,
+        }
+    }
+
+    /// The config a run would have loaded.
+    pub(crate) fn with_config(mut self, config: Config) -> Context {
+        self.config = Some(config);
+
+        self
     }
 }
 

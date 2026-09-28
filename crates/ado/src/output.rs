@@ -34,7 +34,7 @@ pub enum WriteFailure {
     Other(String),
 }
 
-pub fn write_bytes(writer: &mut impl Write, bytes: &[u8]) -> Result<(), WriteFailure> {
+pub fn write_bytes(writer: &mut (impl Write + ?Sized), bytes: &[u8]) -> Result<(), WriteFailure> {
     match writer.write_all(bytes) {
         Ok(()) => Ok(()),
         Err(error) if error.kind() == io::ErrorKind::BrokenPipe => Err(WriteFailure::BrokenPipe),

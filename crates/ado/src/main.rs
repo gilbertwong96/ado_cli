@@ -48,6 +48,16 @@ fn main() -> ExitCode {
     let result = match matches.subcommand() {
         Some(("version", _)) => commands::version::run(json),
         Some(("whoami", _)) => commands::whoami::run(&Context::load(globals)),
+        Some(("login", login)) => {
+            let mut context = Context::load(globals);
+
+            commands::login::run(
+                &mut context,
+                login.get_one::<String>("method").map(String::as_str),
+                ado_core::auth::device_code::IDENTITY_BASE,
+                &mut io::stdout().lock(),
+            )
+        }
         Some(("projects", sub)) => {
             let mut context = Context::load(globals);
 

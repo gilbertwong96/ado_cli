@@ -1,6 +1,7 @@
 pub mod artifacts;
 pub mod builds;
 pub mod completion;
+pub mod login;
 pub mod pipelines;
 pub mod projects;
 pub mod pull_requests;

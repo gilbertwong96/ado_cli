@@ -91,6 +91,7 @@ fn schema_root_lists_exactly_the_shipped_subcommands() {
         names,
         [
             "ado completion",
+            "ado login",
             "ado pipelines",
             "ado pipelines-artifacts",
             "ado pipelines-builds",
@@ -117,6 +118,43 @@ fn schema_prs_node_has_only_the_wave_one_subcommands() {
         .collect::<Vec<_>>();
 
     assert_eq!(names, ["ado prs list", "ado prs show"]);
+}
+
+/// `login` has one option of its own, `--method`; the Elixir's four local options
+/// are this tree's globals (`--org`, `--pat`, `--server`, and with them `--json`
+/// and `--verbose`, D2), and none of them is required — the command's own
+/// validation answers for a missing org or PAT, with the codes and the `details`
+/// payload the oracle emits.
+#[test]
+fn schema_login_node_has_the_method_option_and_the_globals() {
+    let login = find_node("login").expect("the login node");
+
+    assert_eq!(
+        option_names(&login),
+        ["json", "method", "org", "pat", "server", "verbose"],
+        "the one local option plus the globals clap copies into every node"
+    );
+    assert!(
+        subcommands(&login).is_empty(),
+        "login is a leaf: it has no subcommands"
+    );
+    assert!(
+        options(&login)
+            .iter()
+            .all(|option| option["required"] == json!(false))
+    );
+
+    let method = option(&login, "method");
+    assert_eq!(method["type"], json!("string"));
+    assert_eq!(method["short"], json!(""));
+    assert_eq!(method["default"], json!(""));
+    let doc = method["doc"].as_str().expect("the method doc");
+    assert!(doc.contains("pat"), "doc: {doc}");
+    assert!(doc.contains("device"), "doc: {doc}");
+    assert!(
+        doc.contains("Browser login is not available in this build"),
+        "the help names what ships, not what Wave 3 adds: {doc}"
+    );
 }
 
 /// Wave 1 ports the two read paths only: `run`, `create`, `update`, `delete`,

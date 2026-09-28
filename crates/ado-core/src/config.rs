@@ -82,7 +82,11 @@ pub(crate) fn load_at(path: &Path) -> Result<Option<Config>, AdoError> {
     Ok(toml::from_str(&text).ok())
 }
 
-pub(crate) fn save_at(path: &Path, config: &Config) -> Result<(), AdoError> {
+/// Writes the config to `path`. The caller owns the path it resolved — the binary's
+/// `Context` writes the config file the run already loaded, so a test writes its own
+/// temp directory and never the developer's — where [`save`] resolves the OS
+/// config directory itself.
+pub fn save_at(path: &Path, config: &Config) -> Result<(), AdoError> {
     let text = toml::to_string_pretty(config)
         .map_err(|error| AdoError::validation(format!("Cannot encode config: {error}")))?;
 
