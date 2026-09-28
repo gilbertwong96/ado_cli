@@ -42,11 +42,6 @@ pub fn legacy_path() -> Option<PathBuf> {
     dirs::home_dir().map(|home| home.join(LEGACY_RELATIVE_PATH))
 }
 
-/// Reads the legacy file. A missing, unreadable or malformed file reads as absent.
-pub fn read_legacy() -> Result<Option<LegacyCreds>, AdoError> {
-    Ok(legacy_path().as_deref().and_then(read_legacy_at))
-}
-
 /// Imports the legacy credential into `config` and `store` the first time it
 /// runs, and never again once the new config file exists. `config_file` is where
 /// the new config belongs — its absence is the "not imported yet" marker — and

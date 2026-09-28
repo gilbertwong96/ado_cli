@@ -60,6 +60,12 @@ const NOTHING_PLAIN: &str = "Logged out. No stored credentials to remove.\n";
 /// credential (R52).
 const ORG: &str = "ado-cli-test-org";
 
+/// A port nothing listens on, pinned on the runs that follow a logout: they must
+/// fail with `auth_required` before any client is built, and if a regression ever
+/// re-authenticated, the failure would be a refused connection rather than the
+/// synthetic PAT reaching `dev.azure.com`.
+const DEAD_SERVER: &str = "http://127.0.0.1:1";
+
 fn command(home: &TempHome, args: &[&str]) -> Command {
     let mut command = ado_cmd();
     home.apply(&mut command);
@@ -359,8 +365,12 @@ fn a_migrated_install_is_not_re_imported_after_logout() {
     );
 
     // 3. The next command cannot import it back: no marker, no legacy file, no
-    // credential, no request.
-    let again = run(&home, &["projects", "list", "--org", ORG, "--json"]);
+    // credential, no request. The dead server pins that last part: even a
+    // regression that re-authenticated would be refused rather than send the
+    // synthetic PAT at Azure.
+    let mut again = command(&home, &["projects", "list", "--org", ORG, "--json"]);
+    again.env("ADO_SERVER", DEAD_SERVER);
+    let again = again.output().expect("run the post-logout list");
 
     assert_eq!(again.status.code(), Some(1));
     let envelope: Value = serde_json::from_str(&stdout_of(&again)).expect("a JSON document");
@@ -411,7 +421,9 @@ fn a_legacy_only_install_is_logged_out_without_a_named_org() {
     assert!(!config_file(&home).exists());
     assert!(!credentials_file(&home).exists());
 
-    let next = run(&home, &["projects", "list", "--json"]);
+    let mut next = command(&home, &["projects", "list", "--json"]);
+    next.env("ADO_SERVER", DEAD_SERVER);
+    let next = next.output().expect("run the post-logout list");
 
     assert_eq!(next.status.code(), Some(1));
     let envelope: Value = serde_json::from_str(&stdout_of(&next)).expect("a JSON document");
