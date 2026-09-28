@@ -99,7 +99,14 @@ impl RecordedRequest {
 /// Expectations are single-shot and newest-first, like the Elixir
 /// `AdoCli.TestServer`: the first request matching a method and path consumes it,
 /// so a path can answer twice with two different responses. A query-aware
-/// expectation is skipped unless the request carries every pair it requires.
+/// expectation is skipped unless the request carries every pair it requires — but
+/// because newest wins, a query-blind expectation registered *after* a query-aware
+/// one shadows it for every request. Register the query-blind fallback **first**
+/// and the query-aware expectation last; that is the pagination shape, where
+/// `%24top=10` consumes the specific expectation and every other page falls through
+/// to the fallback. When a specific query must be *proven*, assert
+/// [`received`](MockServer::received)'s
+/// [`query_pairs`](RecordedRequest::query_pairs) rather than relying on the match.
 pub struct MockServer {
     base_url: String,
     state: Arc<MockState>,
@@ -162,6 +169,17 @@ impl MockServer {
     /// those are ignored, the required pairs may arrive in any order, and a repeated
     /// key matches when any of its values is the required one. With an empty `query`
     /// this is [`expect`](MockServer::expect).
+    ///
+    /// Pairs are compared **as sent on the wire, undecoded**: the `ado-core` client
+    /// percent-encodes every byte outside the unreserved set and writes a space as
+    /// `+` (`encode_query` in `crates/ado-core/src/client.rs`), so the `$top` it
+    /// sends arrives as `%24top` and must be expected as `("%24top", "10")` —
+    /// `("$top", "10")` never matches. Assert fixture-derived tokens through
+    /// [`received`](MockServer::received)'s
+    /// [`query_pairs`](RecordedRequest::query_pairs) instead of an expectation when
+    /// the spelling matters: a base64 `continuationToken` carrying `+`, `/` or `=` is
+    /// sent as `%2B`, `%2F`, `%3D`, and `expect_query` only ever sees that encoded
+    /// form.
     pub fn expect_query(
         &self,
         method: &str,
@@ -472,6 +490,10 @@ pub fn ado() -> assert_cmd::Command {
 /// [`TempHome`], point `ADO_SERVER` at a [`MockServer`], add arguments, then run it
 /// with `output()`. Use this instead of [`ado`] when the suite owns the process
 /// environment.
+///
+/// It does **not** strip ambient `ADO_ORG`, `ADO_PAT` or `ADO_SERVER` — unlike
+/// `cli_whoami.rs`'s local helper — so a mock-server or credential suite must
+/// `env_remove` or override them itself before spawning.
 pub fn ado_cmd() -> Command {
     Command::new(ado_bin())
 }
@@ -574,6 +596,37 @@ mod tests {
 
         assert_eq!(status, 200);
         assert_eq!(body, r#"{"matched":"query"}"#);
+    }
+
+    /// The client's wire form is what the matcher sees: `$top` arrives as
+    /// `%24top`, a space as `+`, and a decoded spelling never matches.
+    #[test]
+    fn expect_query_matches_the_wire_form_the_client_sends() {
+        let server = MockServer::start();
+        server.expect_query(
+            "GET",
+            "/_apis/projects",
+            &[("%24top", "10"), ("search", "a+b%2Fc")],
+            MockResponse::json(200, json!({"matched": "wire"})),
+        );
+
+        let (status, body) = http_get(&server, "/_apis/projects?%24top=10&search=a+b%2Fc");
+
+        assert_eq!(status, 200);
+        assert_eq!(body, r#"{"matched":"wire"}"#);
+
+        let decoded = MockServer::start();
+        decoded.expect_query(
+            "GET",
+            "/_apis/projects",
+            &[("$top", "10")],
+            MockResponse::json(200, json!({"matched": "decoded"})),
+        );
+
+        let (status, body) = http_get(&decoded, "/_apis/projects?%24top=10");
+
+        assert_eq!(status, 500, "the decoded spelling must not match");
+        assert!(body.contains("missing query pair $top=10"), "body: {body}");
     }
 
     #[test]
