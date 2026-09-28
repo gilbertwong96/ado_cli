@@ -326,8 +326,9 @@ fn malformed_json_on_200_is_network_error() {
 }
 
 /// `get_raw` is the download path: the URL is used verbatim (no `api-version` is
-/// merged in), and the body comes back as the bytes the server sent — the zip
-/// fixture is not valid UTF-8, so a string body could not carry it (D25).
+/// merged in) and the body streams out in chunks — the zip fixture is not valid
+/// UTF-8, so a string body could not carry it, and the reader has no size cap
+/// (D25).
 #[test]
 fn get_raw_returns_the_body_bytes_verbatim() {
     let server = MockServer::start();
@@ -339,7 +340,16 @@ fn get_raw_returns_the_body_bytes_verbatim() {
     let client = client_for(&server);
     let url = format!("{}/blob/drop.zip", server.base_url());
 
-    let bytes = client.get_raw(&url).expect("the mock answers");
+    let mut body = client.get_raw(&url).expect("the mock answers");
+    let mut bytes = Vec::new();
+    let mut buffer = [0u8; 4096];
+    loop {
+        let read = body.read_chunk(&mut buffer).expect("the body reads");
+        if read == 0 {
+            break;
+        }
+        bytes.extend_from_slice(&buffer[..read]);
+    }
 
     assert_eq!(
         bytes,
@@ -370,7 +380,7 @@ fn get_raw_classifies_status_errors() {
     let client = client_for(&server);
     let url = format!("{}/blob/missing.zip", server.base_url());
 
-    let error = client.get_raw(&url).expect_err("the status is an error");
+    let error = client.get_raw(&url).err().expect("the status is an error");
 
     assert_eq!(error.code, ErrorCode::NotFound);
     assert_eq!(error.status, Some(404));
@@ -381,4 +391,52 @@ fn get_raw_classifies_status_errors() {
         details["body"],
         json!("{\"message\":\"TF400813: Resource not found.\"}")
     );
+}
+
+/// A 3xx off a download is the same redirect class as any other request: the
+/// status is reported as sent and the message depends on `Location` (spec §6.2;
+/// D25 keeps the classification for the download path). The oracle's `get_raw/2`
+/// collapses this to `%{status: 302}` and reports a network error, so this is the
+/// deliberate §6.2 reading.
+#[test]
+fn get_raw_maps_redirects_to_auth_required() {
+    let server = MockServer::start();
+    server.expect(
+        "GET",
+        "/blob/sign-in.zip",
+        MockResponse {
+            status: 302,
+            body: Vec::new(),
+            headers: vec![(
+                "location".to_owned(),
+                "https://login.microsoftonline.com/".to_owned(),
+            )],
+        },
+    );
+    server.expect(
+        "GET",
+        "/blob/no-location.zip",
+        MockResponse {
+            status: 302,
+            body: Vec::new(),
+            headers: Vec::new(),
+        },
+    );
+    let client = client_for(&server);
+
+    let with_location = client
+        .get_raw(&format!("{}/blob/sign-in.zip", server.base_url()))
+        .err()
+        .expect("302 is an error");
+    assert_eq!(with_location.code, ErrorCode::AuthRequired);
+    assert_eq!(with_location.status, Some(302));
+    assert_eq!(with_location.message, SIGN_IN_MESSAGE);
+
+    let without_location = client
+        .get_raw(&format!("{}/blob/no-location.zip", server.base_url()))
+        .err()
+        .expect("302 is an error");
+    assert_eq!(without_location.code, ErrorCode::AuthRequired);
+    assert_eq!(without_location.status, Some(302));
+    assert_eq!(without_location.message, NO_LOCATION_MESSAGE);
 }

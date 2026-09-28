@@ -23,8 +23,11 @@
 //! credential resolution reaches the developer's keychain.
 
 use std::fs;
+use std::io::{Read, Write};
+use std::net::TcpListener;
 use std::path::Path;
 use std::process::{Command, Output, Stdio};
+use std::thread;
 
 use ado_testkit::{
     MockResponse, MockServer, RecordedRequest, TempHome, ado_cmd, stderr_of, stdout_of,
@@ -1032,4 +1035,150 @@ fn a_closed_stdout_is_a_silent_success() {
         zip_bytes(),
         "the file is written even though the success line could not be"
     );
+}
+
+/// Eleven MiB of deterministic pseudo-random bytes built here, never a committed
+/// fixture: bigger than the 10 MiB buffering cap `read_to_vec` would impose, so
+/// the download only succeeds if it streams the body without a limit.
+fn pseudo_random_bytes(len: usize) -> Vec<u8> {
+    let mut state = 0x9E37_79B9_7F4A_7C15u64;
+
+    (0..len)
+        .map(|_| {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            (state >> 33) as u8
+        })
+        .collect()
+}
+
+fn sha256(bytes: &[u8]) -> Vec<u8> {
+    use sha2::{Digest, Sha256};
+
+    let mut hasher = Sha256::new();
+    hasher.update(bytes);
+
+    hasher.finalize().to_vec()
+}
+
+/// A one-shot server that declares a larger `Content-Length` than it sends and
+/// then closes: the connection drops after the headers, mid-body.
+fn spawn_truncating_blob(prefix: Vec<u8>, declared_len: usize) -> u16 {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind a truncating server");
+    let port = listener.local_addr().expect("the bound address").port();
+
+    thread::spawn(move || {
+        if let Ok((mut stream, _)) = listener.accept() {
+            let mut head = [0u8; 1024];
+            let _ = stream.read(&mut head);
+            let _ = write!(
+                stream,
+                "HTTP/1.1 200 OK\r\ncontent-type: application/octet-stream\r\ncontent-length: {declared_len}\r\n\r\n"
+            );
+            let _ = stream.write_all(&prefix);
+            let _ = stream.flush();
+        }
+    });
+
+    port
+}
+
+/// A download is not buffered, so an artifact larger than 10 MiB lands whole: the
+/// written file's length and sha256 are the served body's. The frozen CLI reads the
+/// body unbounded too, so this is parity, not a deviation.
+#[test]
+fn download_streams_a_body_larger_than_the_buffering_cap() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    let target = home.path().join("large.zip");
+    let large = pseudo_random_bytes(11 * 1024 * 1024 + 7);
+    expect_artifacts(
+        &server,
+        &artifacts_with_download(&format!("{}{DOWNLOAD_PATH}", server.base_url())),
+    );
+    server.expect(
+        "GET",
+        DOWNLOAD_PATH,
+        MockResponse::bytes(200, large.clone()),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "pipelines-artifacts",
+            "download",
+            "Alpha",
+            "7",
+            "99",
+            "drop",
+            "--output",
+            target.to_str().expect("a utf-8 path"),
+        ],
+    );
+
+    assert_success(&output);
+    let written = fs::read(&target).expect("the artifact file");
+    assert_eq!(
+        written.len(),
+        large.len(),
+        "the whole body, not the first 10 MiB"
+    );
+    assert_eq!(
+        sha256(&written),
+        sha256(&large),
+        "the bytes on disk are the bytes the server sent"
+    );
+    assert_eq!(
+        stdout_of(&output),
+        format!("Downloaded {} bytes to {}\n", large.len(), target.display())
+    );
+}
+
+/// A connection dropped after the headers is a classified transport failure, and
+/// the partial file is removed rather than left behind — the module reads the whole
+/// body before its `File.write!`, so it never leaves a partial file either.
+#[test]
+fn download_removes_a_partial_file_when_the_stream_breaks() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    let target = home.path().join("partial.zip");
+    let port = spawn_truncating_blob(b"PK\x03\x04partial".to_vec(), 4096);
+    expect_artifacts(
+        &server,
+        &artifacts_with_download(&format!("http://127.0.0.1:{port}/blob/drop.zip")),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "pipelines-artifacts",
+            "download",
+            "Alpha",
+            "7",
+            "99",
+            "drop",
+            "--output",
+            target.to_str().expect("a utf-8 path"),
+        ],
+    );
+
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "a short body is not a success"
+    );
+    assert!(
+        stdout_of(&output).is_empty(),
+        "no success line: {}",
+        stdout_of(&output)
+    );
+    assert!(
+        stderr_of(&output).contains("[Network error] Request failed:"),
+        "the dropped connection is classified: {}",
+        stderr_of(&output)
+    );
+    assert!(!target.exists(), "the partial file is removed");
 }

@@ -3,16 +3,17 @@
 //! layout, and a byte download whose source URL is the one deliberate deviation
 //! (D25: an absolute `resource.downloadUrl` is requested verbatim).
 //!
-//! `download` produces bytes, not an envelope: it writes the artifact to
+//! `download` produces bytes, not an envelope: it streams the artifact to
 //! `--output` (default `./<artifact-name>.zip`) and reports the module's
-//! `Downloaded <n> bytes to <path>` line. `--output` is always a file path — the
-//! frozen `--output -` writes a file literally named `-`, and this wave does not
-//! invent a stdout destination.
+//! `Downloaded <n> bytes to <path>` line. The body goes straight to the file in
+//! 64 KiB chunks — no size cap. `--output` is always a file path — the frozen
+//! `--output -` writes a file literally named `-`, and this wave does not invent a
+//! stdout destination.
 
 use std::fs;
-use std::io;
+use std::io::{self, Write};
 
-use ado_core::client::encode_path_segment;
+use ado_core::client::{RawBody, encode_path_segment};
 use ado_core::envelope::ok_value;
 use ado_core::error::AdoError;
 use serde_json::Value;
@@ -40,9 +41,9 @@ pub fn list(
 }
 
 /// `download_artifact/1`: list the run's artifacts, pick one by its exact name,
-/// `GET` its `resource.downloadUrl`, and write the bytes to `--output` (default
-/// `./<artifact-name>.zip`). The success line is the module's; there is no
-/// envelope, under `--json` or otherwise.
+/// `GET` its `resource.downloadUrl`, and stream the bytes into `--output` (default
+/// `./<artifact-name>.zip`). The success line is the module's, with the number of
+/// bytes actually written; there is no envelope, under `--json` or otherwise.
 ///
 /// D25: an **absolute** `downloadUrl` is requested verbatim, with no `api-version`
 /// added — the URL carries its own signed query, and the frozen client's habit of
@@ -74,11 +75,10 @@ pub fn download(
     let body = client.get_raw(&url)?;
 
     let target = output.unwrap_or_else(|| format!("{artifact_name}.zip"));
-    fs::write(&target, &body).map_err(|error| write_error(&target, &error))?;
+    let written = write_artifact(&target, body)?;
 
     Ok(Report::Text(format!(
-        "Downloaded {} bytes to {target}",
-        body.len()
+        "Downloaded {written} bytes to {target}"
     )))
 }
 
@@ -128,6 +128,46 @@ fn is_absolute(url: &str) -> bool {
 /// error presentation, the way `completion --write-to-file` does (D4).
 fn write_error(path: &str, error: &io::Error) -> AdoError {
     AdoError::validation(format!("Could not write the artifact to {path}: {error}"))
+}
+
+/// Stream the open body into `target` and answer the bytes written. The file is
+/// created only once the status was accepted, and a stream that fails part-way
+/// leaves no partial artifact behind: the module reads the whole body before its
+/// `File.write!/2`, so it never leaves a partial file either, and a truncated
+/// artifact on disk is worse than none. If the removal itself fails, the original
+/// error is still the one reported.
+fn write_artifact(target: &str, mut body: RawBody) -> Result<u64, AdoError> {
+    let mut file = fs::File::create(target).map_err(|error| write_error(target, &error))?;
+
+    match copy_body(&mut body, &mut file, target) {
+        Ok(written) => Ok(written),
+        Err(error) => {
+            drop(file);
+            let _ = fs::remove_file(target);
+            Err(error)
+        }
+    }
+}
+
+/// The copy loop, so a reader failure and a writer failure classify differently:
+/// a dropped connection is the §6.2 transport class, while an unwritable target is
+/// command-level input. A fixed 64 KiB buffer keeps the copy at one allocation and
+/// the body itself has no size cap.
+fn copy_body(body: &mut RawBody, file: &mut fs::File, target: &str) -> Result<u64, AdoError> {
+    let mut buffer = vec![0u8; 64 * 1024];
+    let mut written = 0u64;
+
+    loop {
+        let read = body.read_chunk(&mut buffer)?;
+
+        if read == 0 {
+            return Ok(written);
+        }
+
+        file.write_all(&buffer[..read])
+            .map_err(|error| write_error(target, &error))?;
+        written += read as u64;
+    }
 }
 
 /// The module's `print_artifacts_table/1`: Name and Size.

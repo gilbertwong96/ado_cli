@@ -47,10 +47,14 @@ impl MockResponse {
 
     /// A captured response body from `fixtures/<name>.json`, sent with status 200;
     /// pair it with [`with_status`](MockResponse::with_status) for the error fixtures.
+    /// A `.json` fixture must read as UTF-8 text as well as parse as JSON — a
+    /// corrupt capture fails loudly here rather than serving bytes.
     pub fn from_fixture(name: &str) -> MockResponse {
         let path = fixture_path(&format!("{name}.json"));
         let body = fs::read(&path)
             .unwrap_or_else(|error| panic!("cannot read fixture {}: {error}", path.display()));
+        std::str::from_utf8(&body)
+            .unwrap_or_else(|error| panic!("fixture {} is not UTF-8: {error}", path.display()));
         serde_json::from_slice::<Value>(&body)
             .unwrap_or_else(|error| panic!("fixture {} is not JSON: {error}", path.display()));
 
@@ -58,6 +62,18 @@ impl MockResponse {
             status: 200,
             body,
             headers: vec![("content-type".to_owned(), "application/json".to_owned())],
+        }
+    }
+
+    /// A raw byte body, with `content-type: application/octet-stream`.
+    pub fn bytes(status: u16, body: Vec<u8>) -> MockResponse {
+        MockResponse {
+            status,
+            body,
+            headers: vec![(
+                "content-type".to_owned(),
+                "application/octet-stream".to_owned(),
+            )],
         }
     }
 
@@ -69,14 +85,7 @@ impl MockResponse {
         let body = fs::read(&path)
             .unwrap_or_else(|error| panic!("cannot read fixture {}: {error}", path.display()));
 
-        MockResponse {
-            status: 200,
-            body,
-            headers: vec![(
-                "content-type".to_owned(),
-                "application/octet-stream".to_owned(),
-            )],
-        }
+        MockResponse::bytes(200, body)
     }
 
     /// The same response with a different status.
@@ -770,6 +779,22 @@ mod tests {
                 .contains("TF400813"),
             "body: {}",
             String::from_utf8_lossy(&error.body)
+        );
+    }
+
+    #[test]
+    fn from_fixture_rejects_non_utf8_bytes() {
+        let path = fixture_path("not-utf8.json");
+        fs::write(&path, [0xff, 0xfe, 0x00]).expect("write a corrupt fixture");
+
+        let panic = std::panic::catch_unwind(|| MockResponse::from_fixture("not-utf8"));
+
+        fs::remove_file(&path).expect("remove the corrupt fixture");
+        let message = panic.expect_err("a non-UTF-8 fixture panics");
+        let message = message.downcast_ref::<String>().expect("the panic message");
+        assert!(
+            message.contains("is not UTF-8"),
+            "the panic names the guarantee: {message}"
         );
     }
 

@@ -1,6 +1,7 @@
 //! The HTTP client for the Azure DevOps REST API: URL building, one pooled
 //! `ureq::Agent`, and the spec §6.2 classification of every response.
 
+use std::io::{self, Read};
 use std::time::Duration;
 
 use serde_json::{Value, json};
@@ -107,12 +108,15 @@ impl Client {
         })
     }
 
-    /// `GET` returning the raw body bytes, for downloads. `url` is used
-    /// **verbatim**: an absolute `resource.downloadUrl` carries its own query, so no
-    /// `api-version` is merged in (D25). A relative path is resolved with
-    /// [`Client::url_for`] first, which does merge the version. A 2xx answers the
-    /// bytes; anything else classifies per spec §6.2.
-    pub fn get_raw(&self, url: &str) -> Result<Vec<u8>, AdoError> {
+    /// `GET` a download URL for its raw body. `url` is used **verbatim**: an
+    /// absolute `resource.downloadUrl` carries its own query, so no `api-version`
+    /// is merged in (D25). A relative path is resolved with [`Client::url_for`]
+    /// first, which does merge the version.
+    ///
+    /// The status is classified before any body byte is handed over: a 2xx answers
+    /// an open [`RawBody`], which streams without a size cap, and anything else
+    /// classifies per spec §6.2 from a bounded read of the error body.
+    pub fn get_raw(&self, url: &str) -> Result<RawBody, AdoError> {
         let request = http::Request::builder()
             .method("GET")
             .uri(url)
@@ -127,23 +131,23 @@ impl Client {
 
         let status = response.status().as_u16();
         let has_location = response.headers().contains_key("location");
-        let bytes = response
-            .body_mut()
-            .read_to_vec()
-            .map_err(|error| AdoError::from_transport(&error))?;
 
         if REDIRECT_STATUSES.contains(&status) {
             return Err(redirect_error(status, has_location));
         }
 
-        if is_success(status) {
-            Ok(bytes)
-        } else {
-            Err(AdoError::from_status(
-                status,
-                String::from_utf8_lossy(&bytes).into_owned(),
-            ))
+        if !is_success(status) {
+            let body = response
+                .body_mut()
+                .read_to_string()
+                .map_err(|error| AdoError::from_transport(&error))?;
+
+            return Err(AdoError::from_status(status, body));
         }
+
+        Ok(RawBody {
+            reader: response.into_body().into_reader(),
+        })
     }
 
     /// `POST` with a JSON body, returning the decoded response body.
@@ -227,6 +231,24 @@ impl Client {
     }
 }
 
+/// An open 2xx response body for a download. [`RawBody::read_chunk`] streams it
+/// without a size cap; the JSON paths keep their bounded `read_to_string`.
+pub struct RawBody {
+    reader: ureq::BodyReader<'static>,
+}
+
+impl RawBody {
+    /// The next chunk of the body, `Ok(0)` at the end. A connection dropped after
+    /// the headers is classified here — the §6.2 transport error with the reader's
+    /// io error as the opaque reason — so a short body can never read as a clean
+    /// end.
+    pub fn read_chunk(&mut self, buffer: &mut [u8]) -> Result<usize, AdoError> {
+        self.reader
+            .read(buffer)
+            .map_err(|error| read_failed(&error))
+    }
+}
+
 /// One response whose status the client has not classified yet.
 struct Reply {
     status: u16,
@@ -255,6 +277,16 @@ impl Reply {
 
 fn is_success(status: u16) -> bool {
     (200..300).contains(&status)
+}
+
+/// A failure while a response body was being read — a connection dropped
+/// mid-stream — is a transport failure, so it takes the §6.2 classification and
+/// the same opaque `details.reason` shape as a request failure.
+fn read_failed(error: &io::Error) -> AdoError {
+    AdoError::from_transport(&ureq::Error::Io(io::Error::new(
+        error.kind(),
+        error.to_string(),
+    )))
 }
 
 /// The `api-version` default followed by the caller's params, where a caller's own
