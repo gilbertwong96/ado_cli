@@ -3,10 +3,12 @@
 //!
 //! Every test owns its environment — a `TempHome` with the `ADO_*` variables
 //! removed unless the test sets them — so no test reads or writes the developer's
-//! own config or home. Under a `TempHome` the OS keychain is unreachable (macOS
-//! resolves its default keychain through `HOME`; CI Linux has no secret service),
-//! so the credential file layer is the one the command actually rewrites, which is
-//! also the production shape on a headless box.
+//! own config or home. The command still talks to the real credential store,
+//! though, so the synthetic organization names (R52) are a collision guard, not
+//! isolation: under a `TempHome` the keychain is unreachable (macOS resolves its
+//! default keychain through `HOME`; CI Linux has no secret service), which is also
+//! the production shape on a headless box, but a developer's live secret service
+//! is reached and a delete attempt against those names is made.
 //!
 //! The oracle comparison is a *contract* comparison, not a file-bytes one: the
 //! Elixir deletes its whole `~/.ado_cli/config.json` — the single file its token
@@ -23,7 +25,7 @@ use std::process::{Command, Output};
 use std::os::unix::fs::PermissionsExt;
 
 use ado::commands::schema::find_node;
-use ado_testkit::{TempHome, ado_cmd, stderr_of, stdout_of};
+use ado_testkit::{MockResponse, MockServer, TempHome, ado_cmd, stderr_of, stdout_of};
 use serde_json::{Value, json};
 
 /// The frozen escript's `ado logout --json` envelope, captured with an isolated
@@ -79,6 +81,11 @@ fn config_file(home: &TempHome) -> PathBuf {
 
 fn credentials_file(home: &TempHome) -> PathBuf {
     home.config_dir().join("credentials.json")
+}
+
+/// The Elixir CLI's `~/.ado_cli/config.json`, inside the temp home.
+fn legacy_file(home: &TempHome) -> PathBuf {
+    home.path().join(".ado_cli").join("config.json")
 }
 
 /// A two-org configuration whose names are synthetic (R52): the first is the
@@ -246,8 +253,8 @@ fn logout_with_nothing_stored_still_exits_zero_and_says_so() {
     );
 }
 
-/// The second run behaves like the first's shape: exit 0, the same bytes, no
-/// error — the oracle prints the same line twice, ours is idempotent too.
+/// The second run has nothing left to remove and says so — the accurate wording
+/// (D27c) — with the oracle's exit 0 both times.
 #[test]
 fn logout_twice_in_a_row_is_idempotent() {
     let home = TempHome::new();
@@ -270,12 +277,129 @@ fn logout_twice_in_a_row_is_idempotent() {
     assert_eq!(
         stdout_of(&first),
         format!("{}\n", logout_json(ORG)),
-        "the flag/env organization resolves both runs"
+        "the flag/env organization resolves and its credential is removed"
     );
-    assert_eq!(stdout_of(&second), stdout_of(&first), "idempotent");
+    assert_eq!(
+        stdout_of(&second),
+        format!("{NOTHING_JSON}\n"),
+        "the second run removed nothing, so it must not claim it did"
+    );
     assert!(
         !config_file(&home).exists() && !credentials_file(&home).exists(),
         "the second run recreates nothing"
+    );
+}
+
+/// A migrated Elixir install is logged out for real: the legacy file holds the
+/// credential the import copied, and an absent `config.toml` is the import
+/// marker — leaving the file behind would let the next command import the token
+/// straight back (the oracle deleted that very file).
+#[test]
+fn a_migrated_install_is_not_re_imported_after_logout() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "GET",
+        "/ado-cli-test-org/_apis/projects",
+        MockResponse::json(200, json!({"value": []})),
+    );
+    let legacy = legacy_file(&home);
+    fs::create_dir_all(legacy.parent().expect("the legacy directory"))
+        .expect("create the legacy directory");
+    fs::write(
+        &legacy,
+        r#"{"org":"ado-cli-test-org","method":"pat","pat":"legacy-pat"}"#,
+    )
+    .expect("write the legacy file");
+
+    // 1. The first client command imports the legacy install: credential in the
+    // store, organization in the config marker.
+    let mut importing = command(&home, &["projects", "list", "--org", ORG, "--json"]);
+    importing.env("ADO_SERVER", server.base_url());
+    let imported = importing.output().expect("run the importing list");
+
+    assert_success(&imported);
+    assert!(
+        config_file(&home).exists(),
+        "the import writes the config marker"
+    );
+    assert!(
+        credentials_file(&home).exists(),
+        "the import stores the credential"
+    );
+    let received = server.received();
+    assert_eq!(
+        received.len(),
+        1,
+        "the imported credential reached the wire"
+    );
+    assert_eq!(
+        received[0].header("authorization"),
+        Some("Basic OmxlZ2FjeS1wYXQ="),
+        "Basic base64(':legacy-pat')"
+    );
+
+    // 2. Logout removes the store credential, the emptied config and the legacy
+    // file that held the same secret.
+    let output = run(&home, &["logout", "--json"]);
+
+    assert_success(&output);
+    assert_eq!(stdout_of(&output), format!("{}\n", logout_json(ORG)));
+    assert!(
+        !config_file(&home).exists(),
+        "the emptied config is removed"
+    );
+    assert!(
+        !credentials_file(&home).exists(),
+        "the credential is removed"
+    );
+    assert!(
+        !legacy.exists(),
+        "the legacy file held the logged-out credential and must not survive"
+    );
+
+    // 3. The next command cannot import it back: no marker, no legacy file, no
+    // credential, no request.
+    let again = run(&home, &["projects", "list", "--org", ORG, "--json"]);
+
+    assert_eq!(again.status.code(), Some(1));
+    let envelope: Value = serde_json::from_str(&stdout_of(&again)).expect("a JSON document");
+    assert_eq!(envelope["error"]["code"], json!("auth_required"));
+    assert!(
+        !config_file(&home).exists(),
+        "no re-import recreates the marker"
+    );
+    assert!(
+        !credentials_file(&home).exists(),
+        "no re-import rebuilds the credential"
+    );
+    assert_eq!(
+        server.received().len(),
+        1,
+        "only the importing run reached the server"
+    );
+}
+
+/// `default_org` naming another organization is a setting the logout never owned,
+/// so the equality guard leaves it in place.
+#[test]
+fn logout_keeps_a_default_org_that_names_another_organization() {
+    let home = TempHome::new();
+    let config = "default_org = \"ado-cli-test-other\"\nserver = \"https://ado.example.com\"\n\n[orgs.ado-cli-test-org]\nauth = \"pat\"\n\n[orgs.ado-cli-test-other]\nauth = \"browser\"\n";
+    seed(&home, config, TWO_ORG_CREDENTIALS);
+
+    let output = run(&home, &["logout", "--org", ORG, "--json"]);
+
+    assert_success(&output);
+    assert_eq!(stdout_of(&output), format!("{}\n", logout_json(ORG)));
+    assert_eq!(
+        fs::read_to_string(config_file(&home)).expect("config.toml"),
+        "default_org = \"ado-cli-test-other\"\nserver = \"https://ado.example.com\"\n\n[orgs.ado-cli-test-other]\nauth = \"browser\"\n",
+        "default_org names another organization, so it survives untouched"
+    );
+    assert_eq!(
+        fs::read_to_string(credentials_file(&home)).expect("credentials.json"),
+        TWO_ORG_CREDENTIALS_AFTER
     );
 }
 

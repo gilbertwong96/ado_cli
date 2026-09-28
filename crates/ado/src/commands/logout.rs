@@ -18,6 +18,8 @@ use crate::output::Report;
 
 /// `run/1`: clear the credential, then report — the envelope is the oracle's
 /// `{"ok":true,"message":…}` shape with the message this build can stand behind.
+/// `Context::logout` returns the organization only when a stored credential was
+/// actually removed, so the wording never claims a removal that did not happen.
 pub fn run(context: &mut Context) -> Result<Report, AdoError> {
     let removed = context.logout()?;
     let message = match removed {
@@ -42,6 +44,7 @@ mod tests {
     };
     use ado_core::env::MapEnv;
     use ado_core::error::ErrorCode;
+    use ado_core::legacy::LEGACY_RELATIVE_PATH;
     use ado_testkit::TempHome;
 
     use super::*;
@@ -54,6 +57,13 @@ mod tests {
             server: None,
             verbose: false,
             json,
+        }
+    }
+
+    fn flagged_opts(org: &str, json: bool) -> GlobalOpts {
+        GlobalOpts {
+            org: Some(org.to_owned()),
+            ..opts(json)
         }
     }
 
@@ -79,8 +89,12 @@ mod tests {
 
     /// A context whose environment, store and files the test owns: no test reads
     /// the process environment, the OS keychain or the developer's home.
-    fn test_context(json: bool, store: impl SecretStore + 'static, home: &TempHome) -> Context {
-        Context::for_test(opts(json), MapEnv::new(), store, home)
+    fn test_context(
+        opts: GlobalOpts,
+        store: impl SecretStore + 'static,
+        home: &TempHome,
+    ) -> Context {
+        Context::for_test(opts, MapEnv::new(), store, home)
     }
 
     /// A read-only directory stands in for the credentials file that cannot be
@@ -112,7 +126,8 @@ mod tests {
             .set("myorg", &stored(AuthMethod::Pat, "keychain-token"))
             .expect("seed the keychain layer");
         let store = FallbackStore::new(keychain.clone(), file.clone());
-        let mut context = test_context(true, store, &home).with_config(config_with_org("myorg"));
+        let mut context =
+            test_context(opts(true), store, &home).with_config(config_with_org("myorg"));
 
         let error = run(&mut context).expect_err("the file layer cannot be rewritten");
         fs::set_permissions(&blocked, fs::Permissions::from_mode(0o755))
@@ -142,7 +157,7 @@ mod tests {
     fn a_context_with_no_org_does_not_touch_the_store() {
         let home = TempHome::new();
         let store = InMemoryStore::new();
-        let mut context = test_context(true, store.clone(), &home);
+        let mut context = test_context(opts(true), store.clone(), &home);
 
         let report = run(&mut context).expect("nothing to remove is a success");
 
@@ -157,6 +172,76 @@ mod tests {
             store.calls().is_empty(),
             "an unresolvable organization never reaches the store: {:?}",
             store.calls()
+        );
+        assert!(!home.config_dir().join("config.toml").exists());
+    }
+
+    /// The legacy file holds exactly one organization, and another one's
+    /// credential is not ours to remove.
+    #[test]
+    fn a_legacy_file_naming_another_org_survives() {
+        let home = TempHome::new();
+        let legacy = home.path().join(LEGACY_RELATIVE_PATH);
+        fs::create_dir_all(legacy.parent().expect("the legacy directory"))
+            .expect("create the legacy directory");
+        let contents = r#"{"org":"someone-else","method":"pat","pat":"their-pat"}"#;
+        fs::write(&legacy, contents).expect("write the legacy file");
+        let store = InMemoryStore::new();
+        store
+            .set("myorg", &stored(AuthMethod::Pat, "stored-token"))
+            .expect("seed the store");
+        let mut context =
+            test_context(opts(true), store.clone(), &home).with_config(config_with_org("myorg"));
+
+        let report = run(&mut context).expect("the stored credential is removed");
+
+        assert_eq!(
+            report,
+            Report::Json(serde_json::json!({
+                "ok": true,
+                "message": "Logged out. Credentials removed for 'myorg'.",
+            }))
+        );
+        assert!(
+            legacy.exists(),
+            "another organization's legacy file must survive"
+        );
+        assert_eq!(
+            fs::read_to_string(&legacy).expect("read the legacy file"),
+            contents,
+            "the file is left untouched"
+        );
+        assert_eq!(store.get("myorg").expect("get"), None);
+    }
+
+    /// A legacy-only install — nothing imported yet, so no config and no stored
+    /// credential — is logged out for real: the one copy of the token is the
+    /// legacy file, and the message names the organization.
+    #[test]
+    fn a_legacy_only_install_still_reports_the_removal() {
+        let home = TempHome::new();
+        let legacy = home.path().join(LEGACY_RELATIVE_PATH);
+        fs::create_dir_all(legacy.parent().expect("the legacy directory"))
+            .expect("create the legacy directory");
+        fs::write(
+            &legacy,
+            r#"{"org":"myorg","method":"pat","pat":"legacy-token"}"#,
+        )
+        .expect("write the legacy file");
+        let mut context = test_context(flagged_opts("myorg", true), InMemoryStore::new(), &home);
+
+        let report = run(&mut context).expect("the legacy credential is removed");
+
+        assert_eq!(
+            report,
+            Report::Json(serde_json::json!({
+                "ok": true,
+                "message": "Logged out. Credentials removed for 'myorg'.",
+            }))
+        );
+        assert!(
+            !legacy.exists(),
+            "the legacy file held the only copy of the credential"
         );
         assert!(!home.config_dir().join("config.toml").exists());
     }

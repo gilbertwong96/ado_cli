@@ -94,7 +94,10 @@ pub fn import_once(
     Ok(true)
 }
 
-fn read_legacy_at(path: &Path) -> Option<LegacyCreds> {
+/// Reads the legacy file at `path` — the caller owns the path, so the binary reads
+/// the home it resolved and a test reads its own temp home. A missing, unreadable
+/// or malformed file reads as absent.
+pub fn read_legacy_at(path: &Path) -> Option<LegacyCreds> {
     let text = fs::read_to_string(path).ok()?;
     let file: LegacyFile = serde_json::from_str(&text).ok()?;
 

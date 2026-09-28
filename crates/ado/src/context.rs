@@ -6,8 +6,9 @@
 //! store and never imports the legacy config, so `whoami`, `schema` and
 //! `completion` cannot trigger a keychain prompt. The auth method lives in
 //! `config.toml`; the token does not. Credential resolution, and with it the
-//! one-time legacy import, happens only when a command asks for the client; the one
-//! thing that writes is `login`'s [`Context::save_login`].
+//! one-time legacy import, happens only when a command asks for the client; the
+//! only writers are the auth commands, `login`'s [`Context::save_login`] and
+//! [`Context::logout`].
 
 use std::path::{Path, PathBuf};
 
@@ -135,50 +136,71 @@ impl Context {
         Ok(())
     }
 
-    /// Removes the stored credential for the resolved organization and the
-    /// `config.toml` entry that references it — the logout write (inventory D27).
-    /// The credential goes first, because it is the security-relevant removal: a
-    /// failed config write then leaves a stale entry (refused by credential
-    /// resolution, visible to `whoami`) rather than a config that looks logged out
-    /// while the token survives in the store. `server` and every other
+    /// Removes the stored credential for the resolved organization, its
+    /// `config.toml` entry and the legacy `~/.ado_cli/config.json` when that file
+    /// holds the same organization's credential — the logout write (inventory
+    /// D27). The store credential goes first, because it is the security-relevant
+    /// removal: a failed config write then leaves a stale entry (refused by
+    /// credential resolution, visible to `whoami`) rather than a config that looks
+    /// logged out while the token survives in the store. `server` and every other
     /// organization's entry survive; `default_org` is cleared only when it named
     /// the organization being logged out, and a config left with nothing at all is
     /// removed, so a single-org install lands in the oracle's fresh-install state.
-    /// Returns the organization whose credential was removed, or `None` when
-    /// nothing named one.
+    /// Returns the organization whose credential was removed — `None` when nothing
+    /// named one, or when the named organization's credential was nowhere to be
+    /// found, so the report never claims a removal that did not happen.
     pub fn logout(&mut self) -> Result<Option<String>, AdoError> {
         let Some(org) = self.logout_org() else {
             return Ok(None);
         };
 
+        let stored = self.store.get(&org)?.is_some();
         self.store.delete(&org)?;
+        let legacy_removed = self.remove_legacy_file(&org)?;
 
-        let Some(current) = self.config.clone() else {
-            return Ok(Some(org));
+        if let Some(current) = self.config.clone() {
+            let mut remaining = current.clone();
+            remaining.orgs.remove(&org);
+            if remaining.default_org.as_deref() == Some(org.as_str()) {
+                remaining.default_org = None;
+            }
+
+            if remaining != current {
+                match self.config_file.as_deref() {
+                    Some(path) if remaining == Config::default() => {
+                        config::delete_at(path)?;
+                        self.config = None;
+                    }
+                    Some(path) => {
+                        config::save_at(path, &remaining)?;
+                        self.config = Some(remaining);
+                    }
+                    None => {}
+                }
+            }
+        }
+
+        Ok((stored || legacy_removed).then_some(org))
+    }
+
+    /// Removes `~/.ado_cli/config.json` when it holds the logged-out
+    /// organization's credential, and reports whether it did. The legacy format
+    /// holds exactly one organization, so a file naming another one is left alone;
+    /// an absent `config.toml` is the one-time-import marker, so leaving the file
+    /// behind after the credential was removed would let the next client command
+    /// import the token straight back.
+    fn remove_legacy_file(&self, org: &str) -> Result<bool, AdoError> {
+        let Some(path) = self.legacy_file.as_deref() else {
+            return Ok(false);
         };
+        let names_org = legacy::read_legacy_at(path).is_some_and(|legacy| legacy.org == org);
 
-        let mut remaining = current.clone();
-        remaining.orgs.remove(&org);
-        if remaining.default_org.as_deref() == Some(org.as_str()) {
-            remaining.default_org = None;
-        }
-        if remaining == current {
-            return Ok(Some(org));
+        if names_org {
+            // The same remove-tolerant helper the config file's deletion uses.
+            config::delete_at(path)?;
         }
 
-        match self.config_file.as_deref() {
-            Some(path) if remaining == Config::default() => {
-                config::delete_at(path)?;
-                self.config = None;
-            }
-            Some(path) => {
-                config::save_at(path, &remaining)?;
-                self.config = Some(remaining);
-            }
-            None => {}
-        }
-
-        Ok(Some(org))
+        Ok(names_org)
     }
 
     /// The organization a logout names: the flag or environment organization
