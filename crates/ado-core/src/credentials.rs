@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use serde::{Deserialize, Serialize};
 
@@ -45,17 +45,48 @@ pub trait SecretStore {
 /// service, keyed by service `ado` and the organization.
 pub struct KeychainStore {
     service: String,
+    available: OnceLock<bool>,
 }
 
 impl KeychainStore {
     pub fn new() -> KeychainStore {
         KeychainStore {
             service: KEYCHAIN_SERVICE.to_owned(),
+            available: OnceLock::new(),
         }
     }
 
     fn entry(&self, org: &str) -> Result<keyring::Entry, AdoError> {
         keyring::Entry::new(&self.service, org).map_err(keychain_unavailable)
+    }
+
+    /// Whether a keychain can be reached at all, probed once and cached for the
+    /// process. Lazy, so constructing a store touches nothing and `Context::load`
+    /// still opens no keychain (R37).
+    fn available(&self) -> bool {
+        *self.available.get_or_init(|| probe_keychain(&self.service))
+    }
+}
+
+/// The account the availability probe reads. No login writes it, so a value could
+/// only ever mean that the store answered.
+const KEYCHAIN_PROBE_ACCOUNT: &str = "__ado_cli_availability_probe__";
+
+/// Whether the keychain behind `service` answers at all: `NoEntry` for the probe
+/// account means the store exists, while `PlatformFailure`, `NoDefaultStore` and
+/// `NotSupportedByStore` mean there is no store to speak of (macOS without a
+/// default keychain, a Linux session with no secret service, a CI runner). A
+/// store that exists but refuses access (`NoStorageAccess`, e.g. a locked
+/// keychain) counts as reachable, so a deletion it blocks is reported.
+fn probe_keychain(service: &str) -> bool {
+    match keyring::Entry::new(service, KEYCHAIN_PROBE_ACCOUNT) {
+        Ok(entry) => !matches!(
+            entry.get_password(),
+            Err(keyring::Error::PlatformFailure(_)
+                | keyring::Error::NoDefaultStore
+                | keyring::Error::NotSupportedByStore(_))
+        ),
+        Err(_) => false,
     }
 }
 
@@ -84,10 +115,31 @@ impl SecretStore for KeychainStore {
     }
 
     fn delete(&self, org: &str) -> Result<(), AdoError> {
+        // A keychain that cannot be reached has nothing to delete, so this is a
+        // no-op success and `FallbackStore::delete`'s other layer still runs — a
+        // headless login's credential lives in the file layer and must be
+        // removable. A reachable keychain that refuses the deletion reports it.
+        if !self.available() {
+            return Ok(());
+        }
+
         match self.entry(org)?.delete_credential() {
             Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
             Err(error) => Err(keychain_unavailable(error)),
         }
+    }
+}
+
+#[cfg(test)]
+impl KeychainStore {
+    /// A keychain whose availability probe already answered `false`, so a test can
+    /// pin the "nothing reachable to delete" path without touching the real OS
+    /// keychain (R26).
+    fn unavailable() -> KeychainStore {
+        let store = KeychainStore::new();
+        let _ = store.available.set(false);
+
+        store
     }
 }
 
@@ -234,14 +286,17 @@ impl SecretStore for FallbackStore {
     }
 
     /// Both layers are attempted: "deleted" must mean deleted in the keychain and
-    /// in the credentials file, so a failing layer cannot leave the credential
-    /// behind in the other one. The first error is returned, after the other layer
-    /// has had its turn.
+    /// in the credentials file. The file layer's error is the one reported when it
+    /// fails — it is the layer a headless login actually wrote, so its failure is
+    /// the user-visible one — and a reachable keychain that also failed still
+    /// surfaces its error when the file layer succeeded. An unreachable keychain
+    /// reports nothing to delete ([`KeychainStore`] probes availability), so a
+    /// headless logout still succeeds.
     fn delete(&self, org: &str) -> Result<(), AdoError> {
         let primary = self.primary.delete(org);
         let fallback = self.fallback.delete(org);
 
-        primary.and(fallback)
+        fallback.and(primary)
     }
 }
 
@@ -519,6 +574,62 @@ mod tests {
             None,
             "the keychain layer must be attempted even though the file layer failed first"
         );
+    }
+
+    /// A keychain that cannot be reached is not a deletion failure: there is
+    /// nothing this CLI could delete from it, and a headless login's credential
+    /// lives in the file layer.
+    #[test]
+    fn an_unreachable_keychain_has_nothing_to_delete() {
+        assert_eq!(KeychainStore::unavailable().delete("myorg"), Ok(()));
+    }
+
+    /// When both layers fail, the file layer's error is the one reported, and the
+    /// other layer was still attempted.
+    #[cfg(unix)]
+    #[test]
+    fn delete_reports_the_file_layer_error_when_both_layers_fail() {
+        let dir = TempDir::new("delete-both-fail");
+        let blocked = dir.path().join("blocked");
+        fs::create_dir_all(&blocked).expect("create the blocked directory");
+        let path = blocked.join(CREDENTIALS_FILE);
+        let file = FileStore::new(path);
+        file.set("myorg", &stored(AuthMethod::Pat, "file-token"))
+            .expect("seed the file layer");
+        fs::set_permissions(&blocked, fs::Permissions::from_mode(0o555))
+            .expect("make the directory read-only");
+
+        if fs::write(blocked.join("probe"), b"probe").is_ok() {
+            // Running as root: the mode bits do not apply, so there is nothing to assert.
+            return;
+        }
+
+        let keychain = InMemoryStore::unavailable();
+        let store = FallbackStore::new(keychain.clone(), file);
+
+        let error = store.delete("myorg").expect_err("both layers fail");
+        fs::set_permissions(&blocked, fs::Permissions::from_mode(0o755))
+            .expect("restore the directory");
+
+        assert_eq!(error.code, ErrorCode::ValidationError);
+        assert!(
+            error.message.contains(CREDENTIALS_FILE),
+            "the file layer's error is the reported one: {}",
+            error.message
+        );
+        assert_eq!(
+            deletes(&keychain),
+            vec![StoreCall::Delete("myorg".to_owned())],
+            "the keychain layer is attempted even though it is the one that failed"
+        );
+    }
+
+    fn deletes(store: &InMemoryStore) -> Vec<StoreCall> {
+        store
+            .calls()
+            .into_iter()
+            .filter(|call| matches!(call, StoreCall::Delete(_)))
+            .collect()
     }
 
     #[test]

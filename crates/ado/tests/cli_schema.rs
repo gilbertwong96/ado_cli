@@ -92,6 +92,7 @@ fn schema_root_lists_exactly_the_shipped_subcommands() {
         [
             "ado completion",
             "ado login",
+            "ado logout",
             "ado pipelines",
             "ado pipelines-artifacts",
             "ado pipelines-builds",

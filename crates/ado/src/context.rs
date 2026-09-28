@@ -134,6 +134,59 @@ impl Context {
         Ok(())
     }
 
+    /// Removes the stored credential for the resolved organization and the
+    /// `config.toml` entry that references it — the logout write (inventory D27).
+    /// The credential goes first, because it is the security-relevant removal: a
+    /// failed config write then leaves a stale entry (refused by credential
+    /// resolution, visible to `whoami`) rather than a config that looks logged out
+    /// while the token survives in the store. `server` and every other
+    /// organization's entry survive; `default_org` is cleared only when it named
+    /// the organization being logged out, and a config left with nothing at all is
+    /// removed, so a single-org install lands in the oracle's fresh-install state.
+    /// Returns the organization whose credential was removed, or `None` when
+    /// nothing named one.
+    pub fn logout(&mut self) -> Result<Option<String>, AdoError> {
+        let Some(org) = self.logout_org() else {
+            return Ok(None);
+        };
+
+        self.store.delete(&org)?;
+
+        let Some(current) = self.config.clone() else {
+            return Ok(Some(org));
+        };
+
+        let mut remaining = current.clone();
+        remaining.orgs.remove(&org);
+        if remaining.default_org.as_deref() == Some(org.as_str()) {
+            remaining.default_org = None;
+        }
+        if remaining == current {
+            return Ok(Some(org));
+        }
+
+        match self.config_file.as_deref() {
+            Some(path) if remaining == Config::default() => {
+                config::delete_at(path)?;
+                self.config = None;
+            }
+            Some(path) => {
+                config::save_at(path, &remaining)?;
+                self.config = Some(remaining);
+            }
+            None => {}
+        }
+
+        Ok(Some(org))
+    }
+
+    /// The organization a logout names: the flag or environment organization
+    /// first, then the config's default. `None` means there is nothing to log out
+    /// of, which is a success with nothing to remove.
+    fn logout_org(&self) -> Option<String> {
+        present(self.env().get(ENV_ORG)).or_else(|| self.default_org())
+    }
+
     /// The one fork between a command's `--json` envelope and its human report:
     /// under `--json` the envelope is the whole answer and `human` is never
     /// called, so no table can reach the JSON path (W1-3, spec §6.1).

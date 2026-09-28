@@ -60,6 +60,7 @@ pub fn command() -> Command {
                         ),
                 ),
         )
+        .subcommand(Command::new("logout").about("Remove stored credentials."))
         .subcommand(
             Command::new("projects")
                 .about(

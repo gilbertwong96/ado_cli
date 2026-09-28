@@ -58,6 +58,7 @@ fn main() -> ExitCode {
                 &mut io::stdout().lock(),
             )
         }
+        Some(("logout", _)) => commands::logout::run(&mut Context::load(globals)),
         Some(("projects", sub)) => {
             let mut context = Context::load(globals);
 

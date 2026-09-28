@@ -3,6 +3,7 @@
 
 use std::collections::BTreeMap;
 use std::fs;
+use std::io;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -95,6 +96,16 @@ pub fn save_at(path: &Path, config: &Config) -> Result<(), AdoError> {
     }
 
     fs::write(path, text).map_err(|error| write_failed(path, &error))
+}
+
+/// Removes the config file at `path`. An absent file is not an error: a logout is
+/// idempotent, and the second run finds nothing to delete.
+pub fn delete_at(path: &Path) -> Result<(), AdoError> {
+    match fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(write_failed(path, &error)),
+    }
 }
 
 pub(crate) fn missing_config_dir() -> AdoError {
@@ -193,6 +204,18 @@ mod tests {
             config_dir(),
             config_path().and_then(|path| path.parent().map(Path::to_path_buf))
         );
+    }
+
+    #[test]
+    fn delete_at_removes_the_file_and_tolerates_absence() {
+        let dir = TempDir::new("config-delete");
+        let path = dir.path().join("ado").join("config.toml");
+        save_at(&path, &sample()).expect("save");
+
+        delete_at(&path).expect("delete");
+
+        assert!(!path.exists(), "the file is removed");
+        delete_at(&path).expect("an absent file is not an error");
     }
 
     #[cfg(unix)]
