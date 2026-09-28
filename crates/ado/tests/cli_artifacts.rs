@@ -111,9 +111,12 @@ fn temp_siblings(home: &TempHome) -> Vec<String> {
         .collect()
 }
 
-/// The reader-level failure the truncating mock provokes: ureq's own constant
-/// (`UnexpectedEof`, "Peer disconnected"), so it is platform-independent and proves
-/// the mid-body copy path ran rather than a pre-header transport failure.
+/// The reader-level failure the truncating mock provokes: ureq's own
+/// platform-independent constant (`UnexpectedEof`, "Peer disconnected"). The text
+/// alone does not pin the path — ureq shares that constant with a pre-header close.
+/// The mock does: `spawn_truncating_blob` writes the whole header block before it
+/// drops the stream, so once `get_raw` returns, a reader failure is the only thing
+/// that can fail.
 const MID_BODY_FAILURE: &str = "[Network error] Request failed: io: Peer disconnected";
 
 fn assert_success(output: &Output) {
