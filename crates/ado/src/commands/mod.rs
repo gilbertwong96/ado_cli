@@ -1,3 +1,4 @@
+pub mod artifacts;
 pub mod builds;
 pub mod completion;
 pub mod pipelines;

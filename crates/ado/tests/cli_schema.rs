@@ -92,6 +92,7 @@ fn schema_root_lists_exactly_the_shipped_subcommands() {
         [
             "ado completion",
             "ado pipelines",
+            "ado pipelines-artifacts",
             "ado pipelines-builds",
             "ado projects",
             "ado prs",
@@ -220,6 +221,76 @@ fn schema_json_reports_the_hyphenated_builds_spelling() {
     );
     assert!(
         !names.iter().any(|name| name.contains("pipelines builds")),
+        "no node carries the Elixir's unparseable name: {names:?}"
+    );
+}
+
+/// Wave 1 ports the read paths only: the artifacts node holds exactly `list` and
+/// `download`. W1-1/D18: the node name is the hyphenated spelling every descendant
+/// shares — `pipelines-artifacts` parses as argv, where the Elixir's schema spelling
+/// (`ado pipelines artifacts …`) does not.
+#[test]
+fn schema_pipelines_artifacts_node_has_only_the_wave_one_subcommands() {
+    let artifacts = find_node("pipelines-artifacts").expect("the pipelines-artifacts node");
+
+    let names = subcommands(&artifacts)
+        .iter()
+        .map(|sub| sub["name"].as_str().expect("a subcommand name"))
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        names,
+        [
+            "ado pipelines-artifacts list",
+            "ado pipelines-artifacts download"
+        ]
+    );
+
+    for node in nodes(&artifacts) {
+        let name = node["name"].as_str().expect("a node name");
+        assert!(
+            name.starts_with("ado pipelines-artifacts"),
+            "the schema reports the parseable hyphenated spelling, not the Elixir's space-separated name (W1-1/D18): {name}"
+        );
+        assert!(
+            !name.contains("pipelines artifacts"),
+            "the Elixir's unparseable name: {name}"
+        );
+    }
+}
+
+/// W1-1/D18: `ado schema --json` names the artifacts node the way the binary
+/// parses it, so an agent can copy the name straight into argv.
+#[test]
+fn schema_json_reports_the_hyphenated_artifacts_spelling() {
+    let output = ado()
+        .args(["schema", "--json"])
+        .output()
+        .expect("run `ado schema --json`");
+
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        stderr_of(&output)
+    );
+
+    let value: Value = serde_json::from_slice(&output.stdout).expect("stdout is a JSON document");
+    let names = nodes(&value["schema"])
+        .into_iter()
+        .map(|node| node["name"].as_str().expect("a node name").to_owned())
+        .collect::<Vec<_>>();
+
+    assert!(
+        names
+            .iter()
+            .any(|name| name == "ado pipelines-artifacts download"),
+        "the hyphenated download node is in the tree: {names:?}"
+    );
+    assert!(
+        !names
+            .iter()
+            .any(|name| name.contains("pipelines artifacts")),
         "no node carries the Elixir's unparseable name: {names:?}"
     );
 }

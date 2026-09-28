@@ -31,7 +31,7 @@ static COUNTER: AtomicUsize = AtomicUsize::new(0);
 #[derive(Debug, Clone, PartialEq)]
 pub struct MockResponse {
     pub status: u16,
-    pub body: String,
+    pub body: Vec<u8>,
     pub headers: Vec<(String, String)>,
 }
 
@@ -40,7 +40,7 @@ impl MockResponse {
     pub fn json(status: u16, body: Value) -> MockResponse {
         MockResponse {
             status,
-            body: body.to_string(),
+            body: body.to_string().into_bytes(),
             headers: vec![("content-type".to_owned(), "application/json".to_owned())],
         }
     }
@@ -48,15 +48,35 @@ impl MockResponse {
     /// A captured response body from `fixtures/<name>.json`, sent with status 200;
     /// pair it with [`with_status`](MockResponse::with_status) for the error fixtures.
     pub fn from_fixture(name: &str) -> MockResponse {
-        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("fixtures")
-            .join(format!("{name}.json"));
-        let body = fs::read_to_string(&path)
+        let path = fixture_path(&format!("{name}.json"));
+        let body = fs::read(&path)
             .unwrap_or_else(|error| panic!("cannot read fixture {}: {error}", path.display()));
-        let value = serde_json::from_str(&body)
+        serde_json::from_slice::<Value>(&body)
             .unwrap_or_else(|error| panic!("fixture {} is not JSON: {error}", path.display()));
 
-        MockResponse::json(200, value)
+        MockResponse {
+            status: 200,
+            body,
+            headers: vec![("content-type".to_owned(), "application/json".to_owned())],
+        }
+    }
+
+    /// A raw fixture body from `fixtures/<name>`, served with status 200 and
+    /// `application/octet-stream` — [`from_fixture`](MockResponse::from_fixture)'s
+    /// sibling for downloads, where the body is bytes and not JSON.
+    pub fn from_bytes_fixture(name: &str) -> MockResponse {
+        let path = fixture_path(name);
+        let body = fs::read(&path)
+            .unwrap_or_else(|error| panic!("cannot read fixture {}: {error}", path.display()));
+
+        MockResponse {
+            status: 200,
+            body,
+            headers: vec![(
+                "content-type".to_owned(),
+                "application/octet-stream".to_owned(),
+            )],
+        }
     }
 
     /// The same response with a different status.
@@ -205,6 +225,12 @@ impl MockServer {
     pub fn received(&self) -> Vec<RecordedRequest> {
         lock(&self.state.received).clone()
     }
+}
+
+fn fixture_path(name: &str) -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("fixtures")
+        .join(name)
 }
 
 impl Drop for MockServer {
@@ -731,19 +757,42 @@ mod tests {
             projects.headers,
             vec![("content-type".to_owned(), "application/json".to_owned())]
         );
-        let body: Value = serde_json::from_str(&projects.body).expect("valid JSON");
+        let body: Value = serde_json::from_slice(&projects.body).expect("valid JSON");
         assert_eq!(body["value"].as_array().expect("a value array").len(), 2);
 
         let error = MockResponse::from_fixture("error_404").with_status(404);
         assert_eq!(error.status, 404);
-        let body: Value = serde_json::from_str(&error.body).expect("valid JSON");
+        let body: Value = serde_json::from_slice(&error.body).expect("valid JSON");
         assert!(
             body["message"]
                 .as_str()
                 .expect("a message")
                 .contains("TF400813"),
             "body: {}",
-            error.body
+            String::from_utf8_lossy(&error.body)
+        );
+    }
+
+    #[test]
+    fn a_bytes_fixture_keeps_its_bytes() {
+        let zip = MockResponse::from_bytes_fixture("artifacts_download.zip");
+
+        assert_eq!(zip.status, 200);
+        assert_eq!(
+            zip.headers,
+            vec![(
+                "content-type".to_owned(),
+                "application/octet-stream".to_owned()
+            )]
+        );
+        assert!(
+            zip.body.starts_with(b"PK\x03\x04"),
+            "a real zip fixture, not text: {:?}",
+            zip.body
+        );
+        assert!(
+            std::str::from_utf8(&zip.body).is_err(),
+            "the fixture is not valid UTF-8, so only a byte-preserving body can serve it"
         );
     }
 

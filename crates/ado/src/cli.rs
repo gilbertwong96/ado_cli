@@ -505,6 +505,80 @@ pub fn command() -> Command {
                 ),
         )
         .subcommand(
+            Command::new("pipelines-artifacts")
+                .about(
+                    "Manage pipeline run artifacts. Artifacts are files produced by a pipeline run (build outputs, test results, coverage reports, logs) that downstream pipelines or release definitions can consume.",
+                )
+                .subcommand(
+                    Command::new("list")
+                        .about(
+                            "List all artifacts produced by a single pipeline run. Output is a table (Name, Size in bytes). Use this to discover artifact names before downloading.",
+                        )
+                        .arg(
+                            Arg::new("project")
+                                .value_name("PROJECT")
+                                .required(true)
+                                .help("Project name or ID"),
+                        )
+                        .arg(
+                            Arg::new("pipeline_id")
+                                .value_name("PIPELINE_ID")
+                                .required(true)
+                                .value_parser(clap::value_parser!(i64))
+                                .help("Numeric pipeline definition ID"),
+                        )
+                        .arg(
+                            Arg::new("run_id")
+                                .value_name("RUN_ID")
+                                .required(true)
+                                .value_parser(clap::value_parser!(i64))
+                                .help(
+                                    "Numeric run ID (from `ci watch` output, the build number, or `pipelines runs` if available)",
+                                ),
+                        ),
+                )
+                .subcommand(
+                    Command::new("download")
+                        .about(
+                            "Download a single artifact to a local file. By default saves to './<artifact-name>.zip' in the current directory; pass --output to choose a different path. Useful for retrieving build outputs for inspection or local testing.",
+                        )
+                        .arg(
+                            Arg::new("project")
+                                .value_name("PROJECT")
+                                .required(true)
+                                .help("Project name or ID"),
+                        )
+                        .arg(
+                            Arg::new("pipeline_id")
+                                .value_name("PIPELINE_ID")
+                                .required(true)
+                                .value_parser(clap::value_parser!(i64))
+                                .help("Numeric pipeline definition ID"),
+                        )
+                        .arg(
+                            Arg::new("run_id")
+                                .value_name("RUN_ID")
+                                .required(true)
+                                .value_parser(clap::value_parser!(i64))
+                                .help("Numeric run ID"),
+                        )
+                        .arg(
+                            Arg::new("artifact_name")
+                                .value_name("ARTIFACT_NAME")
+                                .required(true)
+                                .help("Exact artifact name (from `list`). Names are case-sensitive."),
+                        )
+                        .arg(
+                            Arg::new("output")
+                                .long("output")
+                                .value_name("PATH")
+                                .help(
+                                    "Local file path to write to. Default: ./<artifact-name>.zip in the current directory. Parent directories are NOT auto-created.",
+                                ),
+                        ),
+                ),
+        )
+        .subcommand(
             Command::new("schema")
                 .about("Dump the CLI command tree as structured JSON for LLM agents.")
                 .arg(

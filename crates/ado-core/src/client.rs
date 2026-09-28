@@ -107,6 +107,45 @@ impl Client {
         })
     }
 
+    /// `GET` returning the raw body bytes, for downloads. `url` is used
+    /// **verbatim**: an absolute `resource.downloadUrl` carries its own query, so no
+    /// `api-version` is merged in (D25). A relative path is resolved with
+    /// [`Client::url_for`] first, which does merge the version. A 2xx answers the
+    /// bytes; anything else classifies per spec §6.2.
+    pub fn get_raw(&self, url: &str) -> Result<Vec<u8>, AdoError> {
+        let request = http::Request::builder()
+            .method("GET")
+            .uri(url)
+            .header(self.auth.0.as_str(), self.auth.1.as_str())
+            .body(())
+            .map_err(|error| build_failed(&error))?;
+
+        let mut response = self
+            .agent
+            .run(request)
+            .map_err(|error| AdoError::from_transport(&error))?;
+
+        let status = response.status().as_u16();
+        let has_location = response.headers().contains_key("location");
+        let bytes = response
+            .body_mut()
+            .read_to_vec()
+            .map_err(|error| AdoError::from_transport(&error))?;
+
+        if REDIRECT_STATUSES.contains(&status) {
+            return Err(redirect_error(status, has_location));
+        }
+
+        if is_success(status) {
+            Ok(bytes)
+        } else {
+            Err(AdoError::from_status(
+                status,
+                String::from_utf8_lossy(&bytes).into_owned(),
+            ))
+        }
+    }
+
     /// `POST` with a JSON body, returning the decoded response body.
     pub fn post(
         &self,

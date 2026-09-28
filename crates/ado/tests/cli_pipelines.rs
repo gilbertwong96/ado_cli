@@ -55,7 +55,7 @@ fn run(home: &TempHome, server: &MockServer, args: &[&str]) -> Output {
 fn fixture(name: &str) -> Value {
     let response = MockResponse::from_fixture(name);
 
-    serde_json::from_str(&response.body).expect("the fixture is JSON")
+    serde_json::from_slice(&response.body).expect("the fixture is JSON")
 }
 
 fn assert_success(output: &Output) {

@@ -238,6 +238,45 @@ fn main() -> ExitCode {
                 _ => Err(AdoError::validation(MISSING_SUBCOMMAND)),
             }
         }
+        Some(("pipelines-artifacts", sub)) => {
+            let mut context = Context::load(globals);
+
+            match sub.subcommand() {
+                Some(("list", list)) => commands::artifacts::list(
+                    &mut context,
+                    list.get_one::<String>("project")
+                        .expect("the positional is required")
+                        .as_str(),
+                    list.get_one::<i64>("pipeline_id")
+                        .copied()
+                        .expect("the positional is required"),
+                    list.get_one::<i64>("run_id")
+                        .copied()
+                        .expect("the positional is required"),
+                ),
+                Some(("download", download)) => commands::artifacts::download(
+                    &mut context,
+                    download
+                        .get_one::<String>("project")
+                        .expect("the positional is required")
+                        .as_str(),
+                    download
+                        .get_one::<i64>("pipeline_id")
+                        .copied()
+                        .expect("the positional is required"),
+                    download
+                        .get_one::<i64>("run_id")
+                        .copied()
+                        .expect("the positional is required"),
+                    download
+                        .get_one::<String>("artifact_name")
+                        .expect("the positional is required")
+                        .as_str(),
+                    download.get_one::<String>("output").cloned(),
+                ),
+                _ => Err(AdoError::validation(MISSING_SUBCOMMAND)),
+            }
+        }
         Some(("schema", sub)) => {
             commands::schema::run(json, sub.get_one::<String>("name").map(String::as_str))
         }

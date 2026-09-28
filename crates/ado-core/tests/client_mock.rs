@@ -168,7 +168,7 @@ fn write_methods_send_a_json_body_and_delete_accepts_an_empty_204() {
         &api("/_apis/projects/p1"),
         MockResponse {
             status: 204,
-            body: String::new(),
+            body: Vec::new(),
             headers: Vec::new(),
         },
     );
@@ -235,7 +235,7 @@ fn redirect_maps_to_auth_required() {
         &api("/_apis/sign-in"),
         MockResponse {
             status: 302,
-            body: String::new(),
+            body: Vec::new(),
             headers: vec![(
                 "location".to_owned(),
                 "https://login.microsoftonline.com/".to_owned(),
@@ -247,7 +247,7 @@ fn redirect_maps_to_auth_required() {
         &api("/_apis/no-location"),
         MockResponse {
             status: 302,
-            body: String::new(),
+            body: Vec::new(),
             headers: Vec::new(),
         },
     );
@@ -302,7 +302,7 @@ fn malformed_json_on_200_is_network_error() {
         &api("/_apis/projects"),
         MockResponse {
             status: 200,
-            body: "this is not JSON".to_owned(),
+            body: b"this is not JSON".to_vec(),
             headers: Vec::new(),
         },
     );
@@ -322,5 +322,63 @@ fn malformed_json_on_200_is_network_error() {
         error.message.starts_with("Request failed:"),
         "message: {}",
         error.message
+    );
+}
+
+/// `get_raw` is the download path: the URL is used verbatim (no `api-version` is
+/// merged in), and the body comes back as the bytes the server sent — the zip
+/// fixture is not valid UTF-8, so a string body could not carry it (D25).
+#[test]
+fn get_raw_returns_the_body_bytes_verbatim() {
+    let server = MockServer::start();
+    server.expect(
+        "GET",
+        "/blob/drop.zip",
+        MockResponse::from_bytes_fixture("artifacts_download.zip"),
+    );
+    let client = client_for(&server);
+    let url = format!("{}/blob/drop.zip", server.base_url());
+
+    let bytes = client.get_raw(&url).expect("the mock answers");
+
+    assert_eq!(
+        bytes,
+        MockResponse::from_bytes_fixture("artifacts_download.zip").body
+    );
+    let received = server.received();
+    assert_eq!(received.len(), 1);
+    assert_eq!(received[0].method, "GET");
+    assert_eq!(received[0].path, "/blob/drop.zip");
+    assert_eq!(
+        received[0].query, "",
+        "an absolute URL is requested as given, with no added api-version"
+    );
+    assert_eq!(received[0].header("authorization"), Some("Basic OnBhdA=="));
+}
+
+/// A non-2xx download classifies by its status per spec §6.2 — where the oracle's
+/// `get_raw` error shape (a bare `%{status: s}` map, no body) falls through to its
+/// network-error text (D25).
+#[test]
+fn get_raw_classifies_status_errors() {
+    let server = MockServer::start();
+    server.expect(
+        "GET",
+        "/blob/missing.zip",
+        MockResponse::json(404, json!({"message": "TF400813: Resource not found."})),
+    );
+    let client = client_for(&server);
+    let url = format!("{}/blob/missing.zip", server.base_url());
+
+    let error = client.get_raw(&url).expect_err("the status is an error");
+
+    assert_eq!(error.code, ErrorCode::NotFound);
+    assert_eq!(error.status, Some(404));
+    assert_eq!(error.message, NOT_FOUND_MESSAGE);
+    let details = error.details.expect("details carry the status and body");
+    assert_eq!(details["status"], json!(404));
+    assert_eq!(
+        details["body"],
+        json!("{\"message\":\"TF400813: Resource not found.\"}")
     );
 }

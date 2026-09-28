@@ -1,0 +1,49 @@
+{
+  "count": 2,
+  "value": [
+    {
+      "_links": {
+        "self": {
+          "href": "https://dev.azure.com/myorg/Alpha/_apis/pipelines/7/runs/99/artifacts?artifactName=drop"
+        },
+        "web": {
+          "href": "https://dev.azure.com/myorg/Alpha/_build/results?buildId=99&view=artifacts"
+        }
+      },
+      "id": 1,
+      "name": "drop",
+      "resource": {
+        "data": "#/7/99/drop",
+        "downloadUrl": "https://dev.azure.com/myorg/Alpha/_apis/resources/Containers/1234567?itemPath=drop&%24format=zip",
+        "properties": {
+          "artifactsize": "2048"
+        },
+        "type": "Container",
+        "url": "https://dev.azure.com/myorg/Alpha/_apis/resources/Containers/1234567?itemPath=drop"
+      },
+      "source": null
+    },
+    {
+      "_links": {
+        "self": {
+          "href": "https://dev.azure.com/myorg/Alpha/_apis/pipelines/7/runs/99/artifacts?artifactName=TestResults"
+        },
+        "web": {
+          "href": "https://dev.azure.com/myorg/Alpha/_build/results?buildId=99&view=artifacts"
+        }
+      },
+      "id": 2,
+      "name": "TestResults",
+      "resource": {
+        "data": "#/7/99/TestResults",
+        "downloadUrl": "https://dev.azure.com/myorg/Alpha/_apis/resources/Containers/1234568?itemPath=TestResults&%24format=zip",
+        "properties": {
+          "artifactsize": "512"
+        },
+        "type": "Container",
+        "url": "https://dev.azure.com/myorg/Alpha/_apis/resources/Containers/1234568?itemPath=TestResults"
+      },
+      "source": null
+    }
+  ]
+}
