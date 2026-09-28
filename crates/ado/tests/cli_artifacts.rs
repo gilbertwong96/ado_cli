@@ -111,6 +111,11 @@ fn temp_siblings(home: &TempHome) -> Vec<String> {
         .collect()
 }
 
+/// The reader-level failure the truncating mock provokes: ureq's own constant
+/// (`UnexpectedEof`, "Peer disconnected"), so it is platform-independent and proves
+/// the mid-body copy path ran rather than a pre-header transport failure.
+const MID_BODY_FAILURE: &str = "[Network error] Request failed: io: Peer disconnected";
+
 fn assert_success(output: &Output) {
     assert_eq!(
         output.status.code(),
@@ -1187,8 +1192,8 @@ fn download_leaves_no_file_when_the_stream_breaks() {
         stdout_of(&output)
     );
     assert!(
-        stderr_of(&output).contains("[Network error] Request failed:"),
-        "the dropped connection is classified: {}",
+        stderr_of(&output).contains(MID_BODY_FAILURE),
+        "the mid-body reader error is classified: {}",
         stderr_of(&output)
     );
     assert!(!target.exists(), "no partial file appears at the target");
@@ -1230,6 +1235,11 @@ fn download_keeps_a_pre_existing_file_when_the_stream_breaks() {
     );
 
     assert_eq!(output.status.code(), Some(1), "the download failed");
+    assert!(
+        stderr_of(&output).contains(MID_BODY_FAILURE),
+        "the mid-body reader error is classified: {}",
+        stderr_of(&output)
+    );
     assert_eq!(
         fs::read(&target).expect("the pre-existing file"),
         b"old artifact bytes",
@@ -1240,6 +1250,56 @@ fn download_keeps_a_pre_existing_file_when_the_stream_breaks() {
         "no temp sibling is left behind: {:?}",
         temp_siblings(&home)
     );
+}
+
+/// The temp file's name carries a unique infix, so a pre-existing `{target}.tmp` —
+/// a name nobody ever asked us to touch — survives a failed download byte for byte,
+/// and the only `.tmp` left in the directory is that bystander.
+#[test]
+fn download_keeps_a_pre_existing_tmp_file_when_the_stream_breaks() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    let target = home.path().join("existing.zip");
+    let bystander = home.path().join("existing.zip.tmp");
+    fs::write(&bystander, b"someone else's temp").expect("seed the bystander");
+    let port = spawn_truncating_blob(b"PK\x03\x04partial".to_vec(), 4096);
+    expect_artifacts(
+        &server,
+        &artifacts_with_download(&format!("http://127.0.0.1:{port}/blob/drop.zip")),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "pipelines-artifacts",
+            "download",
+            "Alpha",
+            "7",
+            "99",
+            "drop",
+            "--output",
+            target.to_str().expect("a utf-8 path"),
+        ],
+    );
+
+    assert_eq!(output.status.code(), Some(1), "the download failed");
+    assert!(
+        stderr_of(&output).contains(MID_BODY_FAILURE),
+        "the mid-body reader error is classified: {}",
+        stderr_of(&output)
+    );
+    assert_eq!(
+        fs::read(&bystander).expect("the pre-existing temp"),
+        b"someone else's temp",
+        "a pre-existing `<target>.tmp` is not our temp and must survive"
+    );
+    assert_eq!(
+        temp_siblings(&home),
+        vec!["existing.zip.tmp".to_owned()],
+        "our own temp was removed and only the bystander remains"
+    );
+    assert!(!target.exists(), "the target never appears");
 }
 
 /// A successful stream replaces a pre-existing target with the new bytes, through

@@ -13,6 +13,7 @@
 
 use std::fs;
 use std::io::{self, Write};
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use ado_core::client::{RawBody, encode_path_segment};
 use ado_core::envelope::ok_value;
@@ -162,9 +163,16 @@ fn write_artifact(target: &str, mut body: RawBody) -> Result<u64, AdoError> {
 }
 
 /// The temp name sits beside the target, so the successful rename is a
-/// same-directory replace of the target's bytes.
+/// same-directory replace of the target's bytes. The pid and per-process counter
+/// infix keeps it unique, so a pre-existing `{target}.tmp` is never opened — a
+/// failed download cannot truncate or delete it. The `.tmp` suffix stays, so the
+/// temp still reads as a temporary download in the target's directory.
 fn temp_path(target: &str) -> String {
-    format!("{target}.tmp")
+    static COUNTER: AtomicUsize = AtomicUsize::new(0);
+
+    let unique = COUNTER.fetch_add(1, Ordering::Relaxed);
+
+    format!("{target}.{}.{unique}.tmp", std::process::id())
 }
 
 /// The copy loop, so a reader failure and a writer failure classify differently:
@@ -255,6 +263,33 @@ fn items(value: Value) -> Vec<Value> {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn temp_path_is_a_unique_tmp_sibling() {
+        use std::path::Path;
+
+        let first = temp_path("out.zip");
+        let second = temp_path("out.zip");
+
+        assert!(
+            first.ends_with(".tmp"),
+            "the temp reads as a temporary download: {first}"
+        );
+        assert!(
+            first.starts_with("out.zip."),
+            "the temp is derived from the target: {first}"
+        );
+        assert_ne!(
+            first, "out.zip.tmp",
+            "a pre-existing `{{target}}.tmp` is never reused: {first}"
+        );
+        assert_ne!(first, second, "each download gets its own temp name");
+        assert_eq!(
+            Path::new(&temp_path("/tmp/dir/out.zip")).parent(),
+            Some(Path::new("/tmp/dir")),
+            "the temp stays in the target's directory, so the rename is same-filesystem"
+        );
+    }
 
     #[test]
     fn artifacts_table_uses_the_module_columns_and_the_size_fallback() {
