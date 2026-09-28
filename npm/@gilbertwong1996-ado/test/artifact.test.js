@@ -11,7 +11,7 @@ process.env.ADO_NO_COMPLETION = process.env.ADO_NO_COMPLETION || '1';
 process.env.ADO_NO_DOWNLOAD = process.env.ADO_NO_DOWNLOAD || '1';
 
 const assert = require('node:assert/strict');
-const { execFileSync } = require('child_process');
+const { execFileSync, spawnSync } = require('child_process');
 const fs = require('fs');
 const http = require('http');
 const os = require('os');
@@ -459,7 +459,7 @@ test('the repo-root copy resolves the same artifact and never fetches', (t) => {
   assert.doesNotMatch(stdout, /^ado: downloaded /m);
 });
 
-test('the repo copies skip the fetch in place', (t) => {
+test('the repo copies skip the fetch in place, staged binary or not', (t) => {
   const rootCopy = rootCopyPath();
   if (!rootCopy) {
     t.skip('not running from the repo checkout');
@@ -467,9 +467,33 @@ test('the repo copies skip the fetch in place', (t) => {
   }
 
   // Both repo copies stage their platform packages in npm/ and must never
-  // reach the network, with or without ADO_NO_DOWNLOAD.
-  for (const copy of [rootCopy, POSTINSTALL]) {
-    const stdout = execFileSync(process.execPath, [copy], {
+  // reach the network, with or without ADO_NO_DOWNLOAD. The contract is the
+  // missing fetch, not a message: with no staged binary the source-tree
+  // branch logs its skip, and with one the launcher's presence guard returns
+  // early and silently. Both outcomes are complete installs.
+  const assertNoFetch = (label, status, stdout, stderr) => {
+    const output = `${stdout}\n${stderr}`;
+    assert.equal(status, 0, `${label} exited ${status}:\n${output}`);
+    assert.doesNotMatch(output, /^ado: downloaded /m, label);
+    assert.doesNotMatch(
+      output,
+      /could not download the platform binary/,
+      label
+    );
+  };
+
+  // The completion opt-out line is written only after the platform-binary
+  // guard returns, so it proves the run finished the guard rather than
+  // failing out of it (main().catch also exits 0).
+  const assertGuardReturned = (label, stdout) =>
+    assert.match(
+      stdout,
+      /ADO_NO_COMPLETION=1 set, skipping shell completion install/,
+      `${label} did not reach the completion opt-out`
+    );
+
+  const run = (copy) =>
+    spawnSync(process.execPath, [copy], {
       encoding: 'utf8',
       env: {
         ...process.env,
@@ -479,8 +503,51 @@ test('the repo copies skip the fetch in place', (t) => {
       }
     });
 
-    assert.match(stdout, /running from the source tree, skipping the platform/);
-    assert.doesNotMatch(stdout, /^ado: downloaded /m);
+  for (const copy of [rootCopy, POSTINSTALL]) {
+    const { status, stdout, stderr } = run(copy);
+
+    assertNoFetch(copy, status, stdout, stderr);
+    assertGuardReturned(copy, stdout);
+  }
+
+  // Pin the silent early return too: a temp copy of the repo layout whose
+  // staging directory already holds the platform binary — the state of a
+  // checkout with published staging binaries — must return before the
+  // source-tree skip.
+  const layout = tempDir('staged-binary');
+  try {
+    const npmDir = path.join(layout, 'npm');
+    const scriptsDir = path.join(layout, 'scripts');
+    const packageDir = path.join(npmDir, '@gilbertwong1996-ado');
+    fs.mkdirSync(scriptsDir, { recursive: true });
+    fs.mkdirSync(packageDir, { recursive: true });
+    fs.copyFileSync(rootCopy, path.join(scriptsDir, 'postinstall.js'));
+    fs.copyFileSync(
+      path.join(POSTINSTALL, '..', '..', 'package.json'),
+      path.join(packageDir, 'package.json')
+    );
+
+    const staged = path.join(
+      npmDir,
+      `@gilbertwong1996-ado-${process.platform}-${process.arch}`,
+      'bin',
+      binaryName(process.platform)
+    );
+    fs.mkdirSync(path.dirname(staged), { recursive: true });
+    fs.writeFileSync(staged, 'staged-binary\n');
+
+    const copy = path.join(scriptsDir, 'postinstall.js');
+    const { status, stdout, stderr } = run(copy);
+
+    assertNoFetch(copy, status, stdout, stderr);
+    assertGuardReturned(copy, stdout);
+    assert.doesNotMatch(
+      stdout,
+      /running from the source tree, skipping the platform/,
+      'the staged binary should short-circuit before the source-tree skip'
+    );
+  } finally {
+    fs.rmSync(layout, { recursive: true, force: true });
   }
 });
 
