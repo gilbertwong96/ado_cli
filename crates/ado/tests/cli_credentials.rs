@@ -14,6 +14,11 @@ use ado_testkit::{TempHome, ado_cmd, stderr_of, stdout_of};
 const ENV_PAT: &str = "env-secret-pat";
 const FLAG_PAT: &str = "flag-secret-pat";
 
+/// The `Authorization: Basic …` forms those tokens send (`Basic base64(":TOKEN")`),
+/// so a leak of the encoded header rather than the raw token is caught too.
+const BASIC_ENV_PAT: &str = "Basic OmVudi1zZWNyZXQtcGF0";
+const BASIC_FLAG_PAT: &str = "Basic OmZsYWctc2VjcmV0LXBhdA==";
+
 fn run(home: &TempHome, args: &[&str]) -> Output {
     let mut command = ado_cmd();
     home.apply(&mut command);
@@ -106,6 +111,14 @@ fn no_command_output_contains_the_pat() {
             assert!(
                 !text.contains(FLAG_PAT),
                 "{args:?}: --pat reached {stream}: {text}"
+            );
+            assert!(
+                !text.contains(BASIC_ENV_PAT),
+                "{args:?}: the ADO_PAT Basic header reached {stream}: {text}"
+            );
+            assert!(
+                !text.contains(BASIC_FLAG_PAT),
+                "{args:?}: the --pat Basic header reached {stream}: {text}"
             );
         }
     }
