@@ -214,11 +214,10 @@ mod tests {
         assert_eq!(store.get("myorg").expect("get"), None);
     }
 
-    /// A legacy-only install — nothing imported yet, so no config and no stored
-    /// credential — is logged out for real: the one copy of the token is the
-    /// legacy file, and the message names the organization.
+    /// A legacy-only install with an explicit organization still removes the
+    /// file that holds that organization's credential.
     #[test]
-    fn a_legacy_only_install_still_reports_the_removal() {
+    fn an_explicit_org_still_removes_the_legacy_file() {
         let home = TempHome::new();
         let legacy = home.path().join(LEGACY_RELATIVE_PATH);
         fs::create_dir_all(legacy.parent().expect("the legacy directory"))
@@ -242,6 +241,48 @@ mod tests {
         assert!(
             !legacy.exists(),
             "the legacy file held the only copy of the credential"
+        );
+        assert!(!home.config_dir().join("config.toml").exists());
+    }
+
+    /// The legacy file is the target of last resort: with no flag, environment or
+    /// config to name an organization, its own organization is the one being
+    /// logged out — and the second run correctly finds nothing left.
+    #[test]
+    fn a_legacy_only_install_resolves_its_org_and_then_reports_nothing() {
+        let home = TempHome::new();
+        let legacy = home.path().join(LEGACY_RELATIVE_PATH);
+        fs::create_dir_all(legacy.parent().expect("the legacy directory"))
+            .expect("create the legacy directory");
+        fs::write(
+            &legacy,
+            r#"{"org":"myorg","method":"pat","pat":"legacy-token"}"#,
+        )
+        .expect("write the legacy file");
+        let mut context = test_context(opts(true), InMemoryStore::new(), &home);
+
+        let first = run(&mut context).expect("the legacy credential is removed");
+
+        assert_eq!(
+            first,
+            Report::Json(serde_json::json!({
+                "ok": true,
+                "message": "Logged out. Credentials removed for 'myorg'.",
+            }))
+        );
+        assert!(
+            !legacy.exists(),
+            "the only copy of the credential is removed"
+        );
+
+        let second = run(&mut context).expect("nothing left to remove");
+
+        assert_eq!(
+            second,
+            Report::Json(serde_json::json!({
+                "ok": true,
+                "message": "Logged out. No stored credentials to remove.",
+            }))
         );
         assert!(!home.config_dir().join("config.toml").exists());
     }

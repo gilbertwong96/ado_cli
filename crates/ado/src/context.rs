@@ -139,10 +139,13 @@ impl Context {
     /// Removes the stored credential for the resolved organization, its
     /// `config.toml` entry and the legacy `~/.ado_cli/config.json` when that file
     /// holds the same organization's credential — the logout write (inventory
-    /// D27). The store credential goes first, because it is the security-relevant
-    /// removal: a failed config write then leaves a stale entry (refused by
-    /// credential resolution, visible to `whoami`) rather than a config that looks
-    /// logged out while the token survives in the store. `server` and every other
+    /// D27). The organization is named by the flags, the environment or the
+    /// config, or failing all three by the legacy file itself, so a migrated
+    /// install that has never been imported is still logged out. The store
+    /// credential goes first, because it is the security-relevant removal: a
+    /// failed config write then leaves a stale entry (refused by credential
+    /// resolution, visible to `whoami`) rather than a config that looks logged
+    /// out while the token survives in the store. `server` and every other
     /// organization's entry survive; `default_org` is cleared only when it named
     /// the organization being logged out, and a config left with nothing at all is
     /// removed, so a single-org install lands in the oracle's fresh-install state.
@@ -204,10 +207,24 @@ impl Context {
     }
 
     /// The organization a logout names: the flag or environment organization
-    /// first, then the config's default. `None` means there is nothing to log out
-    /// of, which is a success with nothing to remove.
+    /// first, then the config's default, then the legacy file's own. The last is
+    /// the target of last resort — a migrated install that has never been imported
+    /// has no other place to name one, and the oracle's logout removes that file
+    /// regardless. `None` means there is nothing to log out of, which is a success
+    /// with nothing to remove.
     fn logout_org(&self) -> Option<String> {
-        present(self.env().get(ENV_ORG)).or_else(|| self.default_org())
+        present(self.env().get(ENV_ORG))
+            .or_else(|| self.default_org())
+            .or_else(|| self.legacy_org())
+    }
+
+    /// The organization `~/.ado_cli/config.json` names, when it holds a credential
+    /// the one-time import could use; a missing, unreadable or malformed file
+    /// names none.
+    fn legacy_org(&self) -> Option<String> {
+        let path = self.legacy_file.as_deref()?;
+
+        legacy::read_legacy_at(path).map(|legacy| legacy.org)
     }
 
     /// The one fork between a command's `--json` envelope and its human report:

@@ -380,6 +380,54 @@ fn a_migrated_install_is_not_re_imported_after_logout() {
     );
 }
 
+/// A migrated install that has never been imported has no config to name an
+/// organization, so the legacy file's own organization is the target — the oracle
+/// deletes that very file regardless of where an organization would come from.
+/// Then the shape is genuinely empty: a second logout says so.
+#[test]
+fn a_legacy_only_install_is_logged_out_without_a_named_org() {
+    let home = TempHome::new();
+    let legacy = legacy_file(&home);
+    fs::create_dir_all(legacy.parent().expect("the legacy directory"))
+        .expect("create the legacy directory");
+    fs::write(
+        &legacy,
+        r#"{"org":"ado-cli-test-org","method":"pat","pat":"legacy-pat"}"#,
+    )
+    .expect("write the legacy file");
+
+    let output = run(&home, &["logout", "--json"]);
+
+    assert_success(&output);
+    assert_eq!(
+        stdout_of(&output),
+        format!("{}\n", logout_json(ORG)),
+        "the legacy file names the organization being logged out, so the message may claim it"
+    );
+    assert!(
+        !legacy.exists(),
+        "the only copy of the credential is removed"
+    );
+    assert!(!config_file(&home).exists());
+    assert!(!credentials_file(&home).exists());
+
+    let next = run(&home, &["projects", "list", "--json"]);
+
+    assert_eq!(next.status.code(), Some(1));
+    let envelope: Value = serde_json::from_str(&stdout_of(&next)).expect("a JSON document");
+    assert_eq!(envelope["error"]["code"], json!("auth_required"));
+    assert!(
+        !config_file(&home).exists(),
+        "nothing was re-imported from a file that no longer exists"
+    );
+    assert!(!credentials_file(&home).exists());
+
+    let second = run(&home, &["logout", "--json"]);
+
+    assert_success(&second);
+    assert_eq!(stdout_of(&second), format!("{NOTHING_JSON}\n"));
+}
+
 /// `default_org` naming another organization is a setting the logout never owned,
 /// so the equality guard leaves it in place.
 #[test]
