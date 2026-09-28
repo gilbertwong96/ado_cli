@@ -16,7 +16,7 @@ use std::io::Write;
 
 use ado_core::auth::device_code::{self, DeviceCode};
 use ado_core::config::AuthMethod;
-use ado_core::env::{ENV_ORG, ENV_PAT, EnvSource};
+use ado_core::env::{ENV_ORG, ENV_PAT, ENV_SERVER, EnvSource, non_empty};
 use ado_core::envelope::{ok_message, ok_value};
 use ado_core::error::{AdoError, ErrorCode};
 use serde_json::json;
@@ -42,17 +42,24 @@ pub fn run(
     identity_base: &str,
     announce: &mut dyn Write,
 ) -> Result<Report, AdoError> {
-    let (org, pat) = {
+    let (org, pat, server) = {
         let env = context.env();
-        (env.get(ENV_ORG), env.get(ENV_PAT))
+
+        // `FlagEnv::set` drops a blank flag, but the environment behind it answers
+        // `Ok("")` for a set-but-empty variable, so the same predicate has to run
+        // here: a blank `ADO_ORG`/`ADO_PAT` is not a value (D16), exactly as
+        // `credentials::resolve` already treats those variables.
+        let value = |name: &str| env.get(name).filter(|value| non_empty(value));
+
+        // `set_server/1` reads the flag, then `ADO_SERVER`, and nothing else: the
+        // config's `server` is `whoami`'s display field (W1-R10), so a login never
+        // reports one this invocation did not name.
+        (value(ENV_ORG), value(ENV_PAT), value(ENV_SERVER))
     };
-    let server = context.server();
 
     match resolve_method(method, pat.as_deref())? {
         LoginMethod::Pat => login_with_pat(context, org, pat, server.as_deref()),
-        LoginMethod::Device => {
-            login_with_device(context, org, identity_base, server.as_deref(), announce)
-        }
+        LoginMethod::Device => login_with_device(context, org, identity_base, announce),
     }
 }
 
@@ -95,12 +102,13 @@ fn login_with_pat(
 
 /// `login_with_device/2` → `login_device_code/1` → `exchange_and_save_device/2`:
 /// request the code, show it, poll for the ARM refresh token, exchange that for a
-/// **DevOps** access token, and store the DevOps one.
+/// **DevOps** access token, and store the DevOps one. The oracle's device path has no
+/// server to report (`login_success(parsed, org_name, "device", nil)`), so this one
+/// passes none.
 fn login_with_device(
     context: &mut Context,
     org: Option<String>,
     identity_base: &str,
-    server: Option<&str>,
     announce: &mut dyn Write,
 ) -> Result<Report, AdoError> {
     // D26: the oracle's guard exempts `device` from the `--org` requirement and then
@@ -127,7 +135,7 @@ fn login_with_device(
         .save_login(&org, AuthMethod::Device, &token)
         .map_err(login_failed)?;
 
-    Ok(success(context, &org, "device", server))
+    Ok(success(context, &org, "device", None))
 }
 
 /// The module's device-code instructions: one `{"ok":true,"message":…}` line under
@@ -160,9 +168,11 @@ fn announce_device_code(
 }
 
 /// `login_success/4`: the oracle's value envelope — `org`, `method`, `server` and
-/// `credentials_saved_to` — and its two human lines. `credentials_saved_to` names
-/// this CLI's config file, where the oracle names the JSON file that holds its token
-/// (§7, D11b's file); every other part of the output is the oracle's bytes.
+/// `credentials_saved_to` — and its two human lines. Two values are ours rather than
+/// the oracle's: `server` is the flag/env one the caller resolved (the oracle's
+/// `set_server/1` reads the same two, and its device path passes `nil`), and
+/// `credentials_saved_to` names this CLI's config file, where the oracle names the
+/// JSON file that holds its token (§7, D11b's file).
 fn success(context: &Context, org: &str, method: &str, server: Option<&str>) -> Report {
     let saved_to = context
         .config_file()
@@ -274,7 +284,7 @@ mod tests {
 
     use ado_core::auth::device_code::{ARM_RESOURCE, CLIENT_ID, DEVOPS_RESOURCE};
     use ado_core::config::{Config, OrgEntry};
-    use ado_core::credentials::{InMemoryStore, SecretStore, Stored};
+    use ado_core::credentials::{InMemoryStore, SecretStore, StoreCall, Stored};
     use ado_core::env::{ENV_SERVER, MapEnv};
     use ado_testkit::{MockResponse, MockServer, TempHome};
     use serde_json::{Value, json};
@@ -932,6 +942,87 @@ mod tests {
         );
     }
 
+    /// The PAT path's `server` is the flag/env one and nothing else: a server
+    /// recorded in `config.toml` is `whoami`'s display field (W1-R10), and
+    /// `set_server/1` — the function this mirrors — reads `--server` and `ADO_SERVER`
+    /// only. The recorded value survives the login untouched.
+    #[test]
+    fn the_config_server_is_not_the_login_envelope_server() {
+        let home = TempHome::new();
+        let mut context = test_context(
+            opts(Some("myorg"), Some("pat-token"), None, true),
+            MapEnv::new(),
+            InMemoryStore::new(),
+            &home,
+        )
+        .with_config(Config {
+            server: Some("https://config.test".to_owned()),
+            ..Config::default()
+        });
+
+        let report = run(
+            &mut context,
+            Some("pat"),
+            device_code::IDENTITY_BASE,
+            &mut Vec::new(),
+        )
+        .expect("the pat login");
+
+        let Report::Json(envelope) = report else {
+            panic!("the json context reports an envelope");
+        };
+        assert_eq!(
+            envelope["result"]["server"],
+            json!(null),
+            "the config's server is not an envelope value"
+        );
+        assert!(
+            config_text(&home).contains("server = \"https://config.test\""),
+            "the login preserves the setting it does not own: {}",
+            config_text(&home)
+        );
+    }
+
+    /// The oracle's device path reports no server at all
+    /// (`login_success(parsed, org, "device", nil)`), even when this invocation named
+    /// one — the value belongs to the PAT path.
+    #[test]
+    fn the_device_path_reports_no_server_even_when_one_is_named() {
+        let home = TempHome::new();
+        let fake = FakeIdentity::start(
+            vec![
+                device_code_reply(0),
+                granted(),
+                devops_token("devops-token"),
+            ],
+            None,
+        );
+        let mut context = test_context(
+            opts(None, None, Some("https://flag.test"), true),
+            org_env("myorg").set(ENV_SERVER, "https://env.test"),
+            InMemoryStore::new(),
+            &home,
+        );
+
+        let report = run(
+            &mut context,
+            Some("device"),
+            fake.base_url(),
+            &mut Vec::new(),
+        )
+        .expect("the device login");
+
+        let Report::Json(envelope) = report else {
+            panic!("the json context reports an envelope");
+        };
+        assert_eq!(
+            envelope["result"]["server"],
+            json!(null),
+            "the oracle's device path passes nil"
+        );
+        assert!(envelope["result"]["credentials_saved_to"].is_string());
+    }
+
     #[test]
     fn the_pat_human_lines_are_the_oracles() {
         let home = TempHome::new();
@@ -961,6 +1052,111 @@ mod tests {
                 "\n  Logged in to myorg (https://ado.test) via Pat.\n  Credentials saved to {}",
                 config_file(&home)
             ))
+        );
+    }
+
+    /// A blank environment value is not a value (D16): `ADO_PAT=`/`ADO_ORG=` are the
+    /// missing-option errors, not a stored empty credential. The flag twins are
+    /// `cli_login.rs`'s `a_blank_value_is_not_a_value`.
+    #[test]
+    fn a_blank_environment_value_is_not_a_value() {
+        let home = TempHome::new();
+        let store = InMemoryStore::new();
+
+        for blank in ["", "  "] {
+            let mut blank_pat = test_context(
+                opts(Some("myorg"), None, None, true),
+                MapEnv::new().set(ENV_PAT, blank),
+                store.clone(),
+                &home,
+            );
+
+            let error = run(
+                &mut blank_pat,
+                Some("pat"),
+                device_code::IDENTITY_BASE,
+                &mut Vec::new(),
+            )
+            .expect_err("a blank ADO_PAT is not a value");
+
+            assert_eq!(error.message, pat_required().message, "{blank:?}");
+
+            let mut blank_org = test_context(
+                opts(None, Some("pat-token"), None, true),
+                MapEnv::new().set(ENV_ORG, blank),
+                store.clone(),
+                &home,
+            );
+
+            let error = run(
+                &mut blank_org,
+                Some("pat"),
+                device_code::IDENTITY_BASE,
+                &mut Vec::new(),
+            )
+            .expect_err("a blank ADO_ORG is not a value");
+
+            assert_eq!(error.message, org_required("pat").message, "{blank:?}");
+        }
+
+        assert!(
+            store.calls().is_empty(),
+            "nothing is stored: {:?}",
+            store.calls()
+        );
+        assert!(
+            !home
+                .config_dir()
+                .join(ado_core::config::CONFIG_FILE)
+                .exists(),
+            "nothing is recorded"
+        );
+    }
+
+    /// The checklist item "replaced, not shadowed": a second login for the same
+    /// organization overwrites the credential, so the newer token is the one the
+    /// next command resolves.
+    #[test]
+    fn a_second_login_replaces_the_credential() {
+        let home = TempHome::new();
+        let store = InMemoryStore::new();
+
+        for token in ["first-token", "second-token"] {
+            let mut context = test_context(
+                opts(Some("myorg"), Some(token), None, true),
+                MapEnv::new(),
+                store.clone(),
+                &home,
+            );
+
+            run(
+                &mut context,
+                Some("pat"),
+                device_code::IDENTITY_BASE,
+                &mut Vec::new(),
+            )
+            .expect("the login");
+        }
+
+        assert_eq!(
+            store.get("myorg").expect("get"),
+            Some(stored(AuthMethod::Pat, "second-token")),
+            "the store is keyed by organization, so the later token replaces the earlier one"
+        );
+        assert_eq!(
+            store
+                .calls()
+                .iter()
+                .filter(|call| matches!(call, StoreCall::Set(_)))
+                .count(),
+            2,
+            "both logins wrote: {:?}",
+            store.calls()
+        );
+        assert!(
+            !config_text(&home).contains("first-token"),
+            "config.toml: {}",
+            config_text(&home)
         );
     }
 
@@ -1120,14 +1316,17 @@ mod tests {
     }
 
     /// `slow_down` is not terminal: the flow keeps going, after waiting the oracle's
-    /// `interval + 5` seconds rather than the server's interval.
+    /// `interval + 5` seconds rather than the server's interval — and that increase
+    /// is the interval the *next* poll waits as well, which is why this script spends
+    /// two five-second waits: the cadence is observed, not asserted.
     #[test]
-    fn slow_down_waits_the_increment_and_keeps_going() {
+    fn slow_down_waits_the_increment_and_keeps_it() {
         let home = TempHome::new();
         let fake = FakeIdentity::start(
             vec![
                 device_code_reply(0),
                 slow_down(),
+                pending(),
                 granted(),
                 devops_token("devops-token"),
             ],
@@ -1150,11 +1349,23 @@ mod tests {
         .expect("slow_down is not terminal");
 
         let polls = fake.polls();
-        assert_eq!(polls.len(), 2);
-        let waited = polls[1].after(&polls[0]);
+        assert_eq!(
+            polls.len(),
+            3,
+            "slow_down, then a pending the grant follows"
+        );
+
+        let after_slow_down = polls[1].after(&polls[0]);
         assert!(
-            waited >= Duration::from_millis(4900),
-            "slow_down must wait the server's interval plus the oracle's five seconds: {waited:?}"
+            after_slow_down >= Duration::from_millis(4900),
+            "slow_down must wait the server's interval plus the oracle's five seconds: {after_slow_down:?}"
+        );
+
+        let after_pending = polls[2].after(&polls[1]);
+        assert!(
+            after_pending >= Duration::from_millis(4900),
+            "slow_down's increase is the interval every later poll waits, not a one-off:\
+             `handle_token_error/4` recurses with `interval + 5`: {after_pending:?}"
         );
         assert_eq!(
             store.get("myorg").expect("get"),

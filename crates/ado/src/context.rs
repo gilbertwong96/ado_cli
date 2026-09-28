@@ -92,10 +92,11 @@ impl Context {
     }
 
     /// The server this run resolves — `--server`, then `ADO_SERVER`, then the
-    /// config's — and `None` when none of the three names one. `whoami` reports the
-    /// cloud default there ([`DEFAULT_SERVER`]); `login`'s envelope mirrors the
-    /// oracle, whose `server` is `null` for an unset one.
-    pub fn server(&self) -> Option<String> {
+    /// config's — and `None` when none of the three names one; `whoami` reports the
+    /// cloud default there ([`DEFAULT_SERVER`]). `login` reads the flag/env pair off
+    /// [`Context::env`] itself, because the oracle's `set_server/1` never consults the
+    /// config (W1-R10), so this stays `whoami`'s own resolver.
+    fn server(&self) -> Option<String> {
         present(self.env().get(ENV_SERVER)).or_else(|| {
             self.config
                 .as_ref()

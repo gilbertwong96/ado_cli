@@ -52,6 +52,12 @@ const NOTHING_JSON: &str =
     r#"{"message":"Logged out. No stored credentials to remove.","ok":true}"#;
 const NOTHING_PLAIN: &str = "Logged out. No stored credentials to remove.\n";
 
+/// The organization the logout tests resolve. Synthetic for the same reason as
+/// `cli_login.rs`'s: the keychain is unreachable under a `TempHome` and on CI, but a
+/// developer's live secret service is not, and R26 forbids touching a real
+/// credential (R52).
+const ORG: &str = "ado-cli-test-org";
+
 fn command(home: &TempHome, args: &[&str]) -> Command {
     let mut command = ado_cmd();
     home.apply(&mut command);
@@ -75,18 +81,18 @@ fn credentials_file(home: &TempHome) -> PathBuf {
     home.config_dir().join("credentials.json")
 }
 
-/// A two-org configuration: `myorg` is the default and holds the secret; `other`
-/// is the non-secret setting a logout must not destroy.
-const TWO_ORG_CONFIG: &str = "default_org = \"myorg\"\nserver = \"https://ado.example.com\"\n\n[orgs.myorg]\nauth = \"pat\"\n\n[orgs.other]\nauth = \"browser\"\n";
+/// A two-org configuration whose names are synthetic (R52): the first is the
+/// default and holds the secret, the second is the non-secret setting a logout must
+/// not destroy.
+const TWO_ORG_CONFIG: &str = "default_org = \"ado-cli-test-org\"\nserver = \"https://ado.example.com\"\n\n[orgs.ado-cli-test-org]\nauth = \"pat\"\n\n[orgs.ado-cli-test-other]\nauth = \"browser\"\n";
 
-/// The same configuration after `myorg` is logged out.
+/// The same configuration after the default organization is logged out.
 const TWO_ORG_CONFIG_AFTER: &str =
-    "server = \"https://ado.example.com\"\n\n[orgs.other]\nauth = \"browser\"\n";
+    "server = \"https://ado.example.com\"\n\n[orgs.ado-cli-test-other]\nauth = \"browser\"\n";
 
-const TWO_ORG_CREDENTIALS: &str = "{\n  \"myorg\": {\n    \"method\": \"pat\",\n    \"token\": \"myorg-token\"\n  },\n  \"other\": {\n    \"method\": \"browser\",\n    \"token\": \"other-token\"\n  }\n}";
+const TWO_ORG_CREDENTIALS: &str = "{\n  \"ado-cli-test-org\": {\n    \"method\": \"pat\",\n    \"token\": \"ado-cli-test-org-token\"\n  },\n  \"ado-cli-test-other\": {\n    \"method\": \"browser\",\n    \"token\": \"ado-cli-test-other-token\"\n  }\n}";
 
-const TWO_ORG_CREDENTIALS_AFTER: &str =
-    "{\n  \"other\": {\n    \"method\": \"browser\",\n    \"token\": \"other-token\"\n  }\n}";
+const TWO_ORG_CREDENTIALS_AFTER: &str = "{\n  \"ado-cli-test-other\": {\n    \"method\": \"browser\",\n    \"token\": \"ado-cli-test-other-token\"\n  }\n}";
 
 fn seed(home: &TempHome, config: &str, credentials: &str) {
     fs::write(config_file(home), config).expect("seed config.toml");
@@ -124,7 +130,7 @@ fn logout_clears_the_credential_and_its_entry_but_keeps_the_other_settings() {
     assert_success(&output);
     assert_eq!(
         stdout_of(&output),
-        format!("{}\n", logout_json("myorg")),
+        format!("{}\n", logout_json(ORG)),
         "the oracle's envelope shape with the ruled message (D27)"
     );
     assert!(
@@ -157,13 +163,13 @@ fn logout_clears_the_credential_and_its_entry_but_keeps_the_other_settings() {
     assert!(
         !fs::read_to_string(credentials_file(&home))
             .expect("credentials.json")
-            .contains("myorg-token"),
+            .contains("ado-cli-test-org-token"),
         "the removed token is still on disk"
     );
 
     // The post-condition the command exists for: the next run cannot resolve the
     // credential that was logged out, and it fails before any request is built.
-    let next = run(&home, &["projects", "list", "--org", "myorg", "--json"]);
+    let next = run(&home, &["projects", "list", "--org", ORG, "--json"]);
 
     assert_eq!(next.status.code(), Some(1));
     let envelope: Value = serde_json::from_str(&stdout_of(&next)).expect("a JSON document");
@@ -176,15 +182,14 @@ fn logout_clears_the_credential_and_its_entry_but_keeps_the_other_settings() {
 #[test]
 fn logout_of_a_single_org_config_leaves_the_oracle_fresh_install_state() {
     let home = TempHome::new();
-    let config = "default_org = \"myorg\"\n\n[orgs.myorg]\nauth = \"pat\"\n";
-    let credentials =
-        "{\n  \"myorg\": {\n    \"method\": \"pat\",\n    \"token\": \"myorg-token\"\n  }\n}";
+    let config = "default_org = \"ado-cli-test-org\"\n\n[orgs.ado-cli-test-org]\nauth = \"pat\"\n";
+    let credentials = "{\n  \"ado-cli-test-org\": {\n    \"method\": \"pat\",\n    \"token\": \"ado-cli-test-org-token\"\n  }\n}";
     seed(&home, config, credentials);
 
     let output = run(&home, &["logout", "--json"]);
 
     assert_success(&output);
-    assert_eq!(stdout_of(&output), format!("{}\n", logout_json("myorg")));
+    assert_eq!(stdout_of(&output), format!("{}\n", logout_json(ORG)));
     assert!(
         !config_file(&home).exists(),
         "an emptied config.toml is removed, so whoami reports a fresh install"
@@ -248,23 +253,23 @@ fn logout_twice_in_a_row_is_idempotent() {
     let home = TempHome::new();
     seed(
         &home,
-        "default_org = \"myorg\"\n\n[orgs.myorg]\nauth = \"pat\"\n",
-        "{\n  \"myorg\": {\n    \"method\": \"pat\",\n    \"token\": \"myorg-token\"\n  }\n}",
+        "default_org = \"ado-cli-test-org\"\n\n[orgs.ado-cli-test-org]\nauth = \"pat\"\n",
+        "{\n  \"ado-cli-test-org\": {\n    \"method\": \"pat\",\n    \"token\": \"ado-cli-test-org-token\"\n  }\n}",
     );
 
     let mut first = command(&home, &["logout", "--json"]);
-    first.env("ADO_ORG", "myorg");
+    first.env("ADO_ORG", ORG);
     let first = first.output().expect("run the first logout");
 
     let mut second = command(&home, &["logout", "--json"]);
-    second.env("ADO_ORG", "myorg");
+    second.env("ADO_ORG", ORG);
     let second = second.output().expect("run the second logout");
 
     assert_success(&first);
     assert_success(&second);
     assert_eq!(
         stdout_of(&first),
-        format!("{}\n", logout_json("myorg")),
+        format!("{}\n", logout_json(ORG)),
         "the flag/env organization resolves both runs"
     );
     assert_eq!(stdout_of(&second), stdout_of(&first), "idempotent");
@@ -280,14 +285,14 @@ fn logout_plain_output_is_the_message_line() {
     let home = TempHome::new();
     seed(
         &home,
-        "default_org = \"myorg\"\n\n[orgs.myorg]\nauth = \"pat\"\n",
-        "{\n  \"myorg\": {\n    \"method\": \"pat\",\n    \"token\": \"myorg-token\"\n  }\n}",
+        "default_org = \"ado-cli-test-org\"\n\n[orgs.ado-cli-test-org]\nauth = \"pat\"\n",
+        "{\n  \"ado-cli-test-org\": {\n    \"method\": \"pat\",\n    \"token\": \"ado-cli-test-org-token\"\n  }\n}",
     );
 
     let output = run(&home, &["logout"]);
 
     assert_success(&output);
-    assert_eq!(stdout_of(&output), logout_plain("myorg"));
+    assert_eq!(stdout_of(&output), logout_plain(ORG));
     assert!(
         stderr_of(&output).is_empty(),
         "stderr: {}",
@@ -311,8 +316,8 @@ fn a_failing_credential_layer_reports_a_failure_and_keeps_the_credential() {
     let home = TempHome::new();
     seed(
         &home,
-        "default_org = \"myorg\"\n\n[orgs.myorg]\nauth = \"pat\"\n",
-        "{\n  \"myorg\": {\n    \"method\": \"pat\",\n    \"token\": \"myorg-token\"\n  }\n}",
+        "default_org = \"ado-cli-test-org\"\n\n[orgs.ado-cli-test-org]\nauth = \"pat\"\n",
+        "{\n  \"ado-cli-test-org\": {\n    \"method\": \"pat\",\n    \"token\": \"ado-cli-test-org-token\"\n  }\n}",
     );
     fs::set_permissions(home.config_dir(), fs::Permissions::from_mode(0o555))
         .expect("make the config dir read-only");
@@ -363,13 +368,13 @@ fn a_failing_credential_layer_reports_a_failure_and_keeps_the_credential() {
     assert!(
         fs::read_to_string(credentials_file(&home))
             .expect("the credential file survives the failed delete")
-            .contains("myorg-token"),
+            .contains("ado-cli-test-org-token"),
         "the credential is still on disk"
     );
     assert!(
         fs::read_to_string(config_file(&home))
             .expect("config.toml")
-            .contains("[orgs.myorg]"),
+            .contains("[orgs.ado-cli-test-org]"),
         "a failed credential removal leaves the config entry alone"
     );
 }

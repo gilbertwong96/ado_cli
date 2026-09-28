@@ -16,22 +16,27 @@ use std::process::{Command, Output};
 use ado_testkit::{MockResponse, MockServer, TempHome, ado_cmd, stderr_of, stdout_of};
 use serde_json::{Value, json};
 
-/// The frozen escript's `ado login --method pat --org myorg --pat tok --json`
-/// envelope, captured with an isolated `HOME`: our bytes differ only in
-/// `credentials_saved_to` (the new config file, D11b) and in object key order
-/// (serde_json's `BTreeMap` vs Elixir's map order, D1 — the comparison normalises
-/// with `jq -S`). The shape, the method spelling and the `server: null` are the
-/// oracle's.
+/// The frozen escript's `ado login --method pat --org <org> --pat <pat> --json`
+/// envelope, captured with an isolated `HOME` and a throwaway organization: our
+/// bytes differ only in `credentials_saved_to` (the new config file, D11b) and in
+/// object key order (serde_json's `BTreeMap` vs Elixir's map order, D1 — the
+/// comparison normalises with `jq -S`). The shape, the method spelling, the `org`
+/// value and the `server: null` are the oracle's.
 fn oracle_success_json(config_file: &str) -> String {
     format!(
-        r#"{{"ok":true,"result":{{"credentials_saved_to":"{config_file}","method":"pat","org":"myorg","server":null}}}}"#
+        r#"{{"ok":true,"result":{{"credentials_saved_to":"{config_file}","method":"pat","org":"{ORG}","server":null}}}}"#
     )
 }
 
 /// The oracle's two human lines, with the config file it names. The oracle's
 /// message is byte-identical apart from that path.
 fn oracle_success_plain(config_file: &str) -> String {
-    format!("\n  Logged in to myorg via Pat.\n  Credentials saved to {config_file}\n")
+    format!("\n  Logged in to {ORG} via Pat.\n  Credentials saved to {config_file}\n")
+}
+
+/// The organization-scoped path the next command builds from the stored login.
+fn org_path(suffix: &str) -> String {
+    format!("/{ORG}{suffix}")
 }
 
 /// The frozen escript's `--json` envelope for a missing `--pat`, captured with an
@@ -60,6 +65,13 @@ const BROWSER_JSON: &str = r#"{"error":{"code":"validation_error","details":{"va
 
 /// The PAT the success tests store; asserted absent from `config.toml`.
 const PAT: &str = "pat-secret-token";
+
+/// The organization every test logs in to. Deliberately synthetic: `login` writes
+/// the credential to the credential store, and on a developer machine with a live
+/// secret service (a Linux desktop) that store *is* the real one — under `TempHome`
+/// and on CI the keychain is unreachable, but a plausible name like `myorg` could
+/// still collide with a real credential and overwrite it, which R26 forbids (R52).
+const ORG: &str = "ado-cli-test-org";
 
 fn command(home: &TempHome, args: &[&str]) -> Command {
     let mut command = ado_cmd();
@@ -129,7 +141,7 @@ fn pat_login_writes_the_credential_out_of_the_config_and_emits_the_oracle_envelo
     let output = run(
         &home,
         &[
-            "login", "--method", "pat", "--org", "myorg", "--pat", PAT, "--json",
+            "login", "--method", "pat", "--org", ORG, "--pat", PAT, "--json",
         ],
     );
 
@@ -147,7 +159,7 @@ fn pat_login_writes_the_credential_out_of_the_config_and_emits_the_oracle_envelo
     );
 
     let config = fs::read_to_string(home.config_dir().join("config.toml")).expect("config.toml");
-    assert_eq!(config, expected_config("myorg", "pat"));
+    assert_eq!(config, expected_config(ORG, "pat"));
     assert!(
         !config.contains(PAT),
         "the token reached config.toml: {config}"
@@ -158,7 +170,7 @@ fn pat_login_writes_the_credential_out_of_the_config_and_emits_the_oracle_envelo
     );
 
     let credentials = fs::read_to_string(credentials_file(&home)).expect("credentials.json");
-    assert_eq!(credentials, expected_credentials("myorg", "pat", PAT));
+    assert_eq!(credentials, expected_credentials(ORG, "pat", PAT));
 
     #[cfg(unix)]
     {
@@ -179,7 +191,7 @@ fn pat_login_plain_output_is_the_oracle_lines() {
 
     let output = run(
         &home,
-        &["login", "--method", "pat", "--org", "myorg", "--pat", PAT],
+        &["login", "--method", "pat", "--org", ORG, "--pat", PAT],
     );
 
     assert_success(&output);
@@ -204,13 +216,13 @@ fn the_next_command_resolves_the_credential_the_login_stored() {
     let server = MockServer::start();
     server.expect(
         "GET",
-        "/myorg/_apis/projects",
+        &org_path("/_apis/projects"),
         MockResponse::from_fixture("projects_list"),
     );
 
     assert_success(&run(
         &home,
-        &["login", "--method", "pat", "--org", "myorg", "--pat", PAT],
+        &["login", "--method", "pat", "--org", ORG, "--pat", PAT],
     ));
 
     let mut list = command(&home, &["projects", "list", "--json"]);
@@ -220,7 +232,7 @@ fn the_next_command_resolves_the_credential_the_login_stored() {
     assert_success(&output);
     let received = server.received();
     assert_eq!(received.len(), 1, "the list reached the mock once");
-    assert_eq!(received[0].path, "/myorg/_apis/projects");
+    assert_eq!(received[0].path, org_path("/_apis/projects"));
     assert_eq!(
         received[0].header("authorization"),
         Some("Basic OnBhdC1zZWNyZXQtdG9rZW4="),
@@ -243,7 +255,7 @@ fn pat_login_reports_the_server_it_was_given_without_persisting_it() {
             "--method",
             "pat",
             "--org",
-            "myorg",
+            ORG,
             "--pat",
             PAT,
             "--server",
@@ -260,7 +272,7 @@ fn pat_login_reports_the_server_it_was_given_without_persisting_it() {
     );
     assert_eq!(
         fs::read_to_string(home.config_dir().join("config.toml")).expect("config.toml"),
-        expected_config("myorg", "pat"),
+        expected_config(ORG, "pat"),
         "the server is reported, not recorded"
     );
 
@@ -271,16 +283,16 @@ fn pat_login_reports_the_server_it_was_given_without_persisting_it() {
             "--method",
             "pat",
             "--org",
-            "myorg",
+            ORG,
             "--pat",
             PAT,
             "--server",
             "https://ado.example.com",
         ],
     );
-    assert!(
-        stdout_of(&plain).contains("  Logged in to myorg (https://ado.example.com) via Pat.\n")
-    );
+    assert!(stdout_of(&plain).contains(&format!(
+        "  Logged in to {ORG} (https://ado.example.com) via Pat.\n"
+    )));
 }
 
 /// `resolve_method/1`: a PAT on `--pat` selects `pat` when `--method` is omitted —
@@ -290,7 +302,7 @@ fn pat_login_reports_the_server_it_was_given_without_persisting_it() {
 fn the_pat_flag_infers_the_pat_method() {
     let home = TempHome::new();
 
-    let output = run(&home, &["login", "--org", "myorg", "--pat", PAT, "--json"]);
+    let output = run(&home, &["login", "--org", ORG, "--pat", PAT, "--json"]);
 
     assert_success(&output);
     assert_eq!(
@@ -304,10 +316,7 @@ fn the_pat_flag_infers_the_pat_method() {
 #[test]
 fn the_environment_pat_infers_the_pat_method() {
     let home = TempHome::new();
-    let mut command = command(
-        &home,
-        &["login", "--method", "pat", "--org", "myorg", "--json"],
-    );
+    let mut command = command(&home, &["login", "--method", "pat", "--org", ORG, "--json"]);
     command.env("ADO_PAT", PAT);
 
     let output = command.output().expect("run ado");
@@ -315,7 +324,7 @@ fn the_environment_pat_infers_the_pat_method() {
     assert_success(&output);
     assert_eq!(
         fs::read_to_string(credentials_file(&home)).expect("credentials.json"),
-        expected_credentials("myorg", "pat", PAT)
+        expected_credentials(ORG, "pat", PAT)
     );
 }
 
@@ -323,10 +332,7 @@ fn the_environment_pat_infers_the_pat_method() {
 fn login_without_a_pat_is_a_validation_error() {
     let home = TempHome::new();
 
-    let json_output = run(
-        &home,
-        &["login", "--method", "pat", "--org", "myorg", "--json"],
-    );
+    let json_output = run(&home, &["login", "--method", "pat", "--org", ORG, "--json"]);
 
     assert_eq!(json_output.status.code(), Some(1));
     assert_eq!(
@@ -340,7 +346,7 @@ fn login_without_a_pat_is_a_validation_error() {
         stderr_of(&json_output)
     );
 
-    let plain = run(&home, &["login", "--method", "pat", "--org", "myorg"]);
+    let plain = run(&home, &["login", "--method", "pat", "--org", ORG]);
 
     assert_eq!(plain.status.code(), Some(1));
     assert_eq!(stderr_of(&plain), ORACLE_MISSING_PAT_PLAIN);
@@ -384,7 +390,7 @@ fn a_blank_value_is_not_a_value() {
     let blank_pat = run(
         &home,
         &[
-            "login", "--method", "pat", "--org", "myorg", "--pat", "", "--json",
+            "login", "--method", "pat", "--org", ORG, "--pat", "", "--json",
         ],
     );
 
@@ -418,7 +424,7 @@ fn an_unknown_method_is_a_validation_error() {
 
     let output = run(
         &home,
-        &["login", "--method", "bogus", "--org", "myorg", "--json"],
+        &["login", "--method", "bogus", "--org", ORG, "--json"],
     );
 
     assert_eq!(output.status.code(), Some(1));
@@ -431,14 +437,7 @@ fn an_unknown_method_is_a_validation_error() {
 
     let spelled = run(
         &home,
-        &[
-            "login",
-            "--method",
-            "device_code",
-            "--org",
-            "myorg",
-            "--json",
-        ],
+        &["login", "--method", "device_code", "--org", ORG, "--json"],
     );
 
     assert_eq!(spelled.status.code(), Some(1));
@@ -447,6 +446,50 @@ fn an_unknown_method_is_a_validation_error() {
         envelope["error"]["message"],
         json!("Unknown method 'device_code'. Use 'pat' or 'device'.")
     );
+    assert_nothing_written(&home);
+}
+
+/// The environment twin of the flag test above: `ProcessEnv` answers `Ok("")` for a
+/// variable that is set but empty, so the same predicate has to run on `ADO_PAT` and
+/// `ADO_ORG`. Before that filter, `ADO_PAT= ado login --method pat --org ORG` stored
+/// an empty token and printed success, and `ADO_ORG=` stored a credential keyed by
+/// `""` (D16: a blank value is not a value, in the environment as well as on a flag).
+#[test]
+fn blank_environment_values_are_not_values() {
+    let home = TempHome::new();
+
+    for blank in ["", "  "] {
+        let mut blank_pat = command(&home, &["login", "--method", "pat", "--org", ORG, "--json"]);
+        blank_pat.env("ADO_PAT", blank);
+        let blank_pat = blank_pat.output().expect("run ado");
+
+        assert_eq!(
+            blank_pat.status.code(),
+            Some(1),
+            "ADO_PAT={blank:?} is not a value"
+        );
+        assert_eq!(
+            stdout_of(&blank_pat),
+            format!("{ORACLE_MISSING_PAT_JSON}\n"),
+            "ADO_PAT={blank:?}"
+        );
+
+        let mut blank_org = command(&home, &["login", "--method", "pat", "--json"]);
+        blank_org.env("ADO_ORG", blank).env("ADO_PAT", PAT);
+        let blank_org = blank_org.output().expect("run ado");
+
+        assert_eq!(
+            blank_org.status.code(),
+            Some(1),
+            "ADO_ORG={blank:?} is not a value"
+        );
+        assert_eq!(
+            stdout_of(&blank_org),
+            format!("{ORACLE_MISSING_ORG_JSON}\n"),
+            "ADO_ORG={blank:?}"
+        );
+    }
+
     assert_nothing_written(&home);
 }
 
@@ -459,13 +502,13 @@ fn browser_login_is_not_shipped() {
 
     let explicit = run(
         &home,
-        &["login", "--method", "browser", "--org", "myorg", "--json"],
+        &["login", "--method", "browser", "--org", ORG, "--json"],
     );
 
     assert_eq!(explicit.status.code(), Some(1));
     assert_eq!(stdout_of(&explicit), format!("{BROWSER_JSON}\n"));
 
-    let inferred = run(&home, &["login", "--org", "myorg", "--json"]);
+    let inferred = run(&home, &["login", "--org", ORG, "--json"]);
 
     assert_eq!(inferred.status.code(), Some(1));
     assert_eq!(
