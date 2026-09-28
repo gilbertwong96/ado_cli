@@ -92,6 +92,7 @@ fn schema_root_lists_exactly_the_shipped_subcommands() {
         [
             "ado completion",
             "ado projects",
+            "ado prs",
             "ado repos",
             "ado schema",
             "ado version",
@@ -99,6 +100,20 @@ fn schema_root_lists_exactly_the_shipped_subcommands() {
             "ado workitems"
         ]
     );
+}
+
+/// Wave 1 ports the two read paths only: `create`, `complete`, `abandon`,
+/// `approve`, `vote`, `diff`, `comments` and `reviewers` are Wave 2.
+#[test]
+fn schema_prs_node_has_only_the_wave_one_subcommands() {
+    let prs = find_node("prs").expect("the prs node");
+
+    let names = subcommands(&prs)
+        .iter()
+        .map(|sub| sub["name"].as_str().expect("a subcommand name"))
+        .collect::<Vec<_>>();
+
+    assert_eq!(names, ["ado prs list", "ado prs show"]);
 }
 
 #[test]

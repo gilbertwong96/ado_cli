@@ -1,0 +1,138 @@
+{
+  "count": 2,
+  "value": [
+    {
+      "repository": {
+        "id": "9f1b7e0e-0001-4000-8000-000000000001",
+        "name": "Alpha.Core",
+        "url": "https://dev.azure.com/myorg/Alpha/_apis/git/repositories/9f1b7e0e-0001-4000-8000-000000000001",
+        "project": {
+          "id": "6f2e6a8c-0000-4000-8000-000000000000",
+          "name": "Alpha",
+          "state": "wellFormed",
+          "visibility": "private",
+          "url": "https://dev.azure.com/myorg/_apis/projects/6f2e6a8c-0000-4000-8000-000000000000"
+        }
+      },
+      "pullRequestId": 137,
+      "codeReviewId": 137,
+      "status": "active",
+      "createdBy": {
+        "displayName": "Alice Example",
+        "url": "https://vssps.dev.azure.com/myorg/_apis/Identities/c1d2e3f4-0001-0001-0001-000000000001",
+        "id": "c1d2e3f4-0001-0001-0001-000000000001",
+        "uniqueName": "alice@example.test",
+        "imageUrl": "https://dev.azure.com/myorg/_apis/GraphProfile/MemberAvatars/YWxpY2U=",
+        "descriptor": "aad.YzFkMmUzZjQtMDAwMS0wMDAxLTAwMDEtMDAwMDAwMDAwMDAx"
+      },
+      "creationDate": "2026-09-14T09:31:07.83Z",
+      "title": "Add payment retries",
+      "description": "Retries soft declines up to three times before failing the order.",
+      "sourceRefName": "refs/heads/feature/payments",
+      "targetRefName": "refs/heads/main",
+      "mergeStatus": "succeeded",
+      "isDraft": false,
+      "mergeId": "b7c1c3b0-0002-4000-8000-000000000002",
+      "lastMergeSourceCommit": {
+        "commitId": "1111111111111111111111111111111111111111",
+        "url": "https://dev.azure.com/myorg/Alpha/_apis/git/repositories/9f1b7e0e-0001-4000-8000-000000000001/commits/1111111111111111111111111111111111111111"
+      },
+      "lastMergeTargetCommit": {
+        "commitId": "2222222222222222222222222222222222222222",
+        "url": "https://dev.azure.com/myorg/Alpha/_apis/git/repositories/9f1b7e0e-0001-4000-8000-000000000001/commits/2222222222222222222222222222222222222222"
+      },
+      "lastMergeCommit": {
+        "commitId": "3333333333333333333333333333333333333333",
+        "url": "https://dev.azure.com/myorg/Alpha/_apis/git/repositories/9f1b7e0e-0001-4000-8000-000000000001/commits/3333333333333333333333333333333333333333"
+      },
+      "reviewers": [
+        {
+          "reviewerUrl": "https://dev.azure.com/myorg/Alpha/_apis/git/repositories/9f1b7e0e-0001-4000-8000-000000000001/pullRequests/137/reviewers/c1d2e3f4-0002-0002-0002-000000000002",
+          "vote": 10,
+          "hasDeclined": false,
+          "isFlagged": false,
+          "displayName": "Bob Example",
+          "url": "https://vssps.dev.azure.com/myorg/_apis/Identities/c1d2e3f4-0002-0002-0002-000000000002",
+          "id": "c1d2e3f4-0002-0002-0002-000000000002",
+          "uniqueName": "bob@example.test",
+          "imageUrl": "https://dev.azure.com/myorg/_apis/GraphProfile/MemberAvatars/YWxpY2Uy"
+        },
+        {
+          "reviewerUrl": "https://dev.azure.com/myorg/Alpha/_apis/git/repositories/9f1b7e0e-0001-4000-8000-000000000001/pullRequests/137/reviewers/c1d2e3f4-0003-0003-0003-000000000003",
+          "vote": 0,
+          "hasDeclined": false,
+          "isFlagged": false,
+          "displayName": "Carol Example",
+          "url": "https://vssps.dev.azure.com/myorg/_apis/Identities/c1d2e3f4-0003-0003-0003-000000000003",
+          "id": "c1d2e3f4-0003-0003-0003-000000000003",
+          "uniqueName": "carol@example.test",
+          "imageUrl": "https://dev.azure.com/myorg/_apis/GraphProfile/MemberAvatars/YWxpY2Uz"
+        }
+      ],
+      "url": "https://dev.azure.com/myorg/Alpha/_apis/git/repositories/9f1b7e0e-0001-4000-8000-000000000001/pullRequests/137",
+      "supportsIterations": true,
+      "artifactId": "vstfs:///Git/PullRequestId/6f2e6a8c-0000-4000-8000-000000000000%2f9f1b7e0e-0001-4000-8000-000000000001%2f137"
+    },
+    {
+      "repository": {
+        "id": "9f1b7e0e-0001-4000-8000-000000000001",
+        "name": "Alpha.Core",
+        "url": "https://dev.azure.com/myorg/Alpha/_apis/git/repositories/9f1b7e0e-0001-4000-8000-000000000001",
+        "project": {
+          "id": "6f2e6a8c-0000-4000-8000-000000000000",
+          "name": "Alpha",
+          "state": "wellFormed",
+          "visibility": "private",
+          "url": "https://dev.azure.com/myorg/_apis/projects/6f2e6a8c-0000-4000-8000-000000000000"
+        }
+      },
+      "pullRequestId": 138,
+      "codeReviewId": 138,
+      "status": "completed",
+      "createdBy": {
+        "displayName": "Dana Example",
+        "url": "https://vssps.dev.azure.com/myorg/_apis/Identities/c1d2e3f4-0004-0004-0004-000000000004",
+        "id": "c1d2e3f4-0004-0004-0004-000000000004",
+        "uniqueName": "dana@example.test",
+        "imageUrl": "https://dev.azure.com/myorg/_apis/GraphProfile/MemberAvatars/YWxpY2U0",
+        "descriptor": "aad.YzFkMmUzZjQtMDAwNC0wMDA0LTAwMDQtMDAwMDAwMDAwMDA0"
+      },
+      "creationDate": "2026-09-10T15:02:44.17Z",
+      "title": "Retire the legacy ledger",
+      "description": null,
+      "sourceRefName": "refs/heads/feature/ledger-retirement",
+      "targetRefName": "refs/heads/main",
+      "mergeStatus": "succeeded",
+      "isDraft": false,
+      "mergeId": "b7c1c3b0-0005-4000-8000-000000000005",
+      "lastMergeSourceCommit": {
+        "commitId": "4444444444444444444444444444444444444444",
+        "url": "https://dev.azure.com/myorg/Alpha/_apis/git/repositories/9f1b7e0e-0001-4000-8000-000000000001/commits/4444444444444444444444444444444444444444"
+      },
+      "lastMergeTargetCommit": {
+        "commitId": "5555555555555555555555555555555555555555",
+        "url": "https://dev.azure.com/myorg/Alpha/_apis/git/repositories/9f1b7e0e-0001-4000-8000-000000000001/commits/5555555555555555555555555555555555555555"
+      },
+      "lastMergeCommit": {
+        "commitId": "6666666666666666666666666666666666666666",
+        "url": "https://dev.azure.com/myorg/Alpha/_apis/git/repositories/9f1b7e0e-0001-4000-8000-000000000001/commits/6666666666666666666666666666666666666666"
+      },
+      "reviewers": [
+        {
+          "reviewerUrl": "https://dev.azure.com/myorg/Alpha/_apis/git/repositories/9f1b7e0e-0001-4000-8000-000000000001/pullRequests/138/reviewers/c1d2e3f4-0005-0005-0005-000000000005",
+          "vote": 10,
+          "hasDeclined": false,
+          "isFlagged": false,
+          "displayName": "Erin Example",
+          "url": "https://vssps.dev.azure.com/myorg/_apis/Identities/c1d2e3f4-0005-0005-0005-000000000005",
+          "id": "c1d2e3f4-0005-0005-0005-000000000005",
+          "uniqueName": "erin@example.test",
+          "imageUrl": "https://dev.azure.com/myorg/_apis/GraphProfile/MemberAvatars/YWxpY2U1"
+        }
+      ],
+      "url": "https://dev.azure.com/myorg/Alpha/_apis/git/repositories/9f1b7e0e-0001-4000-8000-000000000001/pullRequests/138",
+      "supportsIterations": true,
+      "artifactId": "vstfs:///Git/PullRequestId/6f2e6a8c-0000-4000-8000-000000000000%2f9f1b7e0e-0001-4000-8000-000000000001%2f138"
+    }
+  ]
+}

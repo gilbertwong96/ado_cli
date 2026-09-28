@@ -181,6 +181,79 @@ pub fn command() -> Command {
                 ),
         )
         .subcommand(
+            Command::new("prs")
+                .about(
+                    "Manage Azure DevOps pull requests (PRs). A PR is a request to merge code from one branch (source) into another, with required reviewers, policies, and discussion threads.",
+                )
+                .subcommand(
+                    Command::new("list")
+                        .about(
+                            "List pull requests in a repository. Output is a table (ID, Title, Status, Source, Target, Creator). Use --status to filter (default: active). Pass --json for raw data.",
+                        )
+                        .arg(
+                            Arg::new("project")
+                                .value_name("PROJECT")
+                                .required(true)
+                                .help("Project name or ID"),
+                        )
+                        .arg(
+                            Arg::new("repo_id")
+                                .value_name("REPO_ID")
+                                .required(true)
+                                .help("Repository name or ID"),
+                        )
+                        .arg(
+                            Arg::new("status")
+                                .long("status")
+                                .value_name("STATUS")
+                                .help(
+                                    "PR status filter. Valid: active (open, default — includes drafts), completed (merged or closed), abandoned (closed without merging), all (every status). For active PRs only, omit this flag.",
+                                ),
+                        )
+                        .arg(
+                            Arg::new("creator")
+                                .long("creator")
+                                .value_name("USER")
+                                .help(
+                                    "Filter by creator's email or display name (substring match, case-insensitive). Use the exact email for a single user.",
+                                ),
+                        )
+                        .arg(
+                            Arg::new("top")
+                                .long("top")
+                                .value_name("N")
+                                .value_parser(clap::value_parser!(i64))
+                                .allow_negative_numbers(true)
+                                .help("Maximum number of PRs to return. Default 50, max 1000."),
+                        ),
+                )
+                .subcommand(
+                    Command::new("show")
+                        .about(
+                            "Show full details of a single pull request: title, description, source/target branches, creator, status, reviewers, labels, policies, merge status, and links. Pass --json for the raw API response (best for scripting).",
+                        )
+                        .arg(
+                            Arg::new("project")
+                                .value_name("PROJECT")
+                                .required(true)
+                                .help("Project name or ID"),
+                        )
+                        .arg(
+                            Arg::new("repo_id")
+                                .value_name("REPO_ID")
+                                .required(true)
+                                .help("Repository name or ID"),
+                        )
+                        .arg(
+                            Arg::new("pr_id")
+                                .value_name("PR_ID")
+                                .required(true)
+                                .value_parser(clap::value_parser!(i64))
+                                .help("Numeric pull request ID"),
+                        ),
+                ),
+        )
+        .subcommand(
             Command::new("workitems")
                 .about(
                     "Manage Azure DevOps work items (bugs, tasks, user stories, epics, issues). Full CRUD plus state transitions, comments, attachments, and WIQL queries. Use --json for structured output.",

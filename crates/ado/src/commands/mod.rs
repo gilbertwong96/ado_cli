@@ -1,5 +1,6 @@
 pub mod completion;
 pub mod projects;
+pub mod pull_requests;
 pub mod repos;
 pub mod schema;
 pub mod version;
