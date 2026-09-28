@@ -352,6 +352,63 @@ pub fn command() -> Command {
                 ),
         )
         .subcommand(
+            Command::new("pipelines")
+                .about(
+                    "Manage Azure DevOps YAML pipelines and variable groups. Pipelines define CI/CD workflows as code in azure-pipelines.yml; variable groups are shared sets of KEY=VALUE pairs that pipelines can reference.",
+                )
+                .subcommand(
+                    Command::new("list")
+                        .about(
+                            "List all pipelines in a project. Output is a table (ID, Name, Folder). Use --folder to scope to a subtree (e.g. 'MyTeam/Frontend'); use --top to limit. Pass --json for raw data.",
+                        )
+                        .arg(
+                            Arg::new("project")
+                                .value_name("PROJECT")
+                                .required(true)
+                                .help("Project name or ID"),
+                        )
+                        .arg(
+                            Arg::new("top")
+                                .long("top")
+                                .value_name("N")
+                                .value_parser(clap::value_parser!(i64))
+                                .allow_negative_numbers(true)
+                                .help(
+                                    "Maximum number of pipelines to return. Default 100, max 1000.",
+                                ),
+                        )
+                        .arg(
+                            Arg::new("folder")
+                                .long("folder")
+                                .value_name("PATH")
+                                .help(
+                                    "Filter to pipelines in a specific folder (e.g. 'MyTeam/Frontend' or '/' for root)",
+                                ),
+                        ),
+                )
+                .subcommand(
+                    Command::new("show")
+                        .about(
+                            "Show details of a single pipeline: ID, name, folder, YAML path, repository, and web URL. The pipeline ID is a stable integer — use it with `run`.",
+                        )
+                        .arg(
+                            Arg::new("project")
+                                .value_name("PROJECT")
+                                .required(true)
+                                .help("Project name or ID"),
+                        )
+                        .arg(
+                            Arg::new("pipeline_id")
+                                .value_name("PIPELINE_ID")
+                                .required(true)
+                                .value_parser(clap::value_parser!(i64))
+                                .help(
+                                    "Numeric pipeline ID (from `list`). The ID is project-scoped — the same number may refer to a different pipeline in another project.",
+                                ),
+                        ),
+                ),
+        )
+        .subcommand(
             Command::new("schema")
                 .about("Dump the CLI command tree as structured JSON for LLM agents.")
                 .arg(

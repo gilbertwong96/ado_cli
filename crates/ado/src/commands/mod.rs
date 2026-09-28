@@ -1,4 +1,5 @@
 pub mod completion;
+pub mod pipelines;
 pub mod projects;
 pub mod pull_requests;
 pub mod repos;

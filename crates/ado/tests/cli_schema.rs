@@ -91,6 +91,7 @@ fn schema_root_lists_exactly_the_shipped_subcommands() {
         names,
         [
             "ado completion",
+            "ado pipelines",
             "ado projects",
             "ado prs",
             "ado repos",
@@ -114,6 +115,20 @@ fn schema_prs_node_has_only_the_wave_one_subcommands() {
         .collect::<Vec<_>>();
 
     assert_eq!(names, ["ado prs list", "ado prs show"]);
+}
+
+/// Wave 1 ports the two read paths only: `run`, `create`, `update`, `delete`,
+/// `vars`, `variables` and `secure-files` are Wave 2.
+#[test]
+fn schema_pipelines_node_has_only_the_wave_one_subcommands() {
+    let pipelines = find_node("pipelines").expect("the pipelines node");
+
+    let names = subcommands(&pipelines)
+        .iter()
+        .map(|sub| sub["name"].as_str().expect("a subcommand name"))
+        .collect::<Vec<_>>();
+
+    assert_eq!(names, ["ado pipelines list", "ado pipelines show"]);
 }
 
 #[test]

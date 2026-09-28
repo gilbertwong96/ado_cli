@@ -1,0 +1,49 @@
+{
+  "_links": {
+    "runs": {
+      "href": "https://dev.azure.com/myorg/Alpha/_apis/pipelines/12/runs"
+    },
+    "self": {
+      "href": "https://dev.azure.com/myorg/Alpha/_apis/pipelines/12?revision=4"
+    },
+    "web": {
+      "href": "https://dev.azure.com/myorg/Alpha/_build/definition?definitionId=12"
+    }
+  },
+  "configuration": {
+    "path": "pipelines/ci.yml",
+    "repository": {
+      "id": "9f1b7e0e-0001-4000-8000-000000000001",
+      "name": "Alpha.Core",
+      "type": "azureReposGit"
+    },
+    "type": "yaml"
+  },
+  "folder": "\\MyTeam\\Frontend",
+  "id": 12,
+  "name": "Alpha CI",
+  "queue": {
+    "id": 9,
+    "name": "Azure Pipelines",
+    "pool": {
+      "id": 1,
+      "isHosted": true,
+      "name": "Azure Pipelines",
+      "poolType": "automation"
+    },
+    "url": "https://dev.azure.com/myorg/Alpha/_apis/build/queues/9"
+  },
+  "revision": 4,
+  "url": "https://dev.azure.com/myorg/Alpha/_apis/pipelines/12?revision=4",
+  "variables": {
+    "DB_PASS": {
+      "isSecret": true
+    },
+    "DEBUG": {
+      "value": "false"
+    },
+    "ENV": {
+      "value": "staging"
+    }
+  }
+}

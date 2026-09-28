@@ -169,6 +169,30 @@ fn main() -> ExitCode {
                 _ => Err(AdoError::validation(MISSING_SUBCOMMAND)),
             }
         }
+        Some(("pipelines", sub)) => {
+            let mut context = Context::load(globals);
+
+            match sub.subcommand() {
+                Some(("list", list)) => commands::pipelines::list(
+                    &mut context,
+                    list.get_one::<String>("project")
+                        .expect("the positional is required")
+                        .as_str(),
+                    list.get_one::<i64>("top").copied(),
+                    list.get_one::<String>("folder").cloned(),
+                ),
+                Some(("show", show)) => commands::pipelines::show(
+                    &mut context,
+                    show.get_one::<String>("project")
+                        .expect("the positional is required")
+                        .as_str(),
+                    show.get_one::<i64>("pipeline_id")
+                        .copied()
+                        .expect("the positional is required"),
+                ),
+                _ => Err(AdoError::validation(MISSING_SUBCOMMAND)),
+            }
+        }
         Some(("schema", sub)) => {
             commands::schema::run(json, sub.get_one::<String>("name").map(String::as_str))
         }
