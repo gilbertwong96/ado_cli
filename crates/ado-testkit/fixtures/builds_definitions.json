@@ -1,0 +1,84 @@
+{
+  "count": 2,
+  "value": [
+    {
+      "_links": {
+        "self": {
+          "href": "https://dev.azure.com/myorg/Alpha/_apis/build/Definitions/5?revision=12"
+        },
+        "web": {
+          "href": "https://dev.azure.com/myorg/Alpha/_build/definition?definitionId=5"
+        }
+      },
+      "createdDate": "2024-05-02T08:14:37.42Z",
+      "id": 5,
+      "name": "Alpha CI",
+      "path": "\\",
+      "project": {
+        "id": "4f8b2a1c-0002-4000-8000-000000000001",
+        "name": "Alpha",
+        "revision": 25,
+        "state": "wellFormed",
+        "url": "https://dev.azure.com/myorg/_apis/projects/4f8b2a1c-0002-4000-8000-000000000001",
+        "visibility": "private"
+      },
+      "queue": {
+        "id": 9,
+        "name": "Azure Pipelines",
+        "pool": {
+          "id": 1,
+          "isHosted": true,
+          "name": "Azure Pipelines",
+          "poolType": "automation"
+        },
+        "url": "https://dev.azure.com/myorg/Alpha/_apis/build/Queues/9"
+      },
+      "queueStatus": "enabled",
+      "repository": {
+        "clean": "false",
+        "defaultBranch": "refs/heads/main",
+        "id": "9f1b7e0e-0001-4000-8000-000000000001",
+        "name": "Alpha.Core",
+        "type": "TfsGit",
+        "url": "https://dev.azure.com/myorg/Alpha/_apis/git/repositories/Alpha.Core"
+      },
+      "revision": 12,
+      "type": "build",
+      "url": "https://dev.azure.com/myorg/Alpha/_apis/build/Definitions/5?revision=12"
+    },
+    {
+      "_links": {
+        "self": {
+          "href": "https://dev.azure.com/myorg/Alpha/_apis/build/Definitions/7?revision=4"
+        },
+        "web": {
+          "href": "https://dev.azure.com/myorg/Alpha/_build/definition?definitionId=7"
+        }
+      },
+      "createdDate": "2025-01-13T16:02:11.9Z",
+      "id": 7,
+      "name": "Alpha Nightly",
+      "path": "\\Nightly",
+      "project": {
+        "id": "4f8b2a1c-0002-4000-8000-000000000001",
+        "name": "Alpha",
+        "revision": 25,
+        "state": "wellFormed",
+        "url": "https://dev.azure.com/myorg/_apis/projects/4f8b2a1c-0002-4000-8000-000000000001",
+        "visibility": "private"
+      },
+      "queueStatus": "disabled",
+      "repository": {
+        "clean": "false",
+        "defaultBranch": "refs/heads/main",
+        "id": "9f1b7e0e-0001-4000-8000-000000000001",
+        "name": "Alpha.Core",
+        "type": "TfsGit",
+        "url": "https://dev.azure.com/myorg/Alpha/_apis/git/repositories/Alpha.Core"
+      },
+      "revision": 4,
+      "type": "build",
+      "url": "https://dev.azure.com/myorg/Alpha/_apis/build/Definitions/7?revision=4"
+    }
+  ]
+}

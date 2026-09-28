@@ -1,3 +1,4 @@
+pub mod builds;
 pub mod completion;
 pub mod pipelines;
 pub mod projects;

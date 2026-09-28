@@ -409,6 +409,102 @@ pub fn command() -> Command {
                 ),
         )
         .subcommand(
+            Command::new("pipelines-builds")
+                .about(
+                    "Manage Azure Pipelines classic (XAML) builds. Most modern pipelines use YAML and should use the `ado pipelines` commands instead; this command group is for legacy build definitions.",
+                )
+                .subcommand(
+                    Command::new("list")
+                        .about(
+                            "List recent builds in a project as a table (ID, Definition, Status, Result, Branch). Use --definitions to filter to specific definitions (comma-separated IDs). Default page size is 50; use --top to change.",
+                        )
+                        .arg(
+                            Arg::new("project")
+                                .value_name("PROJECT")
+                                .required(true)
+                                .help("Project name or ID"),
+                        )
+                        .arg(
+                            Arg::new("top")
+                                .long("top")
+                                .value_name("N")
+                                .value_parser(clap::value_parser!(i64))
+                                .allow_negative_numbers(true)
+                                .help("Maximum number of builds to return. Default 50, max 1000."),
+                        )
+                        .arg(
+                            Arg::new("definitions")
+                                .long("definitions")
+                                .value_name("IDS")
+                                .help(
+                                    "Filter to specific definition IDs (comma-separated, e.g. '5,12,18')",
+                                ),
+                        ),
+                )
+                .subcommand(
+                    Command::new("show")
+                        .about(
+                            "Show details of a specific build: ID, definition, status (inProgress/completed/cancelling/etc.), result (succeeded/failed/partiallySucceeded), branch, requester, queue time, and web URL.",
+                        )
+                        .arg(
+                            Arg::new("project")
+                                .value_name("PROJECT")
+                                .required(true)
+                                .help("Project name or ID"),
+                        )
+                        .arg(
+                            Arg::new("build_id")
+                                .value_name("BUILD_ID")
+                                .required(true)
+                                .value_parser(clap::value_parser!(i64))
+                                .help("Numeric build ID"),
+                        ),
+                )
+                .subcommand(
+                    Command::new("tags")
+                        .about(
+                            "Manage tags on a build. Tags are free-form labels useful for marking release builds, hotfixes, or environment deployments.",
+                        )
+                        .subcommand(
+                            Command::new("list")
+                                .about(
+                                    "List all tags on a build. Output is a comma-separated list of tag names (or 'No tags.' if none).",
+                                )
+                                .arg(
+                                    Arg::new("project")
+                                        .value_name("PROJECT")
+                                        .required(true)
+                                        .help("Project name or ID"),
+                                )
+                                .arg(
+                                    Arg::new("build_id")
+                                        .value_name("BUILD_ID")
+                                        .required(true)
+                                        .value_parser(clap::value_parser!(i64))
+                                        .help("Numeric build ID"),
+                                ),
+                        ),
+                )
+                .subcommand(
+                    Command::new("definitions")
+                        .about(
+                            "Manage classic (XAML) build definitions. For modern YAML pipelines, use `ado pipelines` instead.",
+                        )
+                        .subcommand(
+                            Command::new("list")
+                                .about(
+                                    "List classic build definitions in a project. Output is a table (ID, Name, Queue). Use the IDs with `queue --definition` to start a build.",
+                                )
+                                .arg(
+                                    Arg::new("project")
+                                        .value_name("PROJECT")
+                                        .required(true)
+                                        .help("Project name or ID"),
+                                ),
+                        ),
+                ),
+        )
+        .subcommand(
             Command::new("schema")
                 .about("Dump the CLI command tree as structured JSON for LLM agents.")
                 .arg(

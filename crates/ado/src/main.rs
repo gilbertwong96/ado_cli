@@ -193,6 +193,51 @@ fn main() -> ExitCode {
                 _ => Err(AdoError::validation(MISSING_SUBCOMMAND)),
             }
         }
+        Some(("pipelines-builds", sub)) => {
+            let mut context = Context::load(globals);
+
+            match sub.subcommand() {
+                Some(("list", list)) => commands::builds::list(
+                    &mut context,
+                    list.get_one::<String>("project")
+                        .expect("the positional is required")
+                        .as_str(),
+                    list.get_one::<i64>("top").copied(),
+                    list.get_one::<String>("definitions").cloned(),
+                ),
+                Some(("show", show)) => commands::builds::show(
+                    &mut context,
+                    show.get_one::<String>("project")
+                        .expect("the positional is required")
+                        .as_str(),
+                    show.get_one::<i64>("build_id")
+                        .copied()
+                        .expect("the positional is required"),
+                ),
+                Some(("tags", tags)) => match tags.subcommand() {
+                    Some(("list", list)) => commands::builds::tags(
+                        &mut context,
+                        list.get_one::<String>("project")
+                            .expect("the positional is required")
+                            .as_str(),
+                        list.get_one::<i64>("build_id")
+                            .copied()
+                            .expect("the positional is required"),
+                    ),
+                    _ => Err(AdoError::validation(MISSING_SUBCOMMAND)),
+                },
+                Some(("definitions", definitions)) => match definitions.subcommand() {
+                    Some(("list", list)) => commands::builds::definitions(
+                        &mut context,
+                        list.get_one::<String>("project")
+                            .expect("the positional is required")
+                            .as_str(),
+                    ),
+                    _ => Err(AdoError::validation(MISSING_SUBCOMMAND)),
+                },
+                _ => Err(AdoError::validation(MISSING_SUBCOMMAND)),
+            }
+        }
         Some(("schema", sub)) => {
             commands::schema::run(json, sub.get_one::<String>("name").map(String::as_str))
         }

@@ -92,6 +92,7 @@ fn schema_root_lists_exactly_the_shipped_subcommands() {
         [
             "ado completion",
             "ado pipelines",
+            "ado pipelines-builds",
             "ado projects",
             "ado prs",
             "ado repos",
@@ -129,6 +130,98 @@ fn schema_pipelines_node_has_only_the_wave_one_subcommands() {
         .collect::<Vec<_>>();
 
     assert_eq!(names, ["ado pipelines list", "ado pipelines show"]);
+}
+
+/// Wave 1 ports the four read paths only: `queue`, `cancel` and `tags add` are
+/// Wave 2. W1-1/D18: the node name is the hyphenated spelling every descendant
+/// shares — `pipelines-builds` parses as argv, where the Elixir's schema spelling
+/// (`ado pipelines builds …`) does not.
+#[test]
+fn schema_pipelines_builds_node_has_only_the_wave_one_subcommands() {
+    let builds = find_node("pipelines-builds").expect("the pipelines-builds node");
+
+    let names = subcommands(&builds)
+        .iter()
+        .map(|sub| sub["name"].as_str().expect("a subcommand name"))
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        names,
+        [
+            "ado pipelines-builds list",
+            "ado pipelines-builds show",
+            "ado pipelines-builds tags",
+            "ado pipelines-builds definitions"
+        ]
+    );
+
+    let tags = builds["subcommands"]
+        .as_array()
+        .expect("the subcommand array")
+        .iter()
+        .find(|sub| sub["name"] == json!("ado pipelines-builds tags"))
+        .expect("the tags node");
+    let tags_names = subcommands(tags)
+        .iter()
+        .map(|sub| sub["name"].as_str().expect("a subcommand name"))
+        .collect::<Vec<_>>();
+    assert_eq!(tags_names, ["ado pipelines-builds tags list"]);
+
+    let definitions = builds["subcommands"]
+        .as_array()
+        .expect("the subcommand array")
+        .iter()
+        .find(|sub| sub["name"] == json!("ado pipelines-builds definitions"))
+        .expect("the definitions node");
+    let definitions_names = subcommands(definitions)
+        .iter()
+        .map(|sub| sub["name"].as_str().expect("a subcommand name"))
+        .collect::<Vec<_>>();
+    assert_eq!(definitions_names, ["ado pipelines-builds definitions list"]);
+
+    for node in nodes(&builds) {
+        let name = node["name"].as_str().expect("a node name");
+        assert!(
+            name.starts_with("ado pipelines-builds"),
+            "the schema reports the parseable hyphenated spelling, not the Elixir's space-separated name (W1-1/D18): {name}"
+        );
+        assert!(
+            !name.contains("pipelines builds"),
+            "the Elixir's unparseable name: {name}"
+        );
+    }
+}
+
+/// W1-1/D18: `ado schema --json` names the node the way the binary parses it, so an
+/// agent can copy the name straight into argv.
+#[test]
+fn schema_json_reports_the_hyphenated_builds_spelling() {
+    let output = ado()
+        .args(["schema", "--json"])
+        .output()
+        .expect("run `ado schema --json`");
+
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        stderr_of(&output)
+    );
+
+    let value: Value = serde_json::from_slice(&output.stdout).expect("stdout is a JSON document");
+    let names = nodes(&value["schema"])
+        .into_iter()
+        .map(|node| node["name"].as_str().expect("a node name").to_owned())
+        .collect::<Vec<_>>();
+
+    assert!(
+        names.iter().any(|name| name == "ado pipelines-builds list"),
+        "the hyphenated list node is in the tree: {names:?}"
+    );
+    assert!(
+        !names.iter().any(|name| name.contains("pipelines builds")),
+        "no node carries the Elixir's unparseable name: {names:?}"
+    );
 }
 
 #[test]
