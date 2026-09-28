@@ -1,0 +1,83 @@
+{
+  "count": 2,
+  "value": [
+    {
+      "id": 42,
+      "rev": 4,
+      "fields": {
+        "System.Id": 42,
+        "System.WorkItemType": "Bug",
+        "System.Title": "Checkout fails on expired cards",
+        "System.State": "Active",
+        "System.AssignedTo": {
+          "displayName": "Alice Example",
+          "url": "https://vssps.dev.azure.com/myorg/_apis/Identities/c1d2e3f4-0001-0001-0001-000000000001",
+          "id": "c1d2e3f4-0001-0001-0001-000000000001",
+          "uniqueName": "alice@example.test",
+          "imageUrl": "https://dev.azure.com/myorg/_apis/GraphProfile/MemberAvatars/YWxpY2U=",
+          "descriptor": "aad.YzFkMmUzZjQtMDAwMS0wMDAxLTAwMDEtMDAwMDAwMDAwMDAx"
+        }
+      },
+      "_links": {
+        "self": {
+          "href": "https://dev.azure.com/myorg/_apis/wit/workItems/42"
+        },
+        "workItemUpdates": {
+          "href": "https://dev.azure.com/myorg/_apis/wit/workItems/42/updates"
+        },
+        "workItemRevisions": {
+          "href": "https://dev.azure.com/myorg/_apis/wit/workItems/42/revisions"
+        },
+        "workItemType": {
+          "href": "https://dev.azure.com/myorg/Alpha/_apis/wit/workItemTypes/Bug"
+        },
+        "fields": {
+          "href": "https://dev.azure.com/myorg/_apis/wit/fields"
+        },
+        "html": {
+          "href": "https://dev.azure.com/myorg/Alpha/_workitems/edit/42"
+        }
+      },
+      "url": "https://dev.azure.com/myorg/_apis/wit/workItems/42"
+    },
+    {
+      "id": 43,
+      "rev": 2,
+      "fields": {
+        "System.Id": 43,
+        "System.WorkItemType": "User Story",
+        "System.Title": "Payment retries for soft declines",
+        "System.State": "New",
+        "System.AssignedTo": {
+          "displayName": "Bob Example",
+          "url": "https://vssps.dev.azure.com/myorg/_apis/Identities/c1d2e3f4-0002-0002-0002-000000000002",
+          "id": "c1d2e3f4-0002-0002-0002-000000000002",
+          "uniqueName": "bob@example.test",
+          "imageUrl": "https://dev.azure.com/myorg/_apis/GraphProfile/MemberAvatars/YWxpY2Uy",
+          "descriptor": "aad.YzFkMmUzZjQtMDAwMi0wMDAyLTAwMDItMDAwMDAwMDAwMDAy"
+        }
+      },
+      "_links": {
+        "self": {
+          "href": "https://dev.azure.com/myorg/_apis/wit/workItems/43"
+        },
+        "workItemUpdates": {
+          "href": "https://dev.azure.com/myorg/_apis/wit/workItems/43/updates"
+        },
+        "workItemRevisions": {
+          "href": "https://dev.azure.com/myorg/_apis/wit/workItems/43/revisions"
+        },
+        "workItemType": {
+          "href": "https://dev.azure.com/myorg/Alpha/_apis/wit/workItemTypes/User%20Story"
+        },
+        "fields": {
+          "href": "https://dev.azure.com/myorg/_apis/wit/fields"
+        },
+        "html": {
+          "href": "https://dev.azure.com/myorg/Alpha/_workitems/edit/43"
+        }
+      },
+      "url": "https://dev.azure.com/myorg/_apis/wit/workItems/43"
+    }
+  ]
+}

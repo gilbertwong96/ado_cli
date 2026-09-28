@@ -259,6 +259,26 @@ fn encode_component(value: &str) -> String {
     encoded
 }
 
+/// One path segment: every byte outside RFC 3986's unreserved set is
+/// percent-encoded with uppercase hex, and a space is `%20` — not the query
+/// encoder's `+`. Deliberately stricter than Elixir's `URI.encode/1`, which
+/// leaves the reserved set (`/`, `?`, `+`, `'`, …) alone and so lets a name
+/// change the URL's structure; a name that reaches this function cannot (D22).
+pub fn encode_path_segment(value: &str) -> String {
+    let mut encoded = String::with_capacity(value.len());
+
+    for byte in value.bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' => {
+                encoded.push(char::from(byte));
+            }
+            _ => encoded.push_str(&format!("%{byte:02X}")),
+        }
+    }
+
+    encoded
+}
+
 /// A self-hosted base URL with `/{org}` inserted after the host, so a collection
 /// URL such as `https://server.test/tfs` keeps its path.
 fn with_org(server: &str, org: &str, path: &str, query: &str) -> String {
@@ -355,6 +375,27 @@ mod tests {
             encode_query(&[("$top".to_owned(), "10".to_owned())]),
             "%24top=10"
         );
+    }
+
+    /// The one path-segment encoder the area modules share: the unreserved set
+    /// survives, a space is `%20` (not the query encoder's `+`), and the reserved
+    /// set Elixir's `URI.encode/1` leaves alone is escaped so a name cannot change
+    /// the URL's structure (D22).
+    #[test]
+    fn encode_path_segment_escapes_more_than_uri_encode() {
+        assert_eq!(encode_path_segment("Alpha"), "Alpha");
+        assert_eq!(encode_path_segment("My Project"), "My%20Project");
+        assert_eq!(encode_path_segment("a/b+c"), "a%2Fb%2Bc");
+        assert_eq!(
+            encode_path_segment("6a1f8f6e-2b8d-4b9e-9d2a-1c3f5e7a9b0c"),
+            "6a1f8f6e-2b8d-4b9e-9d2a-1c3f5e7a9b0c"
+        );
+        assert_eq!(
+            encode_path_segment("a/b?c"),
+            "a%2Fb%3Fc",
+            "Elixir's URI.encode/1 keeps / and ? — the deliberate tightening (D22)"
+        );
+        assert_eq!(encode_path_segment("a'b"), "a%27b");
     }
 
     #[test]

@@ -95,7 +95,8 @@ fn schema_root_lists_exactly_the_shipped_subcommands() {
             "ado repos",
             "ado schema",
             "ado version",
-            "ado whoami"
+            "ado whoami",
+            "ado workitems"
         ]
     );
 }

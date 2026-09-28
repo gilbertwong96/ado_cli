@@ -1,0 +1,114 @@
+{
+  "count": 3,
+  "value": [
+    {
+      "id": 7,
+      "rev": 1,
+      "fields": {
+        "System.Id": 7,
+        "System.WorkItemType": "Task",
+        "System.Title": "Wire the reconciliation batch",
+        "System.State": "Active",
+        "System.AssignedTo": {
+          "displayName": "Carol Example",
+          "url": "https://vssps.dev.azure.com/myorg/_apis/Identities/c1d2e3f4-0003-0003-0003-000000000003",
+          "id": "c1d2e3f4-0003-0003-0003-000000000003",
+          "uniqueName": "carol@example.test",
+          "imageUrl": "https://dev.azure.com/myorg/_apis/GraphProfile/MemberAvatars/YWxpY2Uz",
+          "descriptor": "aad.YzFkMmUzZjQtMDAwMy0wMDAzLTAwMDMtMDAwMDAwMDAwMDAz"
+        }
+      },
+      "_links": {
+        "self": {
+          "href": "https://dev.azure.com/myorg/_apis/wit/workItems/7"
+        },
+        "workItemUpdates": {
+          "href": "https://dev.azure.com/myorg/_apis/wit/workItems/7/updates"
+        },
+        "workItemRevisions": {
+          "href": "https://dev.azure.com/myorg/_apis/wit/workItems/7/revisions"
+        },
+        "workItemType": {
+          "href": "https://dev.azure.com/myorg/Alpha/_apis/wit/workItemTypes/Task"
+        },
+        "fields": {
+          "href": "https://dev.azure.com/myorg/_apis/wit/fields"
+        },
+        "html": {
+          "href": "https://dev.azure.com/myorg/Alpha/_workitems/edit/7"
+        }
+      },
+      "url": "https://dev.azure.com/myorg/_apis/wit/workItems/7"
+    },
+    {
+      "id": 8,
+      "rev": 6,
+      "fields": {
+        "System.Id": 8,
+        "System.WorkItemType": "Bug",
+        "System.Title": "Refund webhook retries forever",
+        "System.State": "Resolved",
+        "System.AssignedTo": {
+          "displayName": "Alice Example",
+          "url": "https://vssps.dev.azure.com/myorg/_apis/Identities/c1d2e3f4-0001-0001-0001-000000000001",
+          "id": "c1d2e3f4-0001-0001-0001-000000000001",
+          "uniqueName": "alice@example.test",
+          "imageUrl": "https://dev.azure.com/myorg/_apis/GraphProfile/MemberAvatars/YWxpY2U=",
+          "descriptor": "aad.YzFkMmUzZjQtMDAwMS0wMDAxLTAwMDEtMDAwMDAwMDAwMDAx"
+        }
+      },
+      "_links": {
+        "self": {
+          "href": "https://dev.azure.com/myorg/_apis/wit/workItems/8"
+        },
+        "workItemUpdates": {
+          "href": "https://dev.azure.com/myorg/_apis/wit/workItems/8/updates"
+        },
+        "workItemRevisions": {
+          "href": "https://dev.azure.com/myorg/_apis/wit/workItems/8/revisions"
+        },
+        "workItemType": {
+          "href": "https://dev.azure.com/myorg/Alpha/_apis/wit/workItemTypes/Bug"
+        },
+        "fields": {
+          "href": "https://dev.azure.com/myorg/_apis/wit/fields"
+        },
+        "html": {
+          "href": "https://dev.azure.com/myorg/Alpha/_workitems/edit/8"
+        }
+      },
+      "url": "https://dev.azure.com/myorg/_apis/wit/workItems/8"
+    },
+    {
+      "id": 9,
+      "rev": 1,
+      "fields": {
+        "System.Id": 9,
+        "System.WorkItemType": "User Story",
+        "System.Title": "Export the ledger to CSV",
+        "System.State": "New"
+      },
+      "_links": {
+        "self": {
+          "href": "https://dev.azure.com/myorg/_apis/wit/workItems/9"
+        },
+        "workItemUpdates": {
+          "href": "https://dev.azure.com/myorg/_apis/wit/workItems/9/updates"
+        },
+        "workItemRevisions": {
+          "href": "https://dev.azure.com/myorg/_apis/wit/workItems/9/revisions"
+        },
+        "workItemType": {
+          "href": "https://dev.azure.com/myorg/Alpha/_apis/wit/workItemTypes/User%20Story"
+        },
+        "fields": {
+          "href": "https://dev.azure.com/myorg/_apis/wit/fields"
+        },
+        "html": {
+          "href": "https://dev.azure.com/myorg/Alpha/_workitems/edit/9"
+        }
+      },
+      "url": "https://dev.azure.com/myorg/_apis/wit/workItems/9"
+    }
+  ]
+}

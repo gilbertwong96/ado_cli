@@ -179,6 +179,104 @@ pub fn command() -> Command {
                 ),
         )
         .subcommand(
+            Command::new("workitems")
+                .about(
+                    "Manage Azure DevOps work items (bugs, tasks, user stories, epics, issues). Full CRUD plus state transitions, comments, attachments, and WIQL queries. Use --json for structured output.",
+                )
+                .subcommand(
+                    Command::new("list")
+                        .about(
+                            "List work items in a project with optional filtering by type, assigned user, state. Output is a table (ID, Title, Type, State, Assigned To). Use --top to limit, --type to filter.",
+                        )
+                        .arg(
+                            Arg::new("project")
+                                .value_name("PROJECT")
+                                .required(true)
+                                .help("Project name or ID"),
+                        )
+                        .arg(
+                            Arg::new("type")
+                                .long("type")
+                                .value_name("TYPE")
+                                .help("Work item type (Bug, Task, User Story)"),
+                        )
+                        .arg(
+                            Arg::new("assigned-to")
+                                .long("assigned-to")
+                                .value_name("USER")
+                                .help(
+                                    "Filter to items assigned to a specific user (substring match on display name or email)",
+                                ),
+                        )
+                        .arg(
+                            Arg::new("state")
+                                .long("state")
+                                .value_name("STATE")
+                                .help(
+                                    "Filter by work item state: New, Active, Resolved, Closed, etc. State values depend on the process template.",
+                                ),
+                        )
+                        .arg(
+                            Arg::new("top")
+                                .long("top")
+                                .value_name("N")
+                                .value_parser(clap::value_parser!(i64))
+                                .allow_negative_numbers(true)
+                                .help(
+                                    "Max items per page. Default is 100; increase for broader queries, decrease for faster responses.",
+                                ),
+                        ),
+                )
+                .subcommand(
+                    Command::new("show")
+                        .about(
+                            "Show a single work item by numeric ID. Returns all system fields, custom fields, and relations (parent/child links). Use --expand=all for full details.",
+                        )
+                        .arg(
+                            Arg::new("id")
+                                .value_name("ID")
+                                .required(true)
+                                .value_parser(clap::value_parser!(i64))
+                                .help("Work item ID"),
+                        )
+                        .arg(
+                            Arg::new("expand")
+                                .long("expand")
+                                .value_name("LEVEL")
+                                .default_value("all")
+                                .help("Expand level"),
+                        ),
+                )
+                .subcommand(
+                    Command::new("query")
+                        .about(
+                            "Execute a WIQL (Work Item Query Language) query against a project. WIQL is SQL-like: SELECT [System.Id] FROM WorkItems WHERE [System.State] = Active. Use --top to limit.",
+                        )
+                        .arg(
+                            Arg::new("project")
+                                .value_name("PROJECT")
+                                .required(true)
+                                .help("Project name or ID"),
+                        )
+                        .arg(
+                            Arg::new("wiql")
+                                .long("wiql")
+                                .value_name("WIQL")
+                                .help(
+                                    "WIQL query (SQL-like syntax). SELECT ... FROM WorkItems WHERE ... ORDER BY ... . Required fields: [System.Id], [System.Title].",
+                                ),
+                        )
+                        .arg(
+                            Arg::new("top")
+                                .long("top")
+                                .value_name("N")
+                                .value_parser(clap::value_parser!(i64))
+                                .allow_negative_numbers(true)
+                                .help("Maximum number of results"),
+                        ),
+                ),
+        )
+        .subcommand(
             Command::new("schema")
                 .about("Dump the CLI command tree as structured JSON for LLM agents.")
                 .arg(

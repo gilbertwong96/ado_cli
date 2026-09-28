@@ -103,6 +103,41 @@ fn main() -> ExitCode {
                 _ => Err(AdoError::validation(MISSING_SUBCOMMAND)),
             }
         }
+        Some(("workitems", sub)) => {
+            let mut context = Context::load(globals);
+
+            match sub.subcommand() {
+                Some(("list", list)) => commands::workitems::list(
+                    &mut context,
+                    list.get_one::<String>("project")
+                        .expect("the positional is required")
+                        .as_str(),
+                    list.get_one::<String>("type").cloned(),
+                    list.get_one::<String>("assigned-to").cloned(),
+                    list.get_one::<String>("state").cloned(),
+                    list.get_one::<i64>("top").copied(),
+                ),
+                Some(("show", show)) => commands::workitems::show(
+                    &mut context,
+                    show.get_one::<i64>("id")
+                        .copied()
+                        .expect("the positional is required"),
+                    show.get_one::<String>("expand")
+                        .expect("the default is set")
+                        .as_str(),
+                ),
+                Some(("query", query)) => commands::workitems::query(
+                    &mut context,
+                    query
+                        .get_one::<String>("project")
+                        .expect("the positional is required")
+                        .as_str(),
+                    query.get_one::<String>("wiql").cloned(),
+                    query.get_one::<i64>("top").copied(),
+                ),
+                _ => Err(AdoError::validation(MISSING_SUBCOMMAND)),
+            }
+        }
         Some(("schema", sub)) => {
             commands::schema::run(json, sub.get_one::<String>("name").map(String::as_str))
         }

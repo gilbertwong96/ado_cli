@@ -1,6 +1,7 @@
 //! `ado repos list|show|branches` — the read paths of `lib/ado_cli/cli/repos.ex`:
 //! the same REST surface, the same filter, and the same human layouts.
 
+use ado_core::client::encode_path_segment;
 use ado_core::envelope::ok_value;
 use ado_core::error::{AdoError, ErrorCode};
 use serde_json::Value;
@@ -87,8 +88,8 @@ fn branches_params(filter: Option<String>) -> Vec<(String, String)> {
 }
 
 /// The Elixir's `Client.list/2` unwraps the `value` array; anything else is
-/// wrapped the way `List.wrap/1` wraps it, so the value envelope always carries
-/// an array.
+/// wrapped as a single element, so the value envelope always carries an array —
+/// including a `null` body, which `List.wrap/1` would drop instead.
 fn items(value: Value) -> Vec<Value> {
     match value {
         Value::Array(items) => items,
@@ -223,24 +224,6 @@ fn field(value: &Value, key: &str) -> String {
         .to_owned()
 }
 
-/// `URI.encode/1` for one path segment: the unreserved set survives, everything
-/// else is percent-encoded with uppercase hex, and a space is `%20` — not the
-/// query encoder's `+`.
-fn encode_path_segment(value: &str) -> String {
-    let mut encoded = String::with_capacity(value.len());
-
-    for byte in value.bytes() {
-        match byte {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' => {
-                encoded.push(char::from(byte));
-            }
-            _ => encoded.push_str(&format!("%{byte:02X}")),
-        }
-    }
-
-    encoded
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -271,17 +254,6 @@ mod tests {
             branches_params(Some(String::new())),
             vec![("filter".to_owned(), String::new())],
             "an explicit empty --filter is not the absent option"
-        );
-    }
-
-    #[test]
-    fn encode_path_segment_encodes_like_uri_encode() {
-        assert_eq!(encode_path_segment("Alpha"), "Alpha");
-        assert_eq!(encode_path_segment("My Project"), "My%20Project");
-        assert_eq!(encode_path_segment("a/b+c"), "a%2Fb%2Bc");
-        assert_eq!(
-            encode_path_segment("6a1f8f6e-2b8d-4b9e-9d2a-1c3f5e7a9b0c"),
-            "6a1f8f6e-2b8d-4b9e-9d2a-1c3f5e7a9b0c"
         );
     }
 

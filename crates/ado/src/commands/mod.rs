@@ -4,3 +4,4 @@ pub mod repos;
 pub mod schema;
 pub mod version;
 pub mod whoami;
+pub mod workitems;

@@ -1,0 +1,77 @@
+{
+  "id": 42,
+  "rev": 4,
+  "fields": {
+    "System.Id": 42,
+    "System.WorkItemType": "Bug",
+    "System.Title": "Checkout fails on expired cards",
+    "System.State": "Active",
+    "System.AssignedTo": {
+      "displayName": "Alice Example",
+      "url": "https://vssps.dev.azure.com/myorg/_apis/Identities/c1d2e3f4-0001-0001-0001-000000000001",
+      "id": "c1d2e3f4-0001-0001-0001-000000000001",
+      "uniqueName": "alice@example.test",
+      "imageUrl": "https://dev.azure.com/myorg/_apis/GraphProfile/MemberAvatars/YWxpY2U=",
+      "descriptor": "aad.YzFkMmUzZjQtMDAwMS0wMDAxLTAwMDEtMDAwMDAwMDAwMDAx"
+    },
+    "System.CreatedBy": {
+      "displayName": "Bob Example",
+      "url": "https://vssps.dev.azure.com/myorg/_apis/Identities/c1d2e3f4-0002-0002-0002-000000000002",
+      "id": "c1d2e3f4-0002-0002-0002-000000000002",
+      "uniqueName": "bob@example.test",
+      "imageUrl": "https://dev.azure.com/myorg/_apis/GraphProfile/MemberAvatars/YWxpY2Uy",
+      "descriptor": "aad.YzFkMmUzZjQtMDAwMi0wMDAyLTAwMDItMDAwMDAwMDAwMDAy"
+    },
+    "System.CreatedDate": "2026-09-14T09:31:07.83Z",
+    "System.ChangedDate": "2026-09-18T16:04:51.21Z",
+    "System.Description": "Expired cards are declined but the checkout page still shows the order as placed, so customers retry and are double-charged.",
+    "System.Tags": "checkout; payments; regression",
+    "Microsoft.VSTS.Common.Priority": 2,
+    "Microsoft.VSTS.Common.Severity": "2 - High",
+    "Microsoft.VSTS.Common.ResolvedReason": "Fixed",
+    "System.AreaPath": "Alpha\\Payments",
+    "System.IterationPath": "Alpha\\Sprint 42"
+  },
+  "relations": [
+    {
+      "rel": "System.LinkTypes.Hierarchy-Reverse",
+      "url": "https://dev.azure.com/myorg/_apis/wit/workItems/10",
+      "attributes": {
+        "isLocked": false,
+        "name": "Parent"
+      }
+    },
+    {
+      "rel": "System.LinkTypes.Related",
+      "url": "https://dev.azure.com/myorg/_apis/wit/workItems/43",
+      "attributes": {
+        "isLocked": false,
+        "name": "Related"
+      }
+    }
+  ],
+  "_links": {
+    "self": {
+      "href": "https://dev.azure.com/myorg/_apis/wit/workItems/42"
+    },
+    "workItemUpdates": {
+      "href": "https://dev.azure.com/myorg/_apis/wit/workItems/42/updates"
+    },
+    "workItemRevisions": {
+      "href": "https://dev.azure.com/myorg/_apis/wit/workItems/42/revisions"
+    },
+    "workItemType": {
+      "href": "https://dev.azure.com/myorg/Alpha/_apis/wit/workItemTypes/Bug"
+    },
+    "fields": {
+      "href": "https://dev.azure.com/myorg/_apis/wit/fields"
+    },
+    "html": {
+      "href": "https://dev.azure.com/myorg/Alpha/_workitems/edit/42"
+    },
+    "workItemHistory": {
+      "href": "https://dev.azure.com/myorg/_apis/wit/workItems/42/history"
+    }
+  },
+  "url": "https://dev.azure.com/myorg/_apis/wit/workItems/42"
+}
