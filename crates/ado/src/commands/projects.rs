@@ -55,11 +55,12 @@ pub fn show(
     }
 }
 
-/// The Elixir's `build_params/3` tests each value's truthiness, so an empty
-/// `--state` and a zero `--top`/`--skip` are not sent at all. Its mapping table
-/// — and the help text — name `stateFilter`/`$top`/`$skip`; the lookup misses
-/// and the frozen CLI sends `state`/`top`/`skip` instead, which Azure ignores
-/// (D19 in `docs/rust-rewrite/contract-inventory.md`).
+/// The Elixir's `build_params/3` includes every present option: `if value` is
+/// truthy for `0` and `""` (only `nil`/`false` are falsy), so `--top 0`,
+/// `--skip 0` and `--state ''` all reach the wire while an absent option does
+/// not. Its mapping table — and the help text — name `stateFilter`/`$top`/
+/// `$skip`; the lookup misses and the frozen CLI sends `state`/`top`/`skip`
+/// instead, which Azure ignores (D19 in `docs/rust-rewrite/contract-inventory.md`).
 fn list_params(
     state: Option<String>,
     top: Option<i64>,
@@ -67,13 +68,13 @@ fn list_params(
 ) -> Vec<(String, String)> {
     let mut params = Vec::new();
 
-    if let Some(state) = state.filter(|state| !state.is_empty()) {
+    if let Some(state) = state {
         params.push(("stateFilter".to_owned(), state));
     }
-    if let Some(top) = top.filter(|top| *top != 0) {
+    if let Some(top) = top {
         params.push(("$top".to_owned(), top.to_string()));
     }
-    if let Some(skip) = skip.filter(|skip| *skip != 0) {
+    if let Some(skip) = skip {
         params.push(("$skip".to_owned(), skip.to_string()));
     }
 
@@ -189,8 +190,20 @@ mod tests {
         );
         assert_eq!(
             list_params(Some(String::new()), Some(0), Some(0)),
-            Vec::new(),
-            "the Elixir's `if value` drops an empty string and zeroes"
+            vec![
+                ("stateFilter".to_owned(), String::new()),
+                ("$top".to_owned(), "0".to_owned()),
+                ("$skip".to_owned(), "0".to_owned()),
+            ],
+            "a present option is sent even when empty or zero: the Elixir's `if value` is truthy for both"
+        );
+        assert_eq!(
+            list_params(None, Some(-1), Some(-1)),
+            vec![
+                ("$top".to_owned(), "-1".to_owned()),
+                ("$skip".to_owned(), "-1".to_owned()),
+            ],
+            "a negative value is a value, not a flag"
         );
     }
 

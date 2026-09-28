@@ -148,6 +148,77 @@ fn list_without_options_sends_only_the_api_version() {
     );
 }
 
+/// The oracle sends every option that is present: Elixir's `if value` is truthy
+/// for `0` and `""` (only `nil`/`false` are falsy), so `--top 0`, `--skip 0` and
+/// `--state ''` all reach the wire.
+#[test]
+fn list_sends_present_zero_and_empty_options() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect_query(
+        "GET",
+        "/myorg/_apis/projects",
+        &[
+            ("api-version", "7.1"),
+            ("stateFilter", ""),
+            ("%24top", "0"),
+            ("%24skip", "0"),
+        ],
+        MockResponse::from_fixture("projects_list"),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "projects", "list", "--state", "", "--top", "0", "--skip", "0", "--json",
+        ],
+    );
+
+    assert_success(&output);
+    assert_eq!(
+        received_query(&server),
+        vec![
+            pair("api-version", "7.1"),
+            pair("stateFilter", ""),
+            pair("%24top", "0"),
+            pair("%24skip", "0"),
+        ],
+        "a present zero or empty option is sent, exactly as the oracle does"
+    );
+}
+
+/// The oracle's `--top`/`--skip` are integers, so a negative value parses and
+/// reaches the wire; clap needs `allow_negative_numbers` to match that.
+#[test]
+fn list_sends_negative_top_and_skip() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect_query(
+        "GET",
+        "/myorg/_apis/projects",
+        &[("api-version", "7.1"), ("%24top", "-1"), ("%24skip", "-1")],
+        MockResponse::from_fixture("projects_list"),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &["projects", "list", "--top", "-1", "--skip", "-1", "--json"],
+    );
+
+    assert_success(&output);
+    assert_eq!(
+        received_query(&server),
+        vec![
+            pair("api-version", "7.1"),
+            pair("%24top", "-1"),
+            pair("%24skip", "-1"),
+        ],
+        "a negative value is a value, not a flag"
+    );
+}
+
 #[test]
 fn list_json_emits_no_table() {
     let home = TempHome::new();

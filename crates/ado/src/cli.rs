@@ -69,6 +69,7 @@ pub fn command() -> Command {
                                 .long("top")
                                 .value_name("N")
                                 .value_parser(clap::value_parser!(i64))
+                                .allow_negative_numbers(true)
                                 .help("Maximum number of projects to return. Default 100, max 1000."),
                         )
                         .arg(
@@ -76,6 +77,7 @@ pub fn command() -> Command {
                                 .long("skip")
                                 .value_name("N")
                                 .value_parser(clap::value_parser!(i64))
+                                .allow_negative_numbers(true)
                                 .help(
                                     "Number of projects to skip (for pagination). Use with --top to page through results.",
                                 ),
