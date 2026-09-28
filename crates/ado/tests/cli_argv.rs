@@ -1,19 +1,7 @@
-use assert_cmd::Command;
+use ado_testkit::{ado, stderr_of, stdout_of};
 use serde_json::{Value, json};
 
 const VERSION_LINE: &str = "ado 1.0.0-rc.0\n";
-
-fn ado() -> Command {
-    Command::cargo_bin("ado").expect("the ado binary is built")
-}
-
-fn stdout(output: &std::process::Output) -> String {
-    String::from_utf8_lossy(&output.stdout).into_owned()
-}
-
-fn stderr(output: &std::process::Output) -> String {
-    String::from_utf8_lossy(&output.stderr).into_owned()
-}
 
 #[test]
 fn version_flag_short_circuits() {
@@ -23,13 +11,17 @@ fn version_flag_short_circuits() {
         .expect("run `ado --version`");
 
     assert_eq!(output.status.code(), Some(0));
-    assert_eq!(stdout(&output), VERSION_LINE);
+    assert_eq!(stdout_of(&output), VERSION_LINE);
     assert!(
-        !stdout(&output).contains("Usage"),
+        !stdout_of(&output).contains("Usage"),
         "help text leaked onto stdout: {}",
-        stdout(&output)
+        stdout_of(&output)
     );
-    assert!(stderr(&output).is_empty(), "stderr: {}", stderr(&output));
+    assert!(
+        stderr_of(&output).is_empty(),
+        "stderr: {}",
+        stderr_of(&output)
+    );
 }
 
 #[test]
@@ -38,14 +30,14 @@ fn capital_v_is_not_a_version_flag() {
 
     assert_eq!(output.status.code(), Some(1));
     assert!(
-        stderr(&output).contains("-V"),
+        stderr_of(&output).contains("-V"),
         "stderr does not mention the unknown option: {}",
-        stderr(&output)
+        stderr_of(&output)
     );
     assert!(
-        !stdout(&output).contains(VERSION_LINE.trim()),
+        !stdout_of(&output).contains(VERSION_LINE.trim()),
         "`-V` printed the version line: {}",
-        stdout(&output)
+        stdout_of(&output)
     );
 }
 
@@ -56,14 +48,14 @@ fn global_opts_parse_before_and_after() {
         .output()
         .expect("run `ado --org example version`");
     assert_eq!(before.status.code(), Some(0));
-    assert_eq!(stdout(&before), VERSION_LINE);
+    assert_eq!(stdout_of(&before), VERSION_LINE);
 
     let after = ado()
         .args(["version", "--org", "example"])
         .output()
         .expect("run `ado version --org example`");
     assert_eq!(after.status.code(), Some(0));
-    assert_eq!(stdout(&after), VERSION_LINE);
+    assert_eq!(stdout_of(&after), VERSION_LINE);
 }
 
 #[test]
@@ -73,8 +65,13 @@ fn server_short_is_s() {
         .output()
         .expect("run `ado -s https://example.test version`");
 
-    assert_eq!(output.status.code(), Some(0), "stderr: {}", stderr(&output));
-    assert_eq!(stdout(&output), VERSION_LINE);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        stderr_of(&output)
+    );
+    assert_eq!(stdout_of(&output), VERSION_LINE);
 }
 
 #[test]
@@ -83,11 +80,14 @@ fn bare_ado_is_a_missing_subcommand() {
 
     assert_eq!(output.status.code(), Some(1));
     assert!(
-        stdout(&output).contains("Usage:"),
+        stdout_of(&output).contains("Usage:"),
         "bare `ado` did not print root help: {}",
-        stdout(&output)
+        stdout_of(&output)
     );
-    assert_eq!(stderr(&output), "[Validation error] missing sub-command\n");
+    assert_eq!(
+        stderr_of(&output),
+        "[Validation error] missing sub-command\n"
+    );
 }
 
 #[test]
@@ -95,7 +95,11 @@ fn bare_ado_json_is_the_error_envelope() {
     let output = ado().arg("--json").output().expect("run bare `ado --json`");
 
     assert_eq!(output.status.code(), Some(1));
-    assert!(stderr(&output).is_empty(), "stderr: {}", stderr(&output));
+    assert!(
+        stderr_of(&output).is_empty(),
+        "stderr: {}",
+        stderr_of(&output)
+    );
 
     let envelope: Value =
         serde_json::from_slice(&output.stdout).expect("stdout is one JSON document");
@@ -117,14 +121,18 @@ fn invalid_utf8_arg_errors_without_panic() {
 
     assert_eq!(output.status.code(), Some(1));
     assert!(
-        !stderr(&output).contains("panicked"),
+        !stderr_of(&output).contains("panicked"),
         "stderr: {}",
-        stderr(&output)
+        stderr_of(&output)
     );
     assert!(
-        stderr(&output).contains("invalid UTF-8"),
+        stderr_of(&output).contains("invalid UTF-8"),
         "stderr: {}",
-        stderr(&output)
+        stderr_of(&output)
     );
-    assert!(stdout(&output).is_empty(), "stdout: {}", stdout(&output));
+    assert!(
+        stdout_of(&output).is_empty(),
+        "stdout: {}",
+        stdout_of(&output)
+    );
 }

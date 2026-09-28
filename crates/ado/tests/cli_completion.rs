@@ -6,24 +6,12 @@ use std::path::PathBuf;
 use std::process::Output;
 use std::sync::atomic::{AtomicU32, Ordering};
 
-use assert_cmd::Command;
+use ado_testkit::{ado, stderr_of, stdout_of};
 use serde_json::{Value, json};
 
 const SHELLS: [&str; 4] = ["bash", "zsh", "fish", "powershell"];
 const UNKNOWN_SHELL_MESSAGE: &str =
     "Unknown shell 'nope'. Must be one of: bash, zsh, fish, powershell.";
-
-fn ado() -> Command {
-    Command::cargo_bin("ado").expect("the ado binary is built")
-}
-
-fn stdout(output: &Output) -> String {
-    String::from_utf8_lossy(&output.stdout).into_owned()
-}
-
-fn stderr(output: &Output) -> String {
-    String::from_utf8_lossy(&output.stderr).into_owned()
-}
 
 fn completion(shell: &str) -> Output {
     ado()
@@ -61,11 +49,11 @@ fn completion_defaults_to_bash() {
         default.status.code(),
         Some(0),
         "stderr: {}",
-        stderr(&default)
+        stderr_of(&default)
     );
     assert_eq!(default.stdout, completion("bash").stdout);
     assert!(!default.stdout.is_empty());
-    assert!(default.stderr.is_empty(), "stderr: {}", stderr(&default));
+    assert!(default.stderr.is_empty(), "stderr: {}", stderr_of(&default));
 }
 
 #[test]
@@ -77,18 +65,18 @@ fn completion_emits_raw_scripts() {
             output.status.code(),
             Some(0),
             "shell {shell}: stderr: {}",
-            stderr(&output)
+            stderr_of(&output)
         );
         assert!(!output.stdout.is_empty(), "shell {shell}");
         assert!(
-            !stdout(&output).starts_with('{'),
+            !stdout_of(&output).starts_with('{'),
             "shell {shell}: stdout begins with a JSON envelope: {:?}",
-            stdout(&output)
+            stdout_of(&output)
         );
         assert!(
             output.stderr.is_empty(),
             "shell {shell}: stderr: {}",
-            stderr(&output)
+            stderr_of(&output)
         );
     }
 }
@@ -100,9 +88,14 @@ fn completion_json_flag_keeps_the_script_raw() {
         .output()
         .expect("run `ado completion bash --json`");
 
-    assert_eq!(output.status.code(), Some(0), "stderr: {}", stderr(&output));
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        stderr_of(&output)
+    );
     assert_eq!(output.stdout, completion("bash").stdout);
-    assert!(output.stderr.is_empty(), "stderr: {}", stderr(&output));
+    assert!(output.stderr.is_empty(), "stderr: {}", stderr_of(&output));
 }
 
 #[test]
@@ -110,24 +103,24 @@ fn completion_zsh_and_fish_mention_ado() {
     let zsh = completion("zsh");
     let fish = completion("fish");
 
-    assert_eq!(zsh.status.code(), Some(0), "stderr: {}", stderr(&zsh));
-    assert_eq!(fish.status.code(), Some(0), "stderr: {}", stderr(&fish));
+    assert_eq!(zsh.status.code(), Some(0), "stderr: {}", stderr_of(&zsh));
+    assert_eq!(fish.status.code(), Some(0), "stderr: {}", stderr_of(&fish));
     assert!(
-        stdout(&zsh).contains("#compdef ado"),
+        stdout_of(&zsh).contains("#compdef ado"),
         "zsh output: {:?}",
-        stdout(&zsh)
+        stdout_of(&zsh)
     );
     assert!(
-        stdout(&fish).contains("complete -c ado"),
+        stdout_of(&fish).contains("complete -c ado"),
         "fish output: {:?}",
-        stdout(&fish)
+        stdout_of(&fish)
     );
 }
 
 #[test]
 fn completion_scripts_carry_the_current_invocation() {
     for shell in SHELLS {
-        let text = stdout(&completion(shell));
+        let text = stdout_of(&completion(shell));
 
         assert!(
             text.contains(&format!("ado completion {shell}")),
@@ -140,7 +133,7 @@ fn completion_scripts_carry_the_current_invocation() {
     }
 
     assert!(
-        stdout(&completion("zsh")).starts_with("#compdef ado\n"),
+        stdout_of(&completion("zsh")).starts_with("#compdef ado\n"),
         "zsh's #compdef tag must stay on the first line"
     );
 }
@@ -163,11 +156,11 @@ fn completion_unknown_shell_is_validation_error_under_json() {
             },
         })
     );
-    assert!(output.stderr.is_empty(), "stderr: {}", stderr(&output));
+    assert!(output.stderr.is_empty(), "stderr: {}", stderr_of(&output));
     assert!(
         !output.stdout.contains(&0x1B),
         "stdout contains an ESC byte: {:?}",
-        stdout(&output)
+        stdout_of(&output)
     );
 }
 
@@ -180,15 +173,15 @@ fn completion_unknown_shell_plain_message() {
 
     assert_eq!(output.status.code(), Some(1));
     assert_eq!(
-        stderr(&output),
+        stderr_of(&output),
         format!("[Validation error] {UNKNOWN_SHELL_MESSAGE}\n")
     );
-    assert!(output.stdout.is_empty(), "stdout: {}", stdout(&output));
+    assert!(output.stdout.is_empty(), "stdout: {}", stdout_of(&output));
 }
 
 #[test]
 fn completion_write_to_file_writes_and_prints_nothing() {
-    let expected = stdout(&completion("zsh"));
+    let expected = stdout_of(&completion("zsh"));
 
     for flag in ["-w", "--write-to-file"] {
         let path = temp_script_path();
@@ -202,17 +195,17 @@ fn completion_write_to_file_writes_and_prints_nothing() {
             output.status.code(),
             Some(0),
             "flag {flag}: stderr: {}",
-            stderr(&output)
+            stderr_of(&output)
         );
         assert!(
             output.stdout.is_empty(),
             "flag {flag}: stdout: {}",
-            stdout(&output)
+            stdout_of(&output)
         );
         assert!(
             output.stderr.is_empty(),
             "flag {flag}: stderr: {}",
-            stderr(&output)
+            stderr_of(&output)
         );
         assert_eq!(
             fs::read_to_string(&path).expect("the written script"),
@@ -234,11 +227,12 @@ fn completion_unwritable_path_is_a_validation_error() {
         .expect("run `ado completion bash -w MISSING/_ado`");
 
     assert_eq!(output.status.code(), Some(1));
-    assert!(output.stdout.is_empty(), "stdout: {}", stdout(&output));
+    assert!(output.stdout.is_empty(), "stdout: {}", stdout_of(&output));
     assert!(
-        stderr(&output).starts_with("[Validation error] Could not write the completion script to "),
+        stderr_of(&output)
+            .starts_with("[Validation error] Could not write the completion script to "),
         "stderr: {}",
-        stderr(&output)
+        stderr_of(&output)
     );
     assert!(!path.exists(), "nothing should be written");
 }
@@ -247,13 +241,13 @@ fn completion_unwritable_path_is_a_validation_error() {
 fn completion_covers_wave_zero_commands() {
     for shell in SHELLS {
         let output = completion(shell);
-        let text = stdout(&output);
+        let text = stdout_of(&output);
 
         assert_eq!(
             output.status.code(),
             Some(0),
             "shell {shell}: stderr: {}",
-            stderr(&output)
+            stderr_of(&output)
         );
 
         for command in ["version", "whoami", "schema"] {

@@ -3,23 +3,11 @@
 
 use ado::VERSION;
 use ado::commands::schema::{build_tree, find_node};
-use assert_cmd::Command;
+use ado_testkit::{ado, stderr_of, stdout_of};
 use serde_json::{Map, Value, json};
 
 const ROOT_DOC: &str = "Azure DevOps CLI - Manage Azure DevOps projects, repos, work items, and pipelines from the terminal.";
 const VERSION_DOC: &str = "Print the ado version and exit.";
-
-fn ado() -> Command {
-    Command::cargo_bin("ado").expect("the ado binary is built")
-}
-
-fn stdout(output: &std::process::Output) -> String {
-    String::from_utf8_lossy(&output.stdout).into_owned()
-}
-
-fn stderr(output: &std::process::Output) -> String {
-    String::from_utf8_lossy(&output.stderr).into_owned()
-}
 
 fn as_object(value: &Value) -> &Map<String, Value> {
     value.as_object().expect("a JSON object")
@@ -214,7 +202,12 @@ fn schema_version_target_shape_matches_oracle() {
         .output()
         .expect("run `ado schema version --json`");
 
-    assert_eq!(output.status.code(), Some(0), "stderr: {}", stderr(&output));
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        stderr_of(&output)
+    );
 
     let value: Value = serde_json::from_slice(&output.stdout).expect("stdout is a JSON document");
 
@@ -239,7 +232,7 @@ fn schema_unknown_target_is_validation_error() {
             },
         })
     );
-    assert!(output.stderr.is_empty(), "stderr: {}", stderr(&output));
+    assert!(output.stderr.is_empty(), "stderr: {}", stderr_of(&output));
 }
 
 #[test]
@@ -251,10 +244,10 @@ fn schema_unknown_target_plain_message() {
 
     assert_eq!(output.status.code(), Some(1));
     assert_eq!(
-        stderr(&output),
+        stderr_of(&output),
         "[Validation error] no command named \"nope\". Run `ado schema` to see all commands.\n"
     );
-    assert!(output.stdout.is_empty(), "stdout: {}", stdout(&output));
+    assert!(output.stdout.is_empty(), "stdout: {}", stdout_of(&output));
 }
 
 #[test]
@@ -264,11 +257,16 @@ fn schema_json_is_parseable_and_ansi_free() {
         .output()
         .expect("run `ado schema --json`");
 
-    assert_eq!(output.status.code(), Some(0), "stderr: {}", stderr(&output));
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        stderr_of(&output)
+    );
     assert!(
         !output.stdout.contains(&0x1B),
         "stdout contains an ESC byte: {:?}",
-        stdout(&output)
+        stdout_of(&output)
     );
 
     let value: Value = serde_json::from_slice(&output.stdout).expect("stdout is a JSON document");
@@ -282,9 +280,14 @@ fn schema_json_is_parseable_and_ansi_free() {
 fn schema_plain_matches_the_documented_shape() {
     let output = ado().arg("schema").output().expect("run `ado schema`");
 
-    assert_eq!(output.status.code(), Some(0), "stderr: {}", stderr(&output));
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        stderr_of(&output)
+    );
 
-    let text = stdout(&output);
+    let text = stdout_of(&output);
 
     assert!(
         text.starts_with(&format!("ado v{VERSION} — command tree\n")),

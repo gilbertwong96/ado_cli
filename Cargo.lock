@@ -8,7 +8,6 @@ version = "1.0.0-rc.0"
 dependencies = [
  "ado-core",
  "ado-testkit",
- "assert_cmd",
  "clap",
  "clap_complete",
  "insta",
@@ -34,6 +33,7 @@ dependencies = [
 name = "ado-testkit"
 version = "1.0.0-rc.0"
 dependencies = [
+ "assert_cmd",
  "axum",
  "serde_json",
  "tokio",

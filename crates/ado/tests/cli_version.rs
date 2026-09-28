@@ -1,11 +1,7 @@
-use assert_cmd::Command;
+use ado_testkit::ado;
 
 const VERSION_LINE: &str = "ado 1.0.0-rc.0\n";
 const VERSION_JSON_LINE: &str = "{\"ok\":true,\"version\":\"1.0.0-rc.0\"}\n";
-
-fn ado() -> Command {
-    Command::cargo_bin("ado").expect("the ado binary is built")
-}
 
 #[test]
 fn version_plain_matches_contract() {
