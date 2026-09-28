@@ -198,7 +198,7 @@ pub fn command() -> Command {
         .subcommand(
             Command::new("prs")
                 .about(
-                    "Manage Azure DevOps pull requests (PRs). A PR is a request to merge code from one branch (source) into another, with required reviewers, policies, and discussion threads.",
+                    "Manage Azure DevOps pull requests (PRs). A PR is a request to merge code from one branch (source) into another (target), with required reviewers, policies, and discussion threads.",
                 )
                 .subcommand(
                     Command::new("list")
