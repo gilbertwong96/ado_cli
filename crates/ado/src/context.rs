@@ -23,6 +23,9 @@ use serde_json::Value;
 
 use crate::args::GlobalOpts;
 use crate::output::Report;
+#[cfg(test)]
+use crate::prompt::ScriptedConfirm;
+use crate::prompt::{Confirm, StdinConfirm};
 
 /// The cloud server, used when neither the flags, `ADO_SERVER` nor the config
 /// names one.
@@ -58,6 +61,9 @@ pub struct Context {
     legacy_file: Option<PathBuf>,
     /// The client, built on first use and reused for the rest of the run.
     client: Option<Client>,
+    /// The interactive confirmation seam: the binary's stdin implementation, a
+    /// scripted one in tests (spec §4.1).
+    confirm: Box<dyn Confirm>,
 }
 
 impl Context {
@@ -72,12 +78,21 @@ impl Context {
             config_file: config::config_path(),
             legacy_file: legacy::legacy_path(),
             client: None,
+            confirm: Box::new(StdinConfirm::new()),
         }
     }
 
     /// Whether the invocation asked for JSON output.
     pub fn json(&self) -> bool {
         self.opts.json
+    }
+
+    /// Asks the run's confirmation question (`question` is written to stderr)
+    /// and reports whether the answer was yes. EOF is a no (D30); a command that
+    /// sees `false` returns [`ado_core::error::AdoError::cancelled`], so the run
+    /// exits 1 having done nothing (D32).
+    pub fn confirm(&mut self, question: &str) -> bool {
+        self.confirm.confirm(question)
     }
 
     /// The flag-first environment this run sees: `--org`, `--pat` and `--server` in
@@ -377,7 +392,16 @@ impl Context {
             config_file: Some(home.config_dir().join(config::CONFIG_FILE)),
             legacy_file: Some(home.path().join(legacy::LEGACY_RELATIVE_PATH)),
             client: None,
+            confirm: Box::new(ScriptedConfirm::default()),
         }
+    }
+
+    /// Installs the scripted confirmation answers a unit test feeds the seam; the
+    /// default is an answer for nothing, which refuses every question.
+    pub(crate) fn with_confirm(mut self, confirm: impl Confirm + 'static) -> Context {
+        self.confirm = Box::new(confirm);
+
+        self
     }
 
     /// The config a run would have loaded.
@@ -469,6 +493,7 @@ mod tests {
             config_file: None,
             legacy_file: None,
             client: None,
+            confirm: Box::new(ScriptedConfirm::default()),
         }
     }
 
@@ -494,6 +519,7 @@ mod tests {
             config_file: Some(home.config_dir().join(CONFIG_FILE)),
             legacy_file: Some(home.path().join(LEGACY_RELATIVE_PATH)),
             client: None,
+            confirm: Box::new(ScriptedConfirm::default()),
         }
     }
 
@@ -986,5 +1012,23 @@ mod tests {
         let status = context(pat, Some(config)).auth_status();
 
         assert_eq!(status.method.as_deref(), Some("browser"));
+    }
+
+    #[test]
+    fn confirm_delegates_to_the_injected_seam() {
+        let scripted = ScriptedConfirm::new([true, false]);
+        let mut context = context(opts(), None).with_confirm(scripted.clone());
+        let questions = [
+            "Delete project 'Alpha'? This cannot be undone. [y/N] ",
+            "Delete repository 'Alpha/Alpha.Core'? This cannot be undone. [y/N] ",
+        ];
+
+        assert!(context.confirm(questions[0]));
+        assert!(!context.confirm(questions[1]));
+        assert_eq!(
+            scripted.asked(),
+            questions.map(str::to_owned),
+            "the command's own question reaches the seam"
+        );
     }
 }

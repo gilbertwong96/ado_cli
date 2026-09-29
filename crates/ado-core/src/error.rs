@@ -105,6 +105,20 @@ impl AdoError {
         }
     }
 
+    /// The refusal at an interactive confirmation prompt (D32): nothing was done,
+    /// so the run exits 1 like every other error, but a refusal is not an API
+    /// failure — the renderer writes its message to stderr in both modes and
+    /// emits no envelope, leaving `--json` stdout without a document that would
+    /// claim the work happened.
+    pub fn cancelled(message: impl Into<String>) -> AdoError {
+        AdoError {
+            code: ErrorCode::Cancelled,
+            status: None,
+            message: message.into(),
+            details: None,
+        }
+    }
+
     /// The error for an HTTP response the API rejected, classified per spec §6.2.
     pub fn from_status(status: u16, body: impl Into<String>) -> AdoError {
         let body = body.into();
@@ -419,6 +433,16 @@ mod tests {
         assert_eq!(error.code, ErrorCode::NotFound);
         assert_eq!(error.status, None);
         assert_eq!(error.message, "no command named \"x\".");
+        assert_eq!(error.details, None);
+    }
+
+    #[test]
+    fn cancelled_carries_the_refusal() {
+        let error = AdoError::cancelled("Aborted.");
+
+        assert_eq!(error.code, ErrorCode::Cancelled);
+        assert_eq!(error.status, None);
+        assert_eq!(error.message, "Aborted.");
         assert_eq!(error.details, None);
     }
 

@@ -2,7 +2,7 @@ use std::ffi::OsStr;
 use std::io::{self, IsTerminal, Write};
 
 use ado_core::envelope;
-use ado_core::error::AdoError;
+use ado_core::error::{AdoError, ErrorCode};
 use comfy_table::presets::UTF8_FULL;
 use comfy_table::{Cell, Table};
 use serde_json::Value;
@@ -187,13 +187,23 @@ pub fn render_error(error: &AdoError, json: bool) -> Result<(), WriteFailure> {
     )
 }
 
-/// [`render_error`] against the writers a caller owns; see [`render_to`].
+/// [`render_error`] against the writers a caller owns; see [`render_to`]. A
+/// refusal ([`ErrorCode::Cancelled`], D32) is not an API failure: its message is
+/// the whole answer on **stderr**, in both modes, and no envelope is emitted, so
+/// a `--json` run cannot read a refusal as a result.
 pub fn render_error_to(
     stdout: &mut impl Write,
     stderr: &mut impl Write,
     error: &AdoError,
     json: bool,
 ) -> Result<(), WriteFailure> {
+    if error.code == ErrorCode::Cancelled {
+        return write_bytes(
+            stderr,
+            with_trailing_newline(error.message.clone()).as_bytes(),
+        );
+    }
+
     if json {
         match serde_json::to_string(&envelope::error(error)) {
             Ok(text) => write_bytes(stdout, with_trailing_newline(text).as_bytes()),
@@ -289,6 +299,30 @@ mod tests {
 
         assert_eq!(String::from_utf8(stderr).unwrap(), "[Not found] gone\n");
         assert!(stdout.is_empty());
+    }
+
+    /// A refusal is a user decision, not an API failure: its message goes to
+    /// stderr in both modes and stdout stays empty (D32).
+    #[test]
+    fn render_error_cancelled_writes_the_refusal_to_stderr_with_no_envelope() {
+        let error = AdoError::cancelled("Aborted.");
+
+        for json in [false, true] {
+            let (mut stdout, mut stderr) = (Vec::new(), Vec::new());
+
+            render_error_to(&mut stdout, &mut stderr, &error, json).unwrap();
+
+            assert_eq!(
+                String::from_utf8(stderr).unwrap(),
+                "Aborted.\n",
+                "json={json}"
+            );
+            assert!(
+                stdout.is_empty(),
+                "a refusal must not emit a document (json={json}): {:?}",
+                String::from_utf8_lossy(&stdout)
+            );
+        }
     }
 
     #[test]
