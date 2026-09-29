@@ -1,16 +1,18 @@
 //! `ado pipelines list|show|run|create|update|delete`, the `vars` variable
-//! groups, the per-pipeline `variables` and the `secure_files` library — the read
-//! and write paths of `lib/ado_cli/cli/pipelines.ex`: the same REST surface, the
-//! same bodies, and the same human layouts.
+//! groups, the per-pipeline `variables`, the `secure_files` library and the
+//! `pipelines-folders` node — the read and write paths of
+//! `lib/ado_cli/cli/pipelines.ex` and `lib/ado_cli/cli/folders.ex`: the same REST
+//! surface, the same bodies, and the same human layouts.
 //!
 //! Three deletes were re-verified against the mock with `n` on stdin (R5):
 //! `pipelines delete` and `pipelines vars delete` proceed without a question and
 //! have no `--force`; `pipelines secure_files delete` asks no question either,
 //! but without `--force` it refuses — the oracle prints its guard and exits 0
 //! having sent nothing, this build exits 1 with the same message on stderr
-//! (R6, D32).
+//! (R6, D32). `pipelines-folders delete` is a fourth: it was re-run against the
+//! mock with `n` and on EOF, and both runs sent the DELETE (R5).
 
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::fs;
 
 use ado_core::client::encode_path_segment;
@@ -734,6 +736,63 @@ pub fn secure_files_delete(
     }
 }
 
+/// `list_folders/1`: `GET /{project}/_apis/pipelines` with the module's `folder`
+/// (always, `--path` or `/`) and `path` (only with `--path`) params, grouped by
+/// each pipeline's own `folder` field. The oracle prints its table even under
+/// `--json` (captured); this build emits the raw pipeline list as the value
+/// envelope, which is what the module's own doc promises: "Pass --json for raw
+/// pipeline data".
+pub fn folders_list(
+    context: &mut Context,
+    project: &str,
+    path: Option<String>,
+) -> Result<Report, AdoError> {
+    let pipelines = items(context.client()?.list(
+        &pipelines_collection_path(project),
+        &folder_params(path.as_deref()),
+    )?);
+
+    Ok(
+        context.json_or_report(ok_value(Value::Array(pipelines.clone())), || {
+            folders_table(&pipelines)
+        }),
+    )
+}
+
+/// `create_folder/1`: `POST …/pipelines/folders` with the path alone. The
+/// created folder is the value envelope under `--json` (D33); the human line is
+/// the module's.
+pub fn folders_create(
+    context: &mut Context,
+    project: &str,
+    path: &str,
+) -> Result<Report, AdoError> {
+    let folder = context.client()?.post(
+        &folders_collection_path(project),
+        &json!({"path": path}),
+        &[],
+    )?;
+
+    Ok(context.json_or_report(ok_value(folder.clone()), || {
+        Report::Text(format!("Folder '{path}' created."))
+    }))
+}
+
+/// `delete_folder/1`: `DELETE …/pipelines/folders/{path}`. No question and no
+/// `--force` (captured on `n` and on EOF, R5); the success line is this build's
+/// message envelope (D33).
+pub fn folders_delete(
+    context: &mut Context,
+    project: &str,
+    path: &str,
+) -> Result<Report, AdoError> {
+    context.client()?.delete(&folder_path(project, path), &[])?;
+
+    let message = format!("Folder '{path}' deleted.");
+
+    Ok(context.json_or_report(ok_message(&message), || Report::Text(message)))
+}
+
 /// `find_secure_file_id_by_name/2`: look the name up through the server-side
 /// `namePattern` filter and take the first exact match's `id`. A failed lookup
 /// and a match without a usable id both read as not found (captured: the oracle
@@ -973,6 +1032,76 @@ fn vars_group_path(project: &str, group_id: i64) -> String {
 
 /// `/{project}/_apis/distributedtask/securefiles`, the collection the four
 /// secure-file paths build on.
+/// The module's `list_folders/1` params: `folder` always, defaulting to the root
+/// as the oracle sends it (`path || "/"`), and `path` only when `--path` was
+/// given. Captured: `folder=%2F` alone, or both pairs carrying the same value.
+fn folder_params(path: Option<&str>) -> Vec<(String, String)> {
+    match path {
+        Some(path) => vec![
+            ("folder".to_owned(), path.to_owned()),
+            ("path".to_owned(), path.to_owned()),
+        ],
+        None => vec![("folder".to_owned(), "/".to_owned())],
+    }
+}
+
+fn folders_collection_path(project: &str) -> String {
+    format!("{}/folders", pipelines_collection_path(project))
+}
+
+fn folder_path(project: &str, path: &str) -> String {
+    format!(
+        "{}/{}",
+        folders_collection_path(project),
+        encode_folder_path(path)
+    )
+}
+
+/// A folder path's `/` separators are the hierarchy the API addresses, so they
+/// stay separators — as they do through the oracle's `URI.encode/1` — while each
+/// segment carries `encode_path_segment`'s RFC 3986 set, so a segment cannot end
+/// the path (D22: the oracle's `URI.encode/1` kept `?` and turned it into a
+/// query, captured).
+fn encode_folder_path(path: &str) -> String {
+    path.split('/')
+        .map(encode_path_segment)
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
+/// The module's `list_folders/1` grouping and table: folders sorted by their raw
+/// value (the oracle's term order, where a missing folder — nil — precedes every
+/// binary), each with its pipeline count, the missing folder displayed as `/`.
+fn folders_table(pipelines: &[Value]) -> Report {
+    if pipelines.is_empty() {
+        return Report::Text("No folders found.".to_owned());
+    }
+
+    let mut counts: BTreeMap<Option<String>, usize> = BTreeMap::new();
+
+    for pipeline in pipelines {
+        let folder = pipeline
+            .get("folder")
+            .and_then(Value::as_str)
+            .map(str::to_owned);
+        *counts.entry(folder).or_insert(0) += 1;
+    }
+
+    let rows = counts
+        .into_iter()
+        .map(|(folder, count)| vec![folder.unwrap_or_else(|| "/".to_owned()), count.to_string()])
+        .collect();
+
+    Report::Table {
+        headers: vec!["Folder".to_owned(), "Pipelines".to_owned()],
+        rows,
+    }
+}
+
+fn pipelines_collection_path(project: &str) -> String {
+    format!("/{}/_apis/pipelines", encode_path_segment(project))
+}
+
 fn secure_files_path(project: &str) -> String {
     format!(
         "/{}/_apis/distributedtask/securefiles",
@@ -2048,6 +2177,87 @@ mod tests {
             secure_file_path("My Project", "a/b"),
             "/My%20Project/_apis/distributedtask/securefiles/a%2Fb",
             "D22: the id cannot change the URL's structure either"
+        );
+    }
+
+    #[test]
+    fn folder_params_send_folder_always_and_path_only_when_given() {
+        assert_eq!(
+            folder_params(None),
+            vec![("folder".to_owned(), "/".to_owned())],
+            "the captured no-path request carries the root as folder alone"
+        );
+        assert_eq!(
+            folder_params(Some("MyTeam/Frontend")),
+            vec![
+                ("folder".to_owned(), "MyTeam/Frontend".to_owned()),
+                ("path".to_owned(), "MyTeam/Frontend".to_owned()),
+            ],
+            "the captured path request carries both pairs with the same value"
+        );
+    }
+
+    #[test]
+    fn folder_path_encodes_each_segment_and_keeps_the_separators() {
+        assert_eq!(
+            folder_path("Alpha", "MyTeam/Frontend"),
+            "/Alpha/_apis/pipelines/folders/MyTeam/Frontend",
+            "the hierarchy the API addresses stays in the URL path (the oracle's URI.encode/1 keeps / too)"
+        );
+        assert_eq!(
+            folder_path("My Project", "My Team/Front end"),
+            "/My%20Project/_apis/pipelines/folders/My%20Team/Front%20end",
+            "the oracle's own captured bytes for a space (D22 shares %20)"
+        );
+        assert_eq!(
+            folder_path("Alpha", "a?b"),
+            "/Alpha/_apis/pipelines/folders/a%3Fb",
+            "D22: the oracle's URI.encode/1 kept ? and turned the rest into a query; here a segment cannot end the path"
+        );
+    }
+
+    #[test]
+    fn folders_table_sorts_by_raw_folder_and_displays_the_missing_one_as_root() {
+        let pipelines = vec![
+            json!({"id": 12, "folder": "\\"}),
+            json!({"id": 15, "folder": "MyTeam/Frontend"}),
+            json!({"id": 16, "folder": "MyTeam/Frontend"}),
+            json!({"id": 17, "folder": null}),
+        ];
+
+        assert_eq!(
+            folders_table(&pipelines),
+            Report::Table {
+                headers: vec!["Folder".to_owned(), "Pipelines".to_owned()],
+                rows: vec![
+                    vec!["/".to_owned(), "1".to_owned()],
+                    vec!["MyTeam/Frontend".to_owned(), "2".to_owned()],
+                    vec!["\\".to_owned(), "1".to_owned()],
+                ],
+            },
+            "term order: the nil key first, then binaries byte-wise, with null displayed as /"
+        );
+    }
+
+    #[test]
+    fn folders_table_reads_a_folderless_pipeline_as_the_root() {
+        let pipelines = vec![json!({"id": 1}), json!({"id": 2, "folder": null})];
+
+        assert_eq!(
+            folders_table(&pipelines),
+            Report::Table {
+                headers: vec!["Folder".to_owned(), "Pipelines".to_owned()],
+                rows: vec![vec!["/".to_owned(), "2".to_owned()]],
+            },
+            "a missing folder and a null folder are the same nil key"
+        );
+    }
+
+    #[test]
+    fn folders_table_of_nothing_is_the_module_message() {
+        assert_eq!(
+            folders_table(&[]),
+            Report::Text("No folders found.".to_owned())
         );
     }
 }

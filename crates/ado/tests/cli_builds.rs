@@ -1128,3 +1128,458 @@ fn a_closed_stdout_is_a_silent_success() {
     );
     assert!(output.stderr.is_empty(), "stderr: {}", stderr_of(&output));
 }
+
+// ── queue, cancel and tags add (Task 6) ──
+//
+// The three write paths Wave 1 left out. Every method, path and body below is the
+// request the frozen escript sent, captured against the standalone mock at
+// `captures/task6/requests-scenario.jsonl`; every response is that capture's
+// answer. The oracle prints its human success lines under `--json` on all three
+// (captured) where this build emits the value envelope (D33). No command here
+// prompts, and none has a `--force`: `queue` without `--definition` and `tags add`
+// without `--tags` are silent exit 0 in the oracle (R4/D34) and usage errors here.
+
+const QUEUE_PATH: &str = "/myorg/Alpha/_apis/build/builds";
+const CANCEL_PATH: &str = "/myorg/Alpha/_apis/build/builds/128";
+const TAGS_ADD_PATH: &str = "/myorg/Alpha/_apis/build/builds/128/tags";
+
+fn sent_body(request: &RecordedRequest) -> Value {
+    serde_json::from_str(request.body.as_deref().expect("a request body"))
+        .expect("the request body is JSON")
+}
+
+fn success_envelope(output: &Output) -> Value {
+    assert_success(output);
+    serde_json::from_str(&stdout_of(output)).expect("stdout is exactly one JSON document")
+}
+
+/// The captured `POST .../build/builds` answer for definition 5.
+fn queued_build() -> Value {
+    json!({
+        "id": 200,
+        "buildNumber": "20260927.1",
+        "status": "notStarted",
+        "queueTime": "2026-09-27T10:00:00.000Z",
+        "_links": {"web": {"href": "https://dev.azure.com/ado-harness/Alpha/_build/results?buildId=200"}},
+    })
+}
+
+#[test]
+fn queue_posts_the_definition_and_the_default_branch() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect("POST", QUEUE_PATH, MockResponse::json(200, queued_build()));
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "pipelines-builds",
+            "queue",
+            "Alpha",
+            "--definition",
+            "5",
+            "--json",
+        ],
+    );
+
+    assert_eq!(
+        success_envelope(&output),
+        json!({"ok": true, "result": queued_build()}),
+        "the queued build is the value envelope"
+    );
+
+    let received = server.received();
+    assert_eq!(received.len(), 1);
+    assert_eq!(received[0].method, "POST");
+    assert_eq!(received[0].path, QUEUE_PATH);
+    assert_eq!(received[0].query_pairs(), vec![api_version()]);
+    assert_eq!(
+        sent_body(&received[0]),
+        json!({"definition": {"id": 5}, "sourceBranch": "refs/heads/main"}),
+        "the captured body: the definition id and the default branch with its refs/heads prefix"
+    );
+}
+
+#[test]
+fn queue_sends_the_branch_with_the_refs_heads_prefix() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect("POST", QUEUE_PATH, MockResponse::json(200, queued_build()));
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "pipelines-builds",
+            "queue",
+            "Alpha",
+            "--definition",
+            "5",
+            "--branch",
+            "feature/foo",
+            "--json",
+        ],
+    );
+
+    assert_success(&output);
+    assert_eq!(
+        sent_body(&server.received()[0]),
+        json!({"definition": {"id": 5}, "sourceBranch": "refs/heads/feature/foo"}),
+        "the short branch name is prefixed, never replaced"
+    );
+}
+
+#[test]
+fn queue_human_output_is_the_module_lines() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect("POST", QUEUE_PATH, MockResponse::json(200, queued_build()));
+
+    let output = run(
+        &home,
+        &server,
+        &["pipelines-builds", "queue", "Alpha", "--definition", "5"],
+    );
+
+    assert_success(&output);
+    assert_eq!(
+        stdout_of(&output),
+        "Build #200 queued.\n  Status: notStarted\n  URL:    https://dev.azure.com/ado-harness/Alpha/_build/results?buildId=200\n"
+    );
+}
+
+/// A build answer without `_links` leaves the URL line empty; the oracle's Access
+/// chain reads nil as empty rather than raising (captured).
+#[test]
+fn queue_without_links_prints_an_empty_url() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "POST",
+        QUEUE_PATH,
+        MockResponse::json(200, json!({"id": 202, "status": "notStarted"})),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &["pipelines-builds", "queue", "Alpha", "--definition", "5"],
+    );
+
+    assert_success(&output);
+    assert_eq!(
+        stdout_of(&output),
+        "Build #202 queued.\n  Status: notStarted\n  URL:    \n"
+    );
+}
+
+#[test]
+fn queue_without_a_definition_is_a_usage_error() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+
+    let output = run(
+        &home,
+        &server,
+        &["pipelines-builds", "queue", "Alpha", "--json"],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        stderr_of(&output).contains("--definition"),
+        "the usage error names --definition: {}",
+        stderr_of(&output)
+    );
+    assert!(
+        server.received().is_empty(),
+        "a missing required option sends no request (the oracle exits 0 silently, R4/D34)"
+    );
+}
+
+/// R7: the frozen taxonomy maps 400 through its "other status" row to `api_error`,
+/// and the captured oracle envelope is `{"code":"api_error","status":400,…}`.
+#[test]
+fn queue_400_is_the_api_error_envelope() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "POST",
+        QUEUE_PATH,
+        MockResponse::json(400, json!({"message": "The definition 5 does not exist."})),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "pipelines-builds",
+            "queue",
+            "Alpha",
+            "--definition",
+            "5",
+            "--json",
+        ],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    let envelope: Value =
+        serde_json::from_str(&stdout_of(&output)).expect("stdout is exactly one JSON document");
+
+    assert_eq!(envelope["ok"], json!(false));
+    assert_eq!(envelope["error"]["code"], json!("api_error"));
+    assert_eq!(envelope["error"]["status"], json!(400));
+    assert!(
+        envelope["error"]["message"]
+            .as_str()
+            .expect("a message")
+            .starts_with("API error 400:"),
+        "message: {}",
+        envelope["error"]["message"]
+    );
+    assert!(
+        envelope["error"]["details"]["body"]
+            .as_str()
+            .expect("the upstream bytes")
+            .contains("The definition 5 does not exist."),
+        "details.body keeps the upstream bytes (D24): {envelope}"
+    );
+}
+
+#[test]
+fn cancel_patches_cancelling_and_emits_the_value_envelope() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "PATCH",
+        CANCEL_PATH,
+        MockResponse::json(
+            200,
+            json!({"id": 128, "status": "cancelling", "result": null}),
+        ),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &["pipelines-builds", "cancel", "Alpha", "128", "--json"],
+    );
+
+    assert_eq!(
+        success_envelope(&output),
+        json!({"ok": true, "result": {"id": 128, "status": "cancelling", "result": null}}),
+        "the cancelled build is the value envelope"
+    );
+
+    let received = server.received();
+    assert_eq!(received.len(), 1);
+    assert_eq!(received[0].method, "PATCH");
+    assert_eq!(received[0].path, CANCEL_PATH);
+    assert_eq!(
+        sent_body(&received[0]),
+        json!({"status": "cancelling"}),
+        "the captured body: the status alone"
+    );
+}
+
+#[test]
+fn cancel_human_output_is_the_module_line() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "PATCH",
+        CANCEL_PATH,
+        MockResponse::json(200, json!({"id": 128, "status": "cancelling"})),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &["pipelines-builds", "cancel", "Alpha", "128"],
+    );
+
+    assert_success(&output);
+    assert_eq!(stdout_of(&output), "Build #128 cancelled.\n");
+}
+
+#[test]
+fn cancel_404_is_the_error_envelope() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "PATCH",
+        CANCEL_PATH,
+        MockResponse::from_fixture("error_404").with_status(404),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &["pipelines-builds", "cancel", "Alpha", "128", "--json"],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    let envelope: Value =
+        serde_json::from_str(&stdout_of(&output)).expect("stdout is exactly one JSON document");
+
+    assert_eq!(envelope["ok"], json!(false));
+    assert_eq!(envelope["error"]["code"], json!("not_found"));
+    assert_eq!(envelope["error"]["status"], json!(404));
+}
+
+#[test]
+fn tags_add_puts_the_trimmed_array_and_emits_the_value_envelope() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    let tags = json!({"count": 3, "value": ["release", "prod", "v1.2.3"]});
+    server.expect("PUT", TAGS_ADD_PATH, MockResponse::json(200, tags.clone()));
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "pipelines-builds",
+            "tags",
+            "add",
+            "Alpha",
+            "128",
+            "--tags",
+            "release,prod,v1.2.3",
+            "--json",
+        ],
+    );
+
+    assert_eq!(
+        success_envelope(&output),
+        json!({"ok": true, "result": tags}),
+        "the tag-list answer is the value envelope"
+    );
+
+    let received = server.received();
+    assert_eq!(received.len(), 1);
+    assert_eq!(received[0].method, "PUT");
+    assert_eq!(received[0].path, TAGS_ADD_PATH);
+    assert_eq!(
+        sent_body(&received[0]),
+        json!(["release", "prod", "v1.2.3"]),
+        "the captured body: the tags as a bare JSON array"
+    );
+}
+
+#[test]
+fn tags_add_splits_and_trims_every_tag() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "PUT",
+        TAGS_ADD_PATH,
+        MockResponse::json(200, json!({"count": 2, "value": ["trimmed", "spaced"]})),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "pipelines-builds",
+            "tags",
+            "add",
+            "Alpha",
+            "128",
+            "--tags",
+            "trimmed, spaced ",
+            "--json",
+        ],
+    );
+
+    assert_success(&output);
+    assert_eq!(
+        sent_body(&server.received()[0]),
+        json!(["trimmed", "spaced"]),
+        "each comma-separated tag is trimmed, the capture's own pair"
+    );
+}
+
+#[test]
+fn tags_add_human_output_is_the_module_line() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "PUT",
+        TAGS_ADD_PATH,
+        MockResponse::json(200, json!({"count": 1, "value": ["release"]})),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "pipelines-builds",
+            "tags",
+            "add",
+            "Alpha",
+            "128",
+            "--tags",
+            "release",
+        ],
+    );
+
+    assert_success(&output);
+    assert_eq!(stdout_of(&output), "Tags added to build #128.\n");
+}
+
+#[test]
+fn tags_add_without_tags_is_a_usage_error() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+
+    let output = run(
+        &home,
+        &server,
+        &["pipelines-builds", "tags", "add", "Alpha", "128", "--json"],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        stderr_of(&output).contains("--tags"),
+        "the usage error names --tags: {}",
+        stderr_of(&output)
+    );
+    assert!(
+        server.received().is_empty(),
+        "a missing required option sends no request (the oracle exits 0 silently, R4/D34)"
+    );
+}
+
+#[test]
+fn tags_add_404_is_the_error_envelope() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "PUT",
+        TAGS_ADD_PATH,
+        MockResponse::from_fixture("error_404").with_status(404),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "pipelines-builds",
+            "tags",
+            "add",
+            "Alpha",
+            "128",
+            "--tags",
+            "release",
+            "--json",
+        ],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    let envelope: Value =
+        serde_json::from_str(&stdout_of(&output)).expect("stdout is exactly one JSON document");
+
+    assert_eq!(envelope["ok"], json!(false));
+    assert_eq!(envelope["error"]["code"], json!("not_found"));
+    assert_eq!(envelope["error"]["status"], json!(404));
+}

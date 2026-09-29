@@ -464,6 +464,42 @@ fn main() -> ExitCode {
                 _ => Err(AdoError::validation(MISSING_SUBCOMMAND)),
             }
         }
+        Some(("pipelines-folders", sub)) => {
+            let mut context = Context::load(globals);
+
+            match sub.subcommand() {
+                Some(("list", list)) => commands::pipelines::folders_list(
+                    &mut context,
+                    list.get_one::<String>("project")
+                        .expect("the positional is required")
+                        .as_str(),
+                    list.get_one::<String>("path").cloned(),
+                ),
+                Some(("create", create)) => commands::pipelines::folders_create(
+                    &mut context,
+                    create
+                        .get_one::<String>("project")
+                        .expect("the positional is required")
+                        .as_str(),
+                    create
+                        .get_one::<String>("path")
+                        .expect("the option is required")
+                        .as_str(),
+                ),
+                Some(("delete", delete)) => commands::pipelines::folders_delete(
+                    &mut context,
+                    delete
+                        .get_one::<String>("project")
+                        .expect("the positional is required")
+                        .as_str(),
+                    delete
+                        .get_one::<String>("path")
+                        .expect("the option is required")
+                        .as_str(),
+                ),
+                _ => Err(AdoError::validation(MISSING_SUBCOMMAND)),
+            }
+        }
         Some(("pipelines-builds", sub)) => {
             let mut context = Context::load(globals);
 
@@ -485,6 +521,29 @@ fn main() -> ExitCode {
                         .copied()
                         .expect("the positional is required"),
                 ),
+                Some(("queue", queue)) => commands::builds::queue(
+                    &mut context,
+                    queue
+                        .get_one::<String>("project")
+                        .expect("the positional is required")
+                        .as_str(),
+                    queue
+                        .get_one::<i64>("definition")
+                        .copied()
+                        .expect("the option is required"),
+                    queue.get_one::<String>("branch").cloned(),
+                ),
+                Some(("cancel", cancel)) => commands::builds::cancel(
+                    &mut context,
+                    cancel
+                        .get_one::<String>("project")
+                        .expect("the positional is required")
+                        .as_str(),
+                    cancel
+                        .get_one::<i64>("build_id")
+                        .copied()
+                        .expect("the positional is required"),
+                ),
                 Some(("tags", tags)) => match tags.subcommand() {
                     Some(("list", list)) => commands::builds::tags(
                         &mut context,
@@ -494,6 +553,18 @@ fn main() -> ExitCode {
                         list.get_one::<i64>("build_id")
                             .copied()
                             .expect("the positional is required"),
+                    ),
+                    Some(("add", add)) => commands::builds::tags_add(
+                        &mut context,
+                        add.get_one::<String>("project")
+                            .expect("the positional is required")
+                            .as_str(),
+                        add.get_one::<i64>("build_id")
+                            .copied()
+                            .expect("the positional is required"),
+                        add.get_one::<String>("tags")
+                            .expect("the option is required")
+                            .as_str(),
                     ),
                     _ => Err(AdoError::validation(MISSING_SUBCOMMAND)),
                 },

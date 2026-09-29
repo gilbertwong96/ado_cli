@@ -3408,3 +3408,442 @@ fn secure_files_delete_force_404_reports_the_file_not_found_message() {
         &format!("Secure file {SECURE_FILE_MISSING_ID} not found in project 'Alpha'"),
     );
 }
+
+// ── pipelines-folders (Task 6) ──
+//
+// The folders node's REST surface: `GET .../pipelines?folder=…&path=…`,
+// `POST .../pipelines/folders`, `DELETE .../pipelines/folders/<path>`. Every
+// path, query and body below is the request the frozen escript sent, captured
+// against the standalone mock at `captures/task6/requests-scenario.jsonl`; every
+// response is that capture's answer. The oracle prints its human table or line
+// under `--json` on all three (captured) where this build emits the value or
+// message envelope (D21's class for the read, D33 for the writes). `--path` is
+// encoded per segment so the folder hierarchy stays part of the URL's structure
+// (the oracle's `URI.encode/1` keeps `/` too); only genuinely unsafe bytes are
+// tightened (D22). R5: the delete was re-run against the mock with `n` on stdin
+// and sent the DELETE — no prompt.
+
+const FOLDERS_CREATE_PATH: &str = "/myorg/Alpha/_apis/pipelines/folders";
+const FOLDERS_DELETE_PATH: &str = "/myorg/Alpha/_apis/pipelines/folders/MyTeam/Frontend";
+
+/// The captured `GET .../pipelines` answer for the folders cases: two pipelines
+/// in one folder, one at the root and one the API left without a folder.
+fn folder_pipelines() -> Value {
+    json!({
+        "count": 4,
+        "value": [
+            {"id": 12, "name": "Alpha CI", "folder": "\\", "revision": 4},
+            {"id": 15, "name": "New CI", "folder": "MyTeam/Frontend", "revision": 1},
+            {"id": 16, "name": "API CI", "folder": "MyTeam/Frontend", "revision": 2},
+            {"id": 17, "name": "Rootless", "revision": 3},
+        ],
+    })
+}
+
+fn folder_pipeline_array() -> Value {
+    folder_pipelines()["value"].clone()
+}
+
+#[test]
+fn folders_list_sends_the_pipelines_path_and_emits_the_value_envelope() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "GET",
+        LIST_PATH,
+        MockResponse::json(200, folder_pipelines()),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &["pipelines-folders", "list", "Alpha", "--json"],
+    );
+
+    assert_success(&output);
+    assert_eq!(
+        mutation_envelope(&output),
+        json!({"ok": true, "result": folder_pipeline_array()}),
+        "the read's value envelope carries the raw pipeline list"
+    );
+
+    let received = server.received();
+    assert_eq!(received.len(), 1);
+    assert_list_request(&received[0], vec![api_version(), pair("folder", "%2F")]);
+}
+
+#[test]
+fn folders_list_with_a_path_sends_the_folder_and_path_pairs() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "GET",
+        LIST_PATH,
+        MockResponse::json(200, folder_pipelines()),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "pipelines-folders",
+            "list",
+            "Alpha",
+            "--path",
+            "MyTeam/Frontend",
+            "--json",
+        ],
+    );
+
+    assert_success(&output);
+    assert_list_request(
+        &server.received()[0],
+        vec![
+            api_version(),
+            pair("folder", "MyTeam%2FFrontend"),
+            pair("path", "MyTeam%2FFrontend"),
+        ],
+    );
+}
+
+#[test]
+fn folders_list_human_output_is_the_folder_table_with_counts() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "GET",
+        LIST_PATH,
+        MockResponse::json(200, folder_pipelines()),
+    );
+
+    let output = run(&home, &server, &["pipelines-folders", "list", "Alpha"]);
+
+    assert_success(&output);
+    let stdout = stdout_of(&output);
+
+    assert!(stdout.contains("Folder"), "stdout: {stdout}");
+    assert!(stdout.contains("Pipelines"), "stdout: {stdout}");
+    assert!(
+        stdout.contains("MyTeam/Frontend") && stdout.contains('2'),
+        "the two-pipeline folder and its count: {stdout}"
+    );
+    assert!(
+        stdout.contains('1'),
+        "the root and the folderless pipeline each count one: {stdout}"
+    );
+    assert_no_table_bytes(&stdout);
+}
+
+#[test]
+fn folders_list_of_no_folders_is_the_module_message() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "GET",
+        LIST_PATH,
+        MockResponse::json(200, json!({"count": 0, "value": []})),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &["pipelines-folders", "list", "Alpha", "--json"],
+    );
+
+    assert_success(&output);
+    assert_eq!(
+        mutation_envelope(&output),
+        json!({"ok": true, "result": []}),
+        "an empty pipeline list is an empty value envelope"
+    );
+}
+
+#[test]
+fn folders_list_404_is_the_error_envelope() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "GET",
+        "/myorg/Missing/_apis/pipelines",
+        MockResponse::from_fixture("error_404").with_status(404),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &["pipelines-folders", "list", "Missing", "--json"],
+    );
+
+    assert_not_found_envelope(
+        &output,
+        "Resource not found. Check the project/repo/build ID and your permissions.",
+    );
+}
+
+#[test]
+fn folders_create_posts_the_path_body_and_emits_the_value_envelope() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "POST",
+        FOLDERS_CREATE_PATH,
+        MockResponse::json(200, json!({"path": "MyTeam/Frontend", "id": 7})),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "pipelines-folders",
+            "create",
+            "Alpha",
+            "--path",
+            "MyTeam/Frontend",
+            "--json",
+        ],
+    );
+
+    assert_success(&output);
+    assert_eq!(
+        mutation_envelope(&output),
+        json!({"ok": true, "result": {"path": "MyTeam/Frontend", "id": 7}}),
+        "the created folder is the value envelope"
+    );
+
+    let received = server.received();
+    assert_eq!(received.len(), 1);
+    assert_eq!(received[0].method, "POST");
+    assert_eq!(received[0].path, FOLDERS_CREATE_PATH);
+    assert_eq!(
+        received[0].body.as_deref(),
+        Some(r#"{"path":"MyTeam/Frontend"}"#),
+        "the captured body: the path alone"
+    );
+}
+
+#[test]
+fn folders_create_human_output_is_the_module_line() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "POST",
+        FOLDERS_CREATE_PATH,
+        MockResponse::json(200, json!({"path": "MyTeam/Frontend", "id": 7})),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "pipelines-folders",
+            "create",
+            "Alpha",
+            "--path",
+            "MyTeam/Frontend",
+        ],
+    );
+
+    assert_success(&output);
+    assert_eq!(stdout_of(&output), "Folder 'MyTeam/Frontend' created.\n");
+    assert_no_table_bytes(&stdout_of(&output));
+}
+
+#[test]
+fn folders_create_without_a_path_is_a_usage_error() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+
+    let output = run(
+        &home,
+        &server,
+        &["pipelines-folders", "create", "Alpha", "--json"],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        stderr_of(&output).contains("--path"),
+        "the usage error names --path: {}",
+        stderr_of(&output)
+    );
+    assert!(
+        server.received().is_empty(),
+        "a missing required option sends no request (the oracle exits 0 silently, R4/D34)"
+    );
+}
+
+#[test]
+fn folders_delete_sends_the_folder_path_and_emits_the_message_envelope() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "DELETE",
+        FOLDERS_DELETE_PATH,
+        MockResponse::json(200, json!({"path": "MyTeam/Frontend"})),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "pipelines-folders",
+            "delete",
+            "Alpha",
+            "--path",
+            "MyTeam/Frontend",
+            "--json",
+        ],
+    );
+
+    assert_success(&output);
+    assert_eq!(
+        mutation_envelope(&output),
+        json!({"ok": true, "message": "Folder 'MyTeam/Frontend' deleted."}),
+        "a delete reports a message, not an API value"
+    );
+
+    let received = server.received();
+    assert_eq!(received.len(), 1);
+    assert_eq!(received[0].method, "DELETE");
+    assert_eq!(received[0].path, FOLDERS_DELETE_PATH);
+    assert_eq!(received[0].query_pairs(), vec![api_version()]);
+}
+
+#[test]
+fn folders_delete_encodes_each_segment_and_keeps_the_hierarchy() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "DELETE",
+        "/myorg/Alpha/_apis/pipelines/folders/My%20Team/Front%20end",
+        MockResponse::json(200, json!({"path": "My Team/Front end"})),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "pipelines-folders",
+            "delete",
+            "Alpha",
+            "--path",
+            "My Team/Front end",
+            "--json",
+        ],
+    );
+
+    assert_success(&output);
+    assert_eq!(
+        server.received()[0].path,
+        "/myorg/Alpha/_apis/pipelines/folders/My%20Team/Front%20end",
+        "each segment percent-encodes its spaces; the separators stay separators"
+    );
+}
+
+/// R5's evidence: with `n` on stdin the request still goes out, so a prompt added
+/// here would fail this test.
+#[test]
+fn folders_delete_with_stdin_n_sends_the_request() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "DELETE",
+        FOLDERS_DELETE_PATH,
+        MockResponse::json(200, json!({"path": "MyTeam/Frontend"})),
+    );
+
+    let output = run_with_stdin(
+        &home,
+        &server,
+        &[
+            "pipelines-folders",
+            "delete",
+            "Alpha",
+            "--path",
+            "MyTeam/Frontend",
+            "--json",
+        ],
+        b"n\n",
+    );
+
+    assert_success(&output);
+    assert_eq!(server.received().len(), 1, "the delete is not prompted");
+}
+
+#[test]
+fn folders_delete_without_a_path_is_a_usage_error() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+
+    let output = run(
+        &home,
+        &server,
+        &["pipelines-folders", "delete", "Alpha", "--json"],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        stderr_of(&output).contains("--path"),
+        "the usage error names --path: {}",
+        stderr_of(&output)
+    );
+    assert!(
+        server.received().is_empty(),
+        "a missing required option sends no request (the oracle exits 0 silently, R4/D34)"
+    );
+}
+
+#[test]
+fn folders_delete_404_is_the_error_envelope() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "DELETE",
+        FOLDERS_DELETE_PATH,
+        MockResponse::from_fixture("error_404").with_status(404),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "pipelines-folders",
+            "delete",
+            "Alpha",
+            "--path",
+            "MyTeam/Frontend",
+            "--json",
+        ],
+    );
+
+    assert_not_found_envelope(
+        &output,
+        "Resource not found. Check the project/repo/build ID and your permissions.",
+    );
+}
+
+/// The folderless pipeline's folder key is nil in the oracle's grouping: it sorts
+/// first (an atom before every binary) and displays as `/`.
+#[test]
+fn folders_list_groups_a_missing_folder_as_the_root() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "GET",
+        LIST_PATH,
+        MockResponse::json(200, folder_pipelines()),
+    );
+
+    let output = run(&home, &server, &["pipelines-folders", "list", "Alpha"]);
+
+    assert_success(&output);
+    let stdout = stdout_of(&output);
+    let root = stdout.find('1').expect("the root row's count");
+    let frontend = stdout
+        .find("MyTeam/Frontend")
+        .expect("the nested folder's row");
+
+    assert!(
+        root < frontend,
+        "the missing folder sorts before the named ones: {stdout}"
+    );
+}

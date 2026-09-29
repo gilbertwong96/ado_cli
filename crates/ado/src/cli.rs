@@ -1049,6 +1049,68 @@ pub fn command() -> Command {
                 )
         )
         .subcommand(
+            Command::new("pipelines-folders")
+                .about(
+                    "Manage pipeline folders. Folders organize pipelines in the web UI (like directories) and help with permissions and discoverability. They are purely organizational — they don't change pipeline behavior.",
+                )
+                .subcommand(
+                    Command::new("list")
+                        .about(
+                            "List pipeline folders in a project with the count of pipelines in each. Use --path to scope to a subtree. Output is a table (Folder, Pipelines). Pass --json for raw pipeline data.",
+                        )
+                        .arg(
+                            Arg::new("project")
+                                .value_name("PROJECT")
+                                .required(true)
+                                .help("Project name or ID"),
+                        )
+                        .arg(
+                            Arg::new("path")
+                                .long("path")
+                                .value_name("PATH")
+                                .help("Subtree to list (e.g. 'MyTeam/Frontend'). Omit to list the whole project."),
+                        ),
+                )
+                .subcommand(
+                    Command::new("create")
+                        .about(
+                            "Create a new pipeline folder. Use forward slashes for nesting (e.g. 'MyTeam/Frontend'). Parent folders are created automatically. Idempotent: returns success if the folder already exists.",
+                        )
+                        .arg(
+                            Arg::new("project")
+                                .value_name("PROJECT")
+                                .required(true)
+                                .help("Project name or ID"),
+                        )
+                        .arg(
+                            Arg::new("path")
+                                .long("path")
+                                .value_name("PATH")
+                                .required(true)
+                                .help("Folder path (forward-slash separated; nested paths are auto-created)"),
+                        ),
+                )
+                .subcommand(
+                    Command::new("delete")
+                        .about(
+                            "Delete a folder AND all pipelines within it. This is a hard delete — pipelines inside are removed (not moved to root). Refuses if the folder doesn't exist or if it contains builds/runs that the API considers blocking.",
+                        )
+                        .arg(
+                            Arg::new("project")
+                                .value_name("PROJECT")
+                                .required(true)
+                                .help("Project name or ID"),
+                        )
+                        .arg(
+                            Arg::new("path")
+                                .long("path")
+                                .value_name("PATH")
+                                .required(true)
+                                .help("Folder path to delete (must match exactly as shown by `list`)"),
+                        ),
+                ),
+        )
+        .subcommand(
             Command::new("pipelines-builds")
                 .about(
                     "Manage Azure Pipelines classic (XAML) builds. Most modern pipelines use YAML and should use the `ado pipelines` commands instead; this command group is for legacy build definitions.",
@@ -1101,6 +1163,55 @@ pub fn command() -> Command {
                         ),
                 )
                 .subcommand(
+                    Command::new("queue")
+                        .about(
+                            "Queue a new classic build. The build is added to the queue and starts as soon as an agent is available. Returns the new build ID and a link to monitor it.",
+                        )
+                        .arg(
+                            Arg::new("project")
+                                .value_name("PROJECT")
+                                .required(true)
+                                .help("Project name or ID"),
+                        )
+                        .arg(
+                            Arg::new("definition")
+                                .long("definition")
+                                .value_name("ID")
+                                .required(true)
+                                .value_parser(clap::value_parser!(i64))
+                                .help(
+                                    "Numeric ID of the classic build definition to run (use `ado pipelines-builds definitions list` to find it)",
+                                ),
+                        )
+                        .arg(
+                            Arg::new("branch")
+                                .long("branch")
+                                .value_name("BRANCH")
+                                .help(
+                                    "Source branch to build. Pass the short name (e.g. 'main'); 'refs/heads/' is added automatically. Default: main.",
+                                ),
+                        ),
+                )
+                .subcommand(
+                    Command::new("cancel")
+                        .about(
+                            "Cancel a running or queued build. Sets status to 'cancelling'; the build will stop after the current step completes.",
+                        )
+                        .arg(
+                            Arg::new("project")
+                                .value_name("PROJECT")
+                                .required(true)
+                                .help("Project name or ID"),
+                        )
+                        .arg(
+                            Arg::new("build_id")
+                                .value_name("BUILD_ID")
+                                .required(true)
+                                .value_parser(clap::value_parser!(i64))
+                                .help("Numeric build ID"),
+                        ),
+                )
+                .subcommand(
                     Command::new("tags")
                         .about(
                             "Manage tags on a build. Tags are free-form labels useful for marking release builds, hotfixes, or environment deployments.",
@@ -1122,6 +1233,32 @@ pub fn command() -> Command {
                                         .required(true)
                                         .value_parser(clap::value_parser!(i64))
                                         .help("Numeric build ID"),
+                                ),
+                        )
+                        .subcommand(
+                            Command::new("add")
+                                .about(
+                                    "Add one or more tags to a build. Comma-separated values, e.g. --tags 'release,prod,v1.2.3'. Existing tags are preserved (this is additive, not a replace).",
+                                )
+                                .arg(
+                                    Arg::new("project")
+                                        .value_name("PROJECT")
+                                        .required(true)
+                                        .help("Project name or ID"),
+                                )
+                                .arg(
+                                    Arg::new("build_id")
+                                        .value_name("BUILD_ID")
+                                        .required(true)
+                                        .value_parser(clap::value_parser!(i64))
+                                        .help("Numeric build ID"),
+                                )
+                                .arg(
+                                    Arg::new("tags")
+                                        .long("tags")
+                                        .value_name("TAGS")
+                                        .required(true)
+                                        .help("Tags to add (comma-separated)"),
                                 ),
                         ),
                 )

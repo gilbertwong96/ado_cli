@@ -105,6 +105,7 @@ fn schema_root_lists_exactly_the_shipped_subcommands() {
             "ado pipelines",
             "ado pipelines-artifacts",
             "ado pipelines-builds",
+            "ado pipelines-folders",
             "ado projects",
             "ado prs",
             "ado repos",
@@ -314,7 +315,7 @@ fn schema_pipelines_node_has_the_wave_two_subcommands() {
 /// shares — `pipelines-builds` parses as argv, where the Elixir's schema spelling
 /// (`ado pipelines builds …`) does not.
 #[test]
-fn schema_pipelines_builds_node_has_only_the_wave_one_subcommands() {
+fn schema_pipelines_builds_node_lists_every_shipped_subcommand() {
     let builds = find_node("pipelines-builds").expect("the pipelines-builds node");
 
     let names = subcommands(&builds)
@@ -327,6 +328,8 @@ fn schema_pipelines_builds_node_has_only_the_wave_one_subcommands() {
         [
             "ado pipelines-builds list",
             "ado pipelines-builds show",
+            "ado pipelines-builds queue",
+            "ado pipelines-builds cancel",
             "ado pipelines-builds tags",
             "ado pipelines-builds definitions"
         ]
@@ -342,7 +345,13 @@ fn schema_pipelines_builds_node_has_only_the_wave_one_subcommands() {
         .iter()
         .map(|sub| sub["name"].as_str().expect("a subcommand name"))
         .collect::<Vec<_>>();
-    assert_eq!(tags_names, ["ado pipelines-builds tags list"]);
+    assert_eq!(
+        tags_names,
+        [
+            "ado pipelines-builds tags list",
+            "ado pipelines-builds tags add"
+        ]
+    );
 
     let definitions = builds["subcommands"]
         .as_array()
@@ -365,6 +374,41 @@ fn schema_pipelines_builds_node_has_only_the_wave_one_subcommands() {
         assert!(
             !name.contains("pipelines builds"),
             "the Elixir's unparseable name: {name}"
+        );
+    }
+}
+
+/// The folders node is new in Wave 2 and holds exactly the oracle's three
+/// subcommands. W1-1/D18/R3: the schema spells the node `pipelines-folders`, the
+/// parseable spelling argv accepts, where the oracle's display name is
+/// `ado pipelines folders`.
+#[test]
+fn schema_pipelines_folders_node_lists_its_three_subcommands() {
+    let folders = find_node("pipelines-folders").expect("the pipelines-folders node");
+
+    let names = subcommands(&folders)
+        .iter()
+        .map(|sub| sub["name"].as_str().expect("a subcommand name"))
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        names,
+        [
+            "ado pipelines-folders list",
+            "ado pipelines-folders create",
+            "ado pipelines-folders delete"
+        ]
+    );
+
+    for node in nodes(&folders) {
+        let name = node["name"].as_str().expect("a node name");
+        assert!(
+            name.starts_with("ado pipelines-folders"),
+            "the schema reports the parseable hyphenated spelling, not the Elixir's space-separated display name (D18/R3): {name}"
+        );
+        assert!(
+            !name.contains("pipelines folders"),
+            "the Elixir's unparseable display name: {name}"
         );
     }
 }

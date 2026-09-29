@@ -1,17 +1,115 @@
-//! `ado pipelines-builds list|show|tags list|definitions list` — the read paths of
-//! `lib/ado_cli/cli/builds.ex`: the same REST surface, the same params, and the
-//! same human layouts.
+//! `ado pipelines-builds list|show|queue|cancel|tags list|tags add|definitions
+//! list` — the read and write paths of `lib/ado_cli/cli/builds.ex`: the same REST
+//! surface, the same params and bodies, and the same human layouts.
 //!
-//! `queue`, `cancel` and `tags add` are Wave 2 and deliberately absent.
+//! `queue`, `cancel` and `tags add` have no question and no `--force` (captured);
+//! `queue` without `--definition` and `tags add` without `--tags` are silent exit
+//! 0 in the oracle (R4/D34) and usage errors here.
 
 use ado_core::client::encode_path_segment;
 use ado_core::envelope::ok_value;
 use ado_core::error::{AdoError, ErrorCode};
-use serde_json::Value;
+use serde_json::{Value, json};
 
 use crate::commands::items::items;
 use crate::context::Context;
 use crate::output::Report;
+
+/// `queue_build/1`: `POST /{project}/_apis/build/builds` with the definition id
+/// and the branch as a fully-qualified ref (`refs/heads/` added to the short name,
+/// `main` when absent). The queued build is the value envelope under `--json`
+/// (D33); the human path is the module's three lines, whose URL line reads a
+/// missing `_links` as empty (captured).
+pub fn queue(
+    context: &mut Context,
+    project: &str,
+    definition: i64,
+    branch: Option<String>,
+) -> Result<Report, AdoError> {
+    let body = queue_body(definition, branch.as_deref());
+    let path = builds_collection_path(project);
+    let build = context.client()?.post(&path, &body, &[])?;
+
+    Ok(context.json_or_report(ok_value(build.clone()), || queue_lines(&build)))
+}
+
+/// `cancel_build/1`: `PATCH /{project}/_apis/build/builds/{build_id}` with
+/// `{"status": "cancelling"}`. The build the API answers is the value envelope
+/// under `--json` (D33).
+pub fn cancel(context: &mut Context, project: &str, build_id: i64) -> Result<Report, AdoError> {
+    let path = build_path(project, build_id);
+    let build = context
+        .client()?
+        .patch(&path, &json!({"status": "cancelling"}), &[])?;
+
+    Ok(context.json_or_report(ok_value(build.clone()), || {
+        Report::Text(format!("Build #{} cancelled.", id_cell(&build, "id")))
+    }))
+}
+
+/// `add_tags/1`: `PUT /{project}/_apis/build/builds/{build_id}/tags` with the tags
+/// split on commas and each trimmed, as a bare JSON array (captured, including
+/// the trim of `'trimmed, spaced '`). The tag-list answer is the value envelope
+/// under `--json` (D33); the module's success line names the build id from argv.
+pub fn tags_add(
+    context: &mut Context,
+    project: &str,
+    build_id: i64,
+    tags: &str,
+) -> Result<Report, AdoError> {
+    let body = tags_body(tags);
+    let path = format!("{}/tags", build_path(project, build_id));
+    let response = context.client()?.put(&path, &body, &[])?;
+    let message = format!("Tags added to build #{build_id}.");
+
+    Ok(context.json_or_report(ok_value(response.clone()), || Report::Text(message)))
+}
+
+/// The module's `queue_build/1` body: the definition by id and the branch with
+/// its `refs/heads/` prefix, `main` when `--branch` is absent. An empty branch is
+/// present and becomes `refs/heads/` (Elixir's `Map.get` default only applies to
+/// an absent option).
+fn queue_body(definition: i64, branch: Option<&str>) -> Value {
+    json!({
+        "definition": {"id": definition},
+        "sourceBranch": format!("refs/heads/{}", branch.unwrap_or("main")),
+    })
+}
+
+/// The module's `add_tags/1` body: `String.split(tags, ",")` then `String.trim/1`
+/// on each, so an empty segment between two commas stays an empty tag.
+fn tags_body(tags: &str) -> Value {
+    Value::Array(
+        tags.split(',')
+            .map(|tag| Value::String(tag.trim().to_owned()))
+            .collect(),
+    )
+}
+
+/// The module's `queue_build/1` success lines: the queued build's id, status and
+/// `_links.web.href`, the last empty when the answer carries neither.
+fn queue_lines(build: &Value) -> Report {
+    let url = build
+        .get("_links")
+        .and_then(|links| links.get("web"))
+        .and_then(|web| web.get("href"))
+        .map(text)
+        .unwrap_or_default();
+
+    Report::Text(format!(
+        "Build #{} queued.\n  Status: {}\n  URL:    {url}",
+        id_cell(build, "id"),
+        or_empty(build, "status"),
+    ))
+}
+
+fn builds_collection_path(project: &str) -> String {
+    format!("/{}/_apis/build/builds", encode_path_segment(project))
+}
+
+fn build_path(project: &str, build_id: i64) -> String {
+    format!("{}/{build_id}", builds_collection_path(project))
+}
 
 /// `list_builds/1`: `GET /{project}/_apis/build/builds` with the module's `$top`
 /// and `definitions` filters. Under `--json` the body is the value envelope — a
@@ -278,6 +376,71 @@ fn text(value: &Value) -> String {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn queue_body_defaults_the_branch_and_prefixes_the_short_name() {
+        assert_eq!(
+            queue_body(5, None),
+            json!({"definition": {"id": 5}, "sourceBranch": "refs/heads/main"}),
+            "an absent branch is main, fully qualified"
+        );
+        assert_eq!(
+            queue_body(7, Some("feature/foo")),
+            json!({"definition": {"id": 7}, "sourceBranch": "refs/heads/feature/foo"}),
+            "the short name is prefixed, never replaced"
+        );
+        assert_eq!(
+            queue_body(5, Some("")),
+            json!({"definition": {"id": 5}, "sourceBranch": "refs/heads/"}),
+            "an explicit empty branch is present and becomes the bare prefix (Map.get's default applies only to an absent option)"
+        );
+    }
+
+    #[test]
+    fn tags_body_splits_on_commas_and_trims_each_tag() {
+        assert_eq!(
+            tags_body("release,prod,v1.2.3"),
+            json!(["release", "prod", "v1.2.3"])
+        );
+        assert_eq!(
+            tags_body("trimmed, spaced "),
+            json!(["trimmed", "spaced"]),
+            "the capture's own pair"
+        );
+        assert_eq!(
+            tags_body("a,,b"),
+            json!(["a", "", "b"]),
+            "String.split keeps the empty segment; the oracle sends it (captured)"
+        );
+    }
+
+    #[test]
+    fn queue_lines_read_a_missing_links_chain_as_empty() {
+        let build = json!({
+            "id": 200,
+            "status": "notStarted",
+            "_links": {"web": {"href": "https://example.test/200"}},
+        });
+
+        assert_eq!(
+            queue_lines(&build),
+            Report::Text(
+                "Build #200 queued.\n  Status: notStarted\n  URL:    https://example.test/200"
+                    .to_owned()
+            )
+        );
+
+        assert_eq!(
+            queue_lines(&json!({"id": 202, "status": "notStarted"})),
+            Report::Text("Build #202 queued.\n  Status: notStarted\n  URL:    ".to_owned()),
+            "the oracle's Access chain reads nil as empty rather than raising (captured)"
+        );
+        assert_eq!(
+            queue_lines(&json!({"id": null, "_links": {"web": {}}})),
+            Report::Text("Build # queued.\n  Status: \n  URL:    ".to_owned()),
+            "to_string(nil) is empty and a missing status reads empty"
+        );
+    }
 
     #[test]
     fn list_params_keeps_present_values_in_the_modules_order() {
