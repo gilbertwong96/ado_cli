@@ -112,6 +112,8 @@ fn schema_root_lists_exactly_the_shipped_subcommands() {
             "ado prs",
             "ado repos",
             "ado schema",
+            "ado teams",
+            "ado users",
             "ado version",
             "ado whoami",
             "ado workitems"
@@ -273,6 +275,100 @@ fn schema_areas_and_iterations_nodes_list_every_shipped_subcommand() {
         option_names(&list).contains(&"current"),
         "--current is a real flag: {:?}",
         option_names(&list)
+    );
+}
+
+/// The two Task 13 trees: `teams` nests `members` one level deeper, its
+/// `create`/`update` mark `--name` where the oracle's `Map.fetch!` makes a
+/// missing one a silent exit 0 (D34's loud half), and `users` is the
+/// organization-scoped area — no leaf takes a project positional, and `remove`
+/// carries no `--force` (the captured parser rejects it; the module's doc
+/// sentence promising confirmation is prose, not an invocation).
+#[test]
+fn schema_teams_and_users_nodes_list_every_shipped_subcommand() {
+    let teams = find_node("teams").expect("the teams node");
+
+    assert_eq!(
+        subcommands(&teams)
+            .iter()
+            .map(|sub| sub["name"].as_str().expect("a subcommand name"))
+            .collect::<Vec<_>>(),
+        [
+            "ado teams list",
+            "ado teams show",
+            "ado teams create",
+            "ado teams update",
+            "ado teams delete",
+            "ado teams members"
+        ]
+    );
+
+    let members = find_node("teams members").expect("the members node");
+    assert_eq!(
+        subcommands(&members)
+            .iter()
+            .map(|sub| sub["name"].as_str().expect("a subcommand name"))
+            .collect::<Vec<_>>(),
+        ["ado teams members list"]
+    );
+
+    assert_eq!(
+        option(&find_node("teams list").expect("the list node"), "top")["type"],
+        json!("string"),
+        "this build's schema reports every value-taking option as a string (D23)"
+    );
+
+    for leaf in ["teams create", "users add"] {
+        let node = find_node(leaf).expect("the leaf node");
+        let option_name = if leaf == "users add" { "email" } else { "name" };
+
+        assert_eq!(
+            option(&node, option_name)["required"],
+            json!(true),
+            "{leaf} marks --{option_name} required (the oracle's own schema does; it never enforces it, D34)"
+        );
+    }
+
+    let teams_update = find_node("teams update").expect("the update node");
+    for name in ["name", "description"] {
+        assert_eq!(
+            option(&teams_update, name)["required"],
+            json!(false),
+            "teams update requires no option; the module's guard is D4 ({name})"
+        );
+    }
+
+    let users = find_node("users").expect("the users node");
+
+    assert_eq!(
+        subcommands(&users)
+            .iter()
+            .map(|sub| sub["name"].as_str().expect("a subcommand name"))
+            .collect::<Vec<_>>(),
+        [
+            "ado users list",
+            "ado users show",
+            "ado users add",
+            "ado users remove"
+        ]
+    );
+
+    for node in nodes(&users) {
+        assert!(
+            node["arguments"]
+                .as_array()
+                .expect("an argument array")
+                .iter()
+                .all(|argument| argument["name"] != json!("project")),
+            "no users node takes a project positional: it is organization-scoped ({})",
+            node["name"]
+        );
+    }
+
+    assert_eq!(
+        option_names(&find_node("users remove").expect("the remove node")),
+        GLOBALS,
+        "users remove has no --force: the captured parser rejects it (R5)"
     );
 }
 
