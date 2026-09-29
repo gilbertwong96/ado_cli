@@ -943,6 +943,121 @@ pub fn command() -> Command {
                                         ),
                                 ),
                         ),
+                )
+                .subcommand(
+                    Command::new("reviewers")
+                        .about(
+                            "Manage pull request reviewers. Reviewers receive notifications, can vote (approve/reject/wait), and count toward branch policies that require N approvals.",
+                        )
+                        .subcommand(
+                            Command::new("list")
+                                .about(
+                                    "List reviewers on a pull request. Output is a table (Display Name, Email, Vote, Status). Vote values: 10 (approved), 5 (approved w/ suggestions), -5 (waiting), -10 (rejected), 0 (no vote, or reset). Use --search for fuzzy filtering by name or email (client-side, since the API returns all reviewers).",
+                                )
+                                .arg(
+                                    Arg::new("project")
+                                        .value_name("PROJECT")
+                                        .required(true)
+                                        .help("Project name or ID"),
+                                )
+                                .arg(
+                                    Arg::new("repo_id")
+                                        .value_name("REPO_ID")
+                                        .required(true)
+                                        .help("Repository name or ID"),
+                                )
+                                .arg(
+                                    Arg::new("pr_id")
+                                        .value_name("PR_ID")
+                                        .required(true)
+                                        .value_parser(clap::value_parser!(i64))
+                                        .help("Numeric PR ID"),
+                                )
+                                .arg(
+                                    Arg::new("search")
+                                        .long("search")
+                                        .value_name("QUERY")
+                                        .help(
+                                            "Fuzzy-filter reviewers by display name or email. Supports substring and subsequence (fzf-style) matching. Case-insensitive.",
+                                        ),
+                                ),
+                        )
+                        .subcommand(
+                            Command::new("add")
+                                .about(
+                                    "Add a reviewer to a pull request. The reviewer receives a notification email and shows up in the PR's reviewer list. The --reviewer value can be either a user GUID (most reliable) or an email address (resolved to a GUID by the API).",
+                                )
+                                .arg(
+                                    Arg::new("project")
+                                        .value_name("PROJECT")
+                                        .required(true)
+                                        .help("Project name or ID"),
+                                )
+                                .arg(
+                                    Arg::new("repo_id")
+                                        .value_name("REPO_ID")
+                                        .required(true)
+                                        .help("Repository name or ID"),
+                                )
+                                .arg(
+                                    Arg::new("pr_id")
+                                        .value_name("PR_ID")
+                                        .required(true)
+                                        .value_parser(clap::value_parser!(i64))
+                                        .help("Numeric PR ID"),
+                                )
+                                .arg(
+                                    Arg::new("reviewer")
+                                        .long("reviewer")
+                                        .value_name("USER")
+                                        .required(true)
+                                        .help(
+                                            "Reviewer identifier. Accepts a user GUID (preferred — e.g. from `ado users show alice@example.com`) or an email address. GUIDs are case-insensitive.",
+                                        ),
+                                )
+                                .arg(
+                                    Arg::new("required")
+                                        .long("required")
+                                        .action(ArgAction::SetTrue)
+                                        .help(
+                                            "Mark as a required reviewer (default: optional). The PR cannot be completed until all required reviewers have voted (vote != 0).",
+                                        ),
+                                ),
+                        )
+                        .subcommand(
+                            Command::new("remove")
+                                .about(
+                                    "Remove a reviewer from a pull request. The user's vote is discarded. Does NOT notify the user (unlike adding).",
+                                )
+                                .arg(
+                                    Arg::new("project")
+                                        .value_name("PROJECT")
+                                        .required(true)
+                                        .help("Project name or ID"),
+                                )
+                                .arg(
+                                    Arg::new("repo_id")
+                                        .value_name("REPO_ID")
+                                        .required(true)
+                                        .help("Repository name or ID"),
+                                )
+                                .arg(
+                                    Arg::new("pr_id")
+                                        .value_name("PR_ID")
+                                        .required(true)
+                                        .value_parser(clap::value_parser!(i64))
+                                        .help("Numeric PR ID"),
+                                )
+                                .arg(
+                                    Arg::new("reviewer")
+                                        .long("reviewer")
+                                        .value_name("USER")
+                                        .required(true)
+                                        .help(
+                                            "Reviewer identifier (GUID or email — see `add`). Use a GUID for unambiguous removal.",
+                                        ),
+                                ),
+                        ),
                 ),
         )
         .subcommand(

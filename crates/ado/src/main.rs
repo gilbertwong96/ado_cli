@@ -414,6 +414,57 @@ fn main() -> ExitCode {
                     ),
                     _ => Err(AdoError::validation(MISSING_SUBCOMMAND)),
                 },
+                Some(("reviewers", reviewers)) => match reviewers.subcommand() {
+                    Some(("list", list)) => commands::pull_requests::reviewers_list(
+                        &mut context,
+                        list.get_one::<String>("project")
+                            .expect("the positional is required")
+                            .as_str(),
+                        list.get_one::<String>("repo_id")
+                            .expect("the positional is required")
+                            .as_str(),
+                        list.get_one::<i64>("pr_id")
+                            .copied()
+                            .expect("the positional is required"),
+                        list.get_one::<String>("search").map(String::as_str),
+                    ),
+                    Some(("add", add)) => commands::pull_requests::reviewers_add(
+                        &mut context,
+                        add.get_one::<String>("project")
+                            .expect("the positional is required")
+                            .as_str(),
+                        add.get_one::<String>("repo_id")
+                            .expect("the positional is required")
+                            .as_str(),
+                        add.get_one::<i64>("pr_id")
+                            .copied()
+                            .expect("the positional is required"),
+                        add.get_one::<String>("reviewer")
+                            .expect("the option is required")
+                            .as_str(),
+                        add.get_flag("required"),
+                    ),
+                    Some(("remove", remove)) => commands::pull_requests::reviewers_remove(
+                        &mut context,
+                        remove
+                            .get_one::<String>("project")
+                            .expect("the positional is required")
+                            .as_str(),
+                        remove
+                            .get_one::<String>("repo_id")
+                            .expect("the positional is required")
+                            .as_str(),
+                        remove
+                            .get_one::<i64>("pr_id")
+                            .copied()
+                            .expect("the positional is required"),
+                        remove
+                            .get_one::<String>("reviewer")
+                            .expect("the option is required")
+                            .as_str(),
+                    ),
+                    _ => Err(AdoError::validation(MISSING_SUBCOMMAND)),
+                },
                 _ => Err(AdoError::validation(MISSING_SUBCOMMAND)),
             }
         }

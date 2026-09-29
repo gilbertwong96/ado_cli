@@ -33,12 +33,13 @@
 //! contract.
 
 use ado_core::client::{RawBody, encode_path_segment};
-use ado_core::envelope::ok_value;
+use ado_core::envelope::{ok_list, ok_message, ok_value};
 use ado_core::error::{AdoError, ErrorCode};
 use serde_json::{Value, json};
 
 use crate::commands::items::items;
 use crate::context::Context;
+use crate::fuzzy;
 use crate::output::Report;
 
 /// `list_prs/1`: `GET /{project}/_apis/git/repositories/{repo_id}/pullrequests`
@@ -1028,6 +1029,175 @@ fn text_of(value: &Value) -> String {
         Value::Bool(flag) => flag.to_string(),
         _ => String::new(),
     }
+}
+
+// ── `prs reviewers` (Task 11b) ───────────────────────────────────────────────
+//
+// Captured against the standalone mock (`captures/task11b/`). All three leaves
+// spell `pullrequests` (lower case, like `vote`); `--reviewer` is both the
+// path's last segment and the body's `id`, and `--required` adds
+// `isRequired: true` — the frozen body omits the key entirely when it is not
+// given. `--search` is the module's client-side fuzzy filter over `displayName`
+// and `uniqueName` (substring or subsequence, case-insensitive; an absent or
+// empty query is no filter). `list` is the first consumer of `ok_list` (C4): the
+// frozen `list_reviewers/1` reaches `json_or_format_list/3`, whose captured
+// document is `{"ok":true,"count":N,"items":[…]}`. The two writes' `--json`
+// documents are this build's (D33) — the oracle prints its human success line in
+// both modes — and a missing `--reviewer` is D34's silent exit 0 in the oracle
+// (`Map.fetch!` inside `AdoCli.CLI.run/1`'s swallowed rescue) where this build's
+// clap is loud.
+
+/// `list_reviewers/1`: `GET …/pullrequests/{pr_id}/reviewers`, the client-side
+/// `--search` filter, and the list envelope. The frozen command reads the raw
+/// `value` array itself (`Client.get/2`), so a body without that key dies inside
+/// the swallowed rescue; this build's shared `Client::list`/`items` path wraps
+/// it instead (a carry, not a row).
+pub fn reviewers_list(
+    context: &mut Context,
+    project: &str,
+    repo_id: &str,
+    pr_id: i64,
+    search: Option<&str>,
+) -> Result<Report, AdoError> {
+    let path = reviewers_list_path(project, repo_id, pr_id);
+    let reviewers = items(context.client()?.list(&path, &[])?);
+    let reviewers = fuzzy::match_fields(&reviewers, search, &["displayName", "uniqueName"]);
+
+    Ok(context.json_or_report(ok_list(reviewers.clone()), || reviewers_table(&reviewers)))
+}
+
+/// `add_reviewer/1`: `PUT …/reviewers/{reviewer}` with the id body and
+/// `isRequired: true` under `--required`. The frozen 404 branch has its own
+/// wording; every other failure is the shared `Helpers.bail/2` envelope.
+pub fn reviewers_add(
+    context: &mut Context,
+    project: &str,
+    repo_id: &str,
+    pr_id: i64,
+    reviewer: &str,
+    required: bool,
+) -> Result<Report, AdoError> {
+    let path = reviewer_item_path(project, repo_id, pr_id, reviewer);
+    let body = if required {
+        json!({"id": reviewer, "isRequired": true})
+    } else {
+        json!({"id": reviewer})
+    };
+
+    match context.client()?.put(&path, &body, &[]) {
+        Ok(answer) => Ok(context.json_or_report(ok_value(answer), || {
+            Report::Text(reviewer_added_line(reviewer, required))
+        })),
+        Err(error) if error.code == ErrorCode::NotFound => Err(AdoError {
+            message: format!(
+                "Reviewer not found: {reviewer}. Use the user's GUID from Azure DevOps."
+            ),
+            ..error
+        }),
+        Err(error) => Err(error),
+    }
+}
+
+/// `remove_reviewer/1`: `DELETE …/reviewers/{reviewer}`. The oracle's non-404
+/// fallback prints `xx  Remove failed: …` prose on stdout and no envelope; this
+/// build returns the client's error, so `--json` stays a document and the human
+/// mode keeps the labelled line on stderr (D4).
+pub fn reviewers_remove(
+    context: &mut Context,
+    project: &str,
+    repo_id: &str,
+    pr_id: i64,
+    reviewer: &str,
+) -> Result<Report, AdoError> {
+    let path = reviewer_item_path(project, repo_id, pr_id, reviewer);
+
+    match context.client()?.delete(&path, &[]) {
+        Ok(()) => {
+            let message = format!("Reviewer {reviewer} removed.");
+
+            Ok(context.json_or_report(ok_message(&message), || Report::Text(message)))
+        }
+        Err(error) if error.code == ErrorCode::NotFound => Err(AdoError {
+            message: format!("Reviewer not found: {reviewer}"),
+            ..error
+        }),
+        Err(error) => Err(error),
+    }
+}
+
+/// `/…/pullrequests/{pr_id}/reviewers` — the list path, lower case like `vote`.
+fn reviewers_list_path(project: &str, repo_id: &str, pr_id: i64) -> String {
+    format!("{}/reviewers", pull_request_path(project, repo_id, pr_id))
+}
+
+/// The item route both writes address; the reviewer segment is percent-encoded
+/// (D22), unlike the frozen `URI.encode/1` which left an email's `@` alone.
+fn reviewer_item_path(project: &str, repo_id: &str, pr_id: i64, reviewer: &str) -> String {
+    format!(
+        "{}/{}",
+        reviewers_list_path(project, repo_id, pr_id),
+        encode_path_segment(reviewer)
+    )
+}
+
+/// `success("Reviewer #{reviewer} added #{label}.\n")` — the module's wording
+/// (§8) with its `(optional)`/`(required)` label.
+fn reviewer_added_line(reviewer: &str, required: bool) -> String {
+    let label = if required { "required" } else { "optional" };
+
+    format!("Reviewer {reviewer} added ({label}).")
+}
+
+/// The frozen `print_reviewer_row/1`'s columns and fallbacks, in this build's
+/// table style (§8): `?` for an absent name, `0` for an absent vote, and `no`
+/// for an absent or false `isRequired`. An empty list keeps the module's own
+/// sentence rather than a header with no rows.
+fn reviewers_table(reviewers: &[Value]) -> Report {
+    if reviewers.is_empty() {
+        return Report::Text("No reviewers.".to_owned());
+    }
+
+    Report::Table {
+        headers: ["Display Name", "Email", "Vote", "Required"]
+            .map(str::to_owned)
+            .to_vec(),
+        rows: reviewers
+            .iter()
+            .map(|reviewer| {
+                vec![
+                    reviewer_cell(reviewer.get("displayName")),
+                    reviewer_cell(reviewer.get("uniqueName")),
+                    reviewer_vote(reviewer.get("vote")),
+                    reviewer_required(reviewer.get("isRequired")),
+                ]
+            })
+            .collect(),
+    }
+}
+
+/// `r["displayName"] || "?"` — an absent or null value is the module's `?`.
+fn reviewer_cell(value: Option<&Value>) -> String {
+    match value {
+        None | Some(Value::Null) => "?".to_owned(),
+        Some(value) => text_of(value),
+    }
+}
+
+/// `to_string(r["vote"] || 0)` — a false, null or absent vote reads `0`; every
+/// other value stringifies the way the frozen `to_string/1` does.
+fn reviewer_vote(value: Option<&Value>) -> String {
+    match value {
+        None | Some(Value::Null) | Some(Value::Bool(false)) => "0".to_owned(),
+        Some(value) => text_of(value),
+    }
+}
+
+/// `if r["isRequired"], do: "yes", else: "no"` — Elixir's truthiness, so only
+/// `false` and `nil` (and an absent key) are `no`.
+fn reviewer_required(value: Option<&Value>) -> String {
+    let required = !matches!(value, None | Some(Value::Null) | Some(Value::Bool(false)));
+
+    if required { "yes" } else { "no" }.to_owned()
 }
 
 /// `diff`'s options, grouped for the same reason as [`CreateOptions`].

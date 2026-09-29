@@ -3,6 +3,7 @@ pub mod argv;
 pub mod cli;
 pub mod commands;
 pub mod context;
+pub mod fuzzy;
 pub mod output;
 pub mod prompt;
 
