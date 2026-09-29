@@ -4048,3 +4048,870 @@ fn comments_resolve_without_a_thread_id_is_a_usage_error() {
     );
     assert!(server.received().is_empty());
 }
+
+// ── Wave 2: the `prs reviewers` commands (Task 11b) ─────────────────────────
+//
+// Captured against the standalone mock before porting (`captures/task11b/`).
+// All three leaves spell the path `pullrequests` (lower case, like `vote`), the
+// `--reviewer` value is interpolated into the path *and* sent as the body's
+// `id` (`{"id": X}` optional, `{"id": X, "isRequired": true}` required), and
+// `--search` is the module's client-side fuzzy filter over `displayName` and
+// `uniqueName` (substring or subsequence, case-insensitive; an absent or empty
+// query is no filter at all). Under `--json` the frozen CLI prints its human
+// success prose on the write paths (D33) and a `{"ok":true,"count":N,"items":…}`
+// document on `list`, which this build mirrors. Without `--reviewer` the frozen
+// `Map.fetch!(parsed.options, :reviewer)` raises inside `AdoCli.CLI.run/1`'s
+// swallowed rescue, so both writes exit 0 with both streams empty — D34's class,
+// loud here. No underscore spelling is rejected by the frozen parser this time
+// (`--reviewer`, `--required` and `--search` are the schema's own names).
+
+/// The captured `GET …/reviewers` answer: a required voter, an optional voter
+/// with a negative vote, and a reviewer with neither `vote` nor `isRequired`.
+fn pr_reviewers() -> Value {
+    json!([
+        {
+            "id": "aaaaaaaa-0001-0001-0001-000000000001",
+            "displayName": "Ada Example",
+            "uniqueName": "ada@example.com",
+            "vote": 10,
+            "isRequired": true,
+        },
+        {
+            "id": "bbbbbbbb-0002-0002-0002-000000000002",
+            "displayName": "Bob Jones",
+            "uniqueName": "bob@example.com",
+            "vote": -5,
+            "isRequired": false,
+        },
+        {
+            "id": "cccccccc-0003-0003-0003-000000000003",
+            "displayName": "Carol Ng",
+            "uniqueName": "carol@example.com",
+        }
+    ])
+}
+
+const ADA: &str = "aaaaaaaa-0001-0001-0001-000000000001";
+const BOB: &str = "bbbbbbbb-0002-0002-0002-000000000002";
+
+fn reviewers_route(pr_id: i64) -> String {
+    format!("{}/reviewers", pr_path(pr_id))
+}
+
+fn expect_reviewers(server: &MockServer, pr_id: i64, value: Value) {
+    let count = value.as_array().map_or(0, Vec::len);
+
+    server.expect(
+        "GET",
+        &reviewers_route(pr_id),
+        MockResponse::json(200, json!({"count": count, "value": value})),
+    );
+}
+
+fn expect_reviewer_item(server: &MockServer, pr_id: i64, reviewer: &str, body: Value) {
+    server.expect(
+        "PUT",
+        &reviewer_path(pr_id, reviewer),
+        MockResponse::json(200, body),
+    );
+}
+
+#[test]
+fn reviewers_list_emits_the_oracle_list_envelope() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    expect_reviewers(&server, 137, pr_reviewers());
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "prs",
+            "reviewers",
+            "list",
+            "Alpha",
+            "Alpha.Core",
+            "137",
+            "--json",
+        ],
+    );
+
+    assert_success(&output);
+    assert_eq!(
+        stdout_of(&output),
+        format!(
+            "{}\n",
+            json!({"ok": true, "count": 3, "items": pr_reviewers()})
+        ),
+        "the list envelope, the oracle's captured document"
+    );
+
+    let received = server.received();
+    assert_eq!(received.len(), 1);
+    assert_eq!(received[0].method, "GET");
+    assert_eq!(received[0].path, reviewers_route(137));
+    assert_eq!(received[0].query_pairs(), vec![api_version()]);
+}
+
+#[test]
+fn reviewers_list_human_is_the_builds_table() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    expect_reviewers(&server, 137, pr_reviewers());
+
+    let output = run(
+        &home,
+        &server,
+        &["prs", "reviewers", "list", "Alpha", "Alpha.Core", "137"],
+    );
+
+    assert_success(&output);
+    let stdout = stdout_of(&output);
+    let lines = stdout.lines().collect::<Vec<_>>();
+
+    assert_eq!(
+        lines.len(),
+        5,
+        "a header row, a rule row and one row per reviewer: {stdout}"
+    );
+    assert!(
+        lines[0].contains("Display Name")
+            && lines[0].contains("Email")
+            && lines[0].contains("Vote")
+            && lines[0].contains("Required"),
+        "the module's four columns: {stdout}"
+    );
+    assert!(
+        lines[1].chars().all(|c| c == '-' || c == ' '),
+        "the rule row is plain ASCII: {stdout}"
+    );
+    assert!(
+        lines[2].starts_with("Ada Example")
+            && lines[2].contains("ada@example.com")
+            && lines[2].contains("10")
+            && lines[2].ends_with("yes"),
+        "the required voter's row: {stdout}"
+    );
+    assert!(
+        lines[3].starts_with("Bob Jones")
+            && lines[3].contains("bob@example.com")
+            && lines[3].contains("-5")
+            && lines[3].ends_with("no"),
+        "the optional voter's row: {stdout}"
+    );
+    assert!(
+        lines[4].starts_with("Carol Ng") && lines[4].ends_with("no"),
+        "a reviewer without isRequired is not required: {stdout}"
+    );
+    assert_no_table_bytes(&stdout);
+}
+
+#[test]
+fn reviewers_list_with_no_reviewers_says_so() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    expect_reviewers(&server, 8, json!([]));
+
+    let output = run(
+        &home,
+        &server,
+        &["prs", "reviewers", "list", "Alpha", "Alpha.Core", "8"],
+    );
+
+    assert_success(&output);
+    assert_eq!(stdout_of(&output), "No reviewers.\n");
+}
+
+#[test]
+fn reviewers_list_search_filters_by_substring_case_insensitively() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    expect_reviewers(&server, 137, pr_reviewers());
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "prs",
+            "reviewers",
+            "list",
+            "Alpha",
+            "Alpha.Core",
+            "137",
+            "--search",
+            "ADA",
+            "--json",
+        ],
+    );
+
+    assert_success(&output);
+    assert_eq!(
+        stdout_of(&output),
+        format!(
+            "{}\n",
+            json!({"ok": true, "count": 1, "items": [pr_reviewers()[0].clone()]})
+        ),
+        "the query is matched case-insensitively against displayName and uniqueName"
+    );
+}
+
+#[test]
+fn reviewers_list_search_matches_a_subsequence_over_both_fields() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    expect_reviewers(&server, 137, pr_reviewers());
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "prs",
+            "reviewers",
+            "list",
+            "Alpha",
+            "Alpha.Core",
+            "137",
+            "--search",
+            "aae",
+            "--json",
+        ],
+    );
+
+    assert_success(&output);
+    assert_eq!(
+        stdout_of(&output),
+        format!(
+            "{}\n",
+            json!({
+                "ok": true,
+                "count": 2,
+                "items": [pr_reviewers()[0].clone(), pr_reviewers()[2].clone()],
+            })
+        ),
+        "captured: aae is a subsequence of Ada Example, and of carol@example.com (whose \
+         uniqueName carries the second a) — the fuzzy filter reads uniqueName too"
+    );
+}
+
+#[test]
+fn reviewers_list_search_with_an_empty_query_is_no_filter() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    expect_reviewers(&server, 137, pr_reviewers());
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "prs",
+            "reviewers",
+            "list",
+            "Alpha",
+            "Alpha.Core",
+            "137",
+            "--search",
+            "",
+            "--json",
+        ],
+    );
+
+    assert_success(&output);
+    assert_eq!(
+        stdout_of(&output),
+        format!(
+            "{}\n",
+            json!({"ok": true, "count": 3, "items": pr_reviewers()})
+        ),
+        "captured: an empty query returns every reviewer"
+    );
+}
+
+#[test]
+fn reviewers_list_search_with_no_match_is_an_empty_list() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    expect_reviewers(&server, 137, pr_reviewers());
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "prs",
+            "reviewers",
+            "list",
+            "Alpha",
+            "Alpha.Core",
+            "137",
+            "--search",
+            "zzz",
+            "--json",
+        ],
+    );
+
+    assert_success(&output);
+    assert_eq!(
+        stdout_of(&output),
+        format!("{}\n", json!({"ok": true, "count": 0, "items": []}))
+    );
+}
+
+#[test]
+fn reviewers_list_404_is_the_not_found_envelope_with_the_upstream_body() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "GET",
+        &reviewers_route(999),
+        MockResponse::json(
+            404,
+            json!({"message": "The pull request 999 does not exist."}),
+        ),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "prs",
+            "reviewers",
+            "list",
+            "Alpha",
+            "Alpha.Core",
+            "999",
+            "--json",
+        ],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    let envelope: Value = serde_json::from_str(&stdout_of(&output)).expect("the error envelope");
+    assert_eq!(envelope["ok"], json!(false));
+    assert_eq!(envelope["error"]["code"], json!("not_found"));
+    assert_eq!(envelope["error"]["status"], json!(404));
+    assert_eq!(
+        envelope["error"]["details"]["body"],
+        json!(r#"{"message":"The pull request 999 does not exist."}"#),
+        "the body stays the upstream bytes (D24)"
+    );
+}
+
+#[test]
+fn reviewers_list_500_is_an_api_error_envelope() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "GET",
+        &reviewers_route(500),
+        MockResponse::json(
+            500,
+            json!({"message": "TF400813: The user is not authorized to access this resource."}),
+        ),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "prs",
+            "reviewers",
+            "list",
+            "Alpha",
+            "Alpha.Core",
+            "500",
+            "--json",
+        ],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    let envelope: Value = serde_json::from_str(&stdout_of(&output)).expect("the error envelope");
+    assert_eq!(envelope["error"]["code"], json!("api_error"));
+    assert_eq!(envelope["error"]["status"], json!(500));
+}
+
+#[test]
+fn reviewers_list_without_a_pr_id_is_a_usage_error() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+
+    let output = run(
+        &home,
+        &server,
+        &["prs", "reviewers", "list", "Alpha", "Alpha.Core", "--json"],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        stderr_of(&output).contains("PR_ID"),
+        "stderr names the missing positional: {}",
+        stderr_of(&output)
+    );
+    assert!(server.received().is_empty());
+}
+
+#[test]
+fn reviewers_add_puts_the_reviewer_id() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    expect_reviewer_item(
+        &server,
+        137,
+        ADA,
+        json!({"id": ADA, "displayName": "Ada Example", "vote": 0, "isRequired": true}),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "prs",
+            "reviewers",
+            "add",
+            "Alpha",
+            "Alpha.Core",
+            "137",
+            "--reviewer",
+            ADA,
+            "--json",
+        ],
+    );
+
+    assert_success(&output);
+    assert_eq!(
+        stdout_of(&output),
+        format!(
+            "{}\n",
+            json!({"ok": true, "result": {"id": ADA, "displayName": "Ada Example", "vote": 0, "isRequired": true}})
+        ),
+        "the answered reviewer is the value envelope (D33)"
+    );
+
+    let received = server.received();
+    assert_eq!(received.len(), 1);
+    assert_eq!(received[0].method, "PUT");
+    assert_eq!(received[0].path, reviewer_path(137, ADA));
+    assert_eq!(received[0].query_pairs(), vec![api_version()]);
+    assert_eq!(sent_body(&received[0]), json!({"id": ADA}));
+}
+
+#[test]
+fn reviewers_add_required_sends_is_required_true() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    expect_reviewer_item(
+        &server,
+        139,
+        BOB,
+        json!({"id": BOB, "displayName": "Bob Jones", "isRequired": true}),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "prs",
+            "reviewers",
+            "add",
+            "Alpha",
+            "Alpha.Core",
+            "139",
+            "--reviewer",
+            BOB,
+            "--required",
+            "--json",
+        ],
+    );
+
+    assert_success(&output);
+    assert_eq!(
+        sent_body(&server.received()[0]),
+        json!({"id": BOB, "isRequired": true})
+    );
+    assert_eq!(
+        server.received()[0].path,
+        reviewer_path(139, BOB),
+        "the reviewer id addresses the item route"
+    );
+}
+
+#[test]
+fn reviewers_add_human_names_the_requiredness() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    expect_reviewer_item(&server, 137, ADA, json!({"id": ADA}));
+    expect_reviewer_item(&server, 139, BOB, json!({"id": BOB}));
+
+    let optional = run(
+        &home,
+        &server,
+        &[
+            "prs",
+            "reviewers",
+            "add",
+            "Alpha",
+            "Alpha.Core",
+            "137",
+            "--reviewer",
+            ADA,
+        ],
+    );
+    assert_success(&optional);
+    assert_eq!(
+        stdout_of(&optional),
+        format!("Reviewer {ADA} added (optional).\n")
+    );
+
+    let required = run(
+        &home,
+        &server,
+        &[
+            "prs",
+            "reviewers",
+            "add",
+            "Alpha",
+            "Alpha.Core",
+            "139",
+            "--reviewer",
+            BOB,
+            "--required",
+        ],
+    );
+    assert_success(&required);
+    assert_eq!(
+        stdout_of(&required),
+        format!("Reviewer {BOB} added (required).\n")
+    );
+}
+
+#[test]
+fn reviewers_add_encodes_an_email_path_segment_but_not_the_body() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "PUT",
+        &reviewer_path(137, "ada%40example.com"),
+        MockResponse::json(200, json!({"id": ADA, "uniqueName": "ada@example.com"})),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "prs",
+            "reviewers",
+            "add",
+            "Alpha",
+            "Alpha.Core",
+            "137",
+            "--reviewer",
+            "ada@example.com",
+            "--json",
+        ],
+    );
+
+    assert_success(&output);
+    let received = server.received();
+    assert_eq!(
+        received[0].path,
+        reviewer_path(137, "ada%40example.com"),
+        "the path segment is percent-encoded (D22); the frozen URI.encode/1 left the @ alone"
+    );
+    assert_eq!(
+        sent_body(&received[0]),
+        json!({"id": "ada@example.com"}),
+        "the body carries the reviewer exactly as given"
+    );
+}
+
+#[test]
+fn reviewers_add_404_names_the_reviewer_and_sends_no_envelope() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "PUT",
+        &reviewer_path(999, ADA),
+        MockResponse::json(
+            404,
+            json!({"message": "The pull request 999 does not exist."}),
+        ),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "prs",
+            "reviewers",
+            "add",
+            "Alpha",
+            "Alpha.Core",
+            "999",
+            "--reviewer",
+            ADA,
+            "--json",
+        ],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    let envelope: Value = serde_json::from_str(&stdout_of(&output)).expect("the error envelope");
+    assert_eq!(envelope["error"]["code"], json!("not_found"));
+    assert_eq!(
+        envelope["error"]["message"],
+        json!(format!(
+            "Reviewer not found: {ADA}. Use the user's GUID from Azure DevOps."
+        ))
+    );
+}
+
+#[test]
+fn reviewers_add_400_is_the_api_error_envelope() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "PUT",
+        &reviewer_path(137, ADA),
+        MockResponse::json(
+            400,
+            json!({"message": "VS403352: The identity is invalid."}),
+        ),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "prs",
+            "reviewers",
+            "add",
+            "Alpha",
+            "Alpha.Core",
+            "137",
+            "--reviewer",
+            ADA,
+            "--json",
+        ],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    let envelope: Value = serde_json::from_str(&stdout_of(&output)).expect("the error envelope");
+    assert_eq!(envelope["error"]["code"], json!("api_error"));
+    assert_eq!(envelope["error"]["status"], json!(400));
+}
+
+#[test]
+fn reviewers_add_without_a_reviewer_is_a_loud_usage_error() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "prs",
+            "reviewers",
+            "add",
+            "Alpha",
+            "Alpha.Core",
+            "137",
+            "--json",
+        ],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        stderr_of(&output).contains("--reviewer"),
+        "stderr names the missing option: {}",
+        stderr_of(&output)
+    );
+    assert!(
+        stdout_of(&output).is_empty(),
+        "no document for a usage error: {}",
+        stdout_of(&output)
+    );
+    assert!(
+        server.received().is_empty(),
+        "the oracle exits 0 silently here; this build refuses before the request (D34)"
+    );
+}
+
+#[test]
+fn reviewers_remove_deletes_the_reviewer() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "DELETE",
+        &reviewer_path(137, ADA),
+        MockResponse::json(200, json!({})),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "prs",
+            "reviewers",
+            "remove",
+            "Alpha",
+            "Alpha.Core",
+            "137",
+            "--reviewer",
+            ADA,
+            "--json",
+        ],
+    );
+
+    assert_success(&output);
+    assert_eq!(
+        stdout_of(&output),
+        format!(
+            "{}\n",
+            json!({"ok": true, "message": format!("Reviewer {ADA} removed.")})
+        )
+    );
+
+    let received = server.received();
+    assert_eq!(received.len(), 1);
+    assert_eq!(received[0].method, "DELETE");
+    assert_eq!(received[0].path, reviewer_path(137, ADA));
+    assert_eq!(received[0].query_pairs(), vec![api_version()]);
+    assert!(received[0].body.is_none(), "a DELETE carries no body");
+}
+
+#[test]
+fn reviewers_remove_human_prints_the_success_line() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "DELETE",
+        &reviewer_path(137, ADA),
+        MockResponse::json(200, json!({})),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "prs",
+            "reviewers",
+            "remove",
+            "Alpha",
+            "Alpha.Core",
+            "137",
+            "--reviewer",
+            ADA,
+        ],
+    );
+
+    assert_success(&output);
+    assert_eq!(stdout_of(&output), format!("Reviewer {ADA} removed.\n"));
+}
+
+#[test]
+fn reviewers_remove_404_is_the_not_found_envelope() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "DELETE",
+        &reviewer_path(999, ADA),
+        MockResponse::json(
+            404,
+            json!({"message": "The pull request 999 does not exist."}),
+        ),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "prs",
+            "reviewers",
+            "remove",
+            "Alpha",
+            "Alpha.Core",
+            "999",
+            "--reviewer",
+            ADA,
+            "--json",
+        ],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    let envelope: Value = serde_json::from_str(&stdout_of(&output)).expect("the error envelope");
+    assert_eq!(envelope["error"]["code"], json!("not_found"));
+    assert_eq!(
+        envelope["error"]["message"],
+        json!(format!("Reviewer not found: {ADA}"))
+    );
+}
+
+#[test]
+fn reviewers_remove_500_is_an_api_error_envelope() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "DELETE",
+        &reviewer_path(137, BOB),
+        MockResponse::json(
+            500,
+            json!({"message": "TF400813: The user is not authorized to access this resource."}),
+        ),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "prs",
+            "reviewers",
+            "remove",
+            "Alpha",
+            "Alpha.Core",
+            "137",
+            "--reviewer",
+            BOB,
+            "--json",
+        ],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        stdout_of(&output).starts_with('{'),
+        "the frozen CLI prints `xx  Remove failed: …` prose here; this build keeps stdout a \
+         document: {}",
+        stdout_of(&output)
+    );
+    let envelope: Value = serde_json::from_str(&stdout_of(&output)).expect("the error envelope");
+    assert_eq!(envelope["error"]["code"], json!("api_error"));
+    assert_eq!(envelope["error"]["status"], json!(500));
+}
+
+#[test]
+fn reviewers_remove_without_a_reviewer_is_a_loud_usage_error() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "prs",
+            "reviewers",
+            "remove",
+            "Alpha",
+            "Alpha.Core",
+            "137",
+            "--json",
+        ],
+    );
+
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "the captured oracle exits 0 with both streams empty (D34)"
+    );
+    assert!(
+        stderr_of(&output).contains("--reviewer"),
+        "stderr names the missing option: {}",
+        stderr_of(&output)
+    );
+    assert!(stdout_of(&output).is_empty());
+    assert!(server.received().is_empty());
+}
