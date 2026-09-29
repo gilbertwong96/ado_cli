@@ -1030,8 +1030,6 @@ fn vars_group_path(project: &str, group_id: i64) -> String {
     format!("{}/{group_id}", vars_collection_path(project))
 }
 
-/// `/{project}/_apis/distributedtask/securefiles`, the collection the four
-/// secure-file paths build on.
 /// The module's `list_folders/1` params: `folder` always, defaulting to the root
 /// as the oracle sends it (`path || "/"`), and `path` only when `--path` was
 /// given. Captured: `folder=%2F` alone, or both pairs carrying the same value.
@@ -1102,6 +1100,8 @@ fn pipelines_collection_path(project: &str) -> String {
     format!("/{}/_apis/pipelines", encode_path_segment(project))
 }
 
+/// `/{project}/_apis/distributedtask/securefiles`, the collection the four
+/// secure-file paths build on.
 fn secure_files_path(project: &str) -> String {
     format!(
         "/{}/_apis/distributedtask/securefiles",
