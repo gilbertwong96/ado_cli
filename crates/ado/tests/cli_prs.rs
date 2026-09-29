@@ -1934,3 +1934,75 @@ fn create_with_n_on_stdin_still_posts() {
     assert_success(&output);
     assert_eq!(server.received().len(), 1, "the POST goes out on `n`");
 }
+
+/// R7: the frozen taxonomy classifies the captured statuses — a PATCH 409 is
+/// `conflict`, and the oracle's `Cannot complete PR …` prose is stderr there.
+#[test]
+fn complete_patch_409_is_the_conflict_envelope() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    expect_complete_read(&server);
+    server.expect(
+        "PATCH",
+        &pr_path(137),
+        MockResponse::json(
+            409,
+            json!({"message": "TF401181: The pull request cannot be completed because it has merge conflicts."}),
+        ),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &["prs", "complete", "Alpha", "Alpha.Core", "137", "--json"],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    let envelope: Value =
+        serde_json::from_str(&stdout_of(&output)).expect("stdout is one JSON document");
+    assert_eq!(envelope["error"]["code"], json!("conflict"));
+    assert_eq!(envelope["error"]["status"], json!(409));
+    assert!(
+        stderr_of(&output).is_empty(),
+        "the envelope carries the failure: {}",
+        stderr_of(&output)
+    );
+}
+
+/// A reviewer PUT rejected with 400 classifies as `api_error` (the taxonomy's
+/// "other status" row), not `validation_error`.
+#[test]
+fn vote_put_400_is_the_api_error_envelope() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    expect_connection_data(&server);
+    server.expect(
+        "PUT",
+        &reviewer_path(137, REVIEWER_ID),
+        MockResponse::json(
+            400,
+            json!({"message": "You cannot record a vote for someone else."}),
+        ),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "prs",
+            "vote",
+            "Alpha",
+            "Alpha.Core",
+            "137",
+            "--vote",
+            "10",
+            "--json",
+        ],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    let envelope: Value =
+        serde_json::from_str(&stdout_of(&output)).expect("stdout is one JSON document");
+    assert_eq!(envelope["error"]["code"], json!("api_error"));
+    assert_eq!(envelope["error"]["status"], json!(400));
+}
