@@ -1863,6 +1863,117 @@ run_mock_cases() {
     mock_case prs-comments-resolve-conn-broken "prs comments resolve (connectionData 404)" \
         prs comments resolve Alpha Alpha.Core 137 5 --resolved-by-me --json
 
+    # ── Wave 2: the pull request reviewers (Task 11b) ──
+    #
+    # Captured shapes: all three leaves spell the path `pullrequests` (lower
+    # case, like `vote`); `--reviewer` addresses the item route *and* is the
+    # body's `id` (`isRequired: true` only under `--required`); `--search` is the
+    # module's client-side fuzzy filter over `displayName` and `uniqueName`
+    # (substring or subsequence, case-insensitive; absent or empty is no filter —
+    # the `aae` case is the capture that shows the filter reads `uniqueName`
+    # too). `list` is the first consumer of the oracle's
+    # `{"ok":true,"count":N,"items":[…]}` document, mirrored here as `ok_list`
+    # (C4 closes). The writes' `--json` output is this build's value/message
+    # envelope (D33 where the oracle prints its human success line in both
+    # modes), the two 404s are D4 and the 4xx/5xx bodies D24; `remove`'s non-404
+    # fallback is D4's class as well — the oracle prints `xx  Remove failed: …`
+    # prose on **stdout** with no envelope, this build returns the client's
+    # classified error. A missing `--reviewer` is D34's silent exit 0 in the
+    # oracle (the swallowed `Map.fetch!`), loud here. No underscore spelling is
+    # rejected by the frozen parser in this group. The human views are this
+    # build's own §8 surface — the non-empty table (like Wave 1's list tables)
+    # and the empty sentence — and carry no case; the integration suite pins the
+    # table's columns and the sentence, and the captures are
+    # `captures/task11b/oracle/{list-human,list-empty-human}.out`.
+
+    mock_case prs-reviewers-list "prs reviewers list" \
+        prs reviewers list Alpha Alpha.Core 137 --json
+
+    mock_case prs-reviewers-list-search "prs reviewers list --search ada" \
+        prs reviewers list Alpha Alpha.Core 137 --search ada --json
+
+    mock_case prs-reviewers-list-search-subsequence "prs reviewers list --search aae (subsequence)" \
+        prs reviewers list Alpha Alpha.Core 137 --search aae --json
+
+    mock_case prs-reviewers-list-search-no-match "prs reviewers list --search zzz" \
+        prs reviewers list Alpha Alpha.Core 137 --search zzz --json
+
+    mock_case prs-reviewers-list-empty "prs reviewers list (empty)" \
+        prs reviewers list Alpha Alpha.Core 8 --json
+
+    envelope_rule='D24: the error body stays the upstream bytes here, where the oracle re-renders the decoded map with inspect/2'
+    mock_case prs-reviewers-list-404 "prs reviewers list (404)" \
+        prs reviewers list Alpha Alpha.Core 999 --json
+
+    envelope_rule='D24: the error body stays the upstream bytes here, where the oracle re-renders the decoded map with inspect/2 (C2: the list-error row)'
+    mock_case prs-reviewers-list-500 "prs reviewers list (500)" \
+        prs reviewers list Alpha Alpha.Core 500 --json
+
+    envelope_rule='D5: the oracle prints the command help on stdout before its usage error; this build writes clap’s message to stderr alone'
+    stdout_mode=text
+    mock_case prs-reviewers-list-no-pr-id "prs reviewers list (no pr_id)" \
+        prs reviewers list Alpha Alpha.Core --json
+
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the value envelope'
+    mock_case prs-reviewers-add "prs reviewers add" \
+        prs reviewers add Alpha Alpha.Core 137 \
+        --reviewer aaaaaaaa-0001-0001-0001-000000000001 --json
+
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the value envelope'
+    mock_case prs-reviewers-add-required "prs reviewers add --required" \
+        prs reviewers add Alpha Alpha.Core 139 \
+        --reviewer bbbbbbbb-0002-0002-0002-000000000002 --required --json
+
+    stdout_mode=text
+    mock_case prs-reviewers-add-human "prs reviewers add (human)" \
+        prs reviewers add Alpha Alpha.Core 137 \
+        --reviewer aaaaaaaa-0001-0001-0001-000000000001
+
+    rest_rule='D22: the reviewer id is a path segment here, percent-encoded more strictly than the frozen URI.encode/1 (which left the @ alone), so the request paths differ and the bodies do not'
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the value envelope'
+    mock_case prs-reviewers-add-email "prs reviewers add --reviewer email" \
+        prs reviewers add Alpha Alpha.Core 137 --reviewer ada@example.com --json
+
+    envelope_rule='D4: the frozen CLI writes the guard to stderr with no envelope under --json where this build emits the error envelope'
+    mock_case prs-reviewers-add-404 "prs reviewers add (404)" \
+        prs reviewers add Alpha Alpha.Core 999 \
+        --reviewer aaaaaaaa-0001-0001-0001-000000000001 --json
+
+    envelope_rule='D24: the error body stays the upstream bytes here, where the oracle re-renders the decoded map with inspect/2'
+    mock_case prs-reviewers-add-400 "prs reviewers add (400)" \
+        prs reviewers add Broken Alpha.Core 137 \
+        --reviewer aaaaaaaa-0001-0001-0001-000000000001 --json
+
+    status_rule='D34: a missing required option is a silent exit 0 in the oracle; this build is a loud usage error'
+    stdout_mode=text
+    mock_case prs-reviewers-add-no-reviewer "prs reviewers add (no --reviewer)" \
+        prs reviewers add Alpha Alpha.Core 137 --json
+
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the message envelope'
+    mock_case prs-reviewers-remove "prs reviewers remove" \
+        prs reviewers remove Alpha Alpha.Core 137 \
+        --reviewer aaaaaaaa-0001-0001-0001-000000000001 --json
+
+    stdout_mode=text
+    mock_case prs-reviewers-remove-human "prs reviewers remove (human)" \
+        prs reviewers remove Alpha Alpha.Core 137 \
+        --reviewer aaaaaaaa-0001-0001-0001-000000000001
+
+    envelope_rule='D4: the frozen CLI writes the guard to stderr with no envelope under --json where this build emits the error envelope'
+    mock_case prs-reviewers-remove-404 "prs reviewers remove (404)" \
+        prs reviewers remove Alpha Alpha.Core 999 \
+        --reviewer aaaaaaaa-0001-0001-0001-000000000001 --json
+
+    envelope_rule='D4: the frozen CLI writes no envelope for this failure — `xx  Remove failed: …` prose on stdout here — where this build emits the error envelope'
+    mock_case prs-reviewers-remove-500 "prs reviewers remove (500)" \
+        prs reviewers remove Alpha Alpha.Core 137 \
+        --reviewer bbbbbbbb-0002-0002-0002-000000000002 --json
+
+    status_rule='D34: a missing required option is a silent exit 0 in the oracle; this build is a loud usage error'
+    stdout_mode=text
+    mock_case prs-reviewers-remove-no-reviewer "prs reviewers remove (no --reviewer)" \
+        prs reviewers remove Alpha Alpha.Core 137 --json
+
     mock_scenario_check
 }
 
