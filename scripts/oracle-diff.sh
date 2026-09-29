@@ -1365,7 +1365,10 @@ run_mock_cases() {
     # `halt_success("Done.")` marker, which this build does not print (§8
     # regenerated surface), and that lone difference is the case's rule. A 302 is
     # refused with its true status on both sides (D8), the raw GET's status is
-    # D25's classification, and the missing-positional rows are D5's usage error.
+    # D25's classification, and the missing-positional, non-numeric-id and
+    # unknown-flag rows are D5's usage error (captured: `download-no-id`,
+    # `comments-list-underscore-id` and `comments-unknown-flag`; the same
+    # `attachments-unknown-flag` capture is the attachments leaf's shape).
 
     mock_case workitems-comments-list "workitems comments list" \
         workitems comments list 42 --json
@@ -1389,6 +1392,16 @@ run_mock_cases() {
     stdout_mode=text
     mock_case workitems-comments-list-no-id "workitems comments list (no id)" \
         workitems comments list --json
+
+    envelope_rule='D5: the oracle prints the command help on stdout before its usage error; this build writes clap’s message to stderr alone (captured: comments-unknown-flag)'
+    stdout_mode=text
+    mock_case workitems-comments-unknown-flag "workitems comments list --force (unknown flag)" \
+        workitems comments list 42 --force
+
+    envelope_rule='D5: the oracle prints the command help on stdout before its usage error; this build writes clap’s message to stderr alone (captured: comments-list-underscore-id)'
+    stdout_mode=text
+    mock_case workitems-comments-list-non-numeric-id "workitems comments list id (non-numeric id)" \
+        workitems comments list id
 
     envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the message envelope'
     mock_case workitems-comments-add "workitems comments add" \
@@ -1514,6 +1527,16 @@ run_mock_cases() {
     stdout_mode=text
     mock_case workitems-attachments-download-no-attachment-id "workitems attachments download (no attachment_id)" \
         workitems attachments download 42 --json
+
+    envelope_rule='D5: the oracle prints the command help on stdout before its usage error; this build writes clap’s message to stderr alone (captured: download-no-id)'
+    stdout_mode=text
+    mock_case workitems-attachments-download-no-id "workitems attachments download (no positionals)" \
+        workitems attachments download
+
+    envelope_rule='D5: the oracle prints the command help on stdout before its usage error; this build writes clap’s message to stderr alone (the same parser shape as the captured comments-list-underscore-id)'
+    stdout_mode=text
+    mock_case workitems-attachments-download-non-numeric-id "workitems attachments download (non-numeric id)" \
+        workitems attachments download abc att-1
 
     # ── Wave 2: the pull request lifecycle mutations (Task 9) ──
     #
@@ -1796,7 +1819,13 @@ run_mock_cases() {
     # the wire). The writes' `--json` documents are the frozen ones and are
     # mirrored (D38) — the frozen CLI already emits a document there, unlike
     # D33's prose paths — and `update --dry-run` prints its actions document even
-    # without `--json`, sending nothing. `delete` is the wave's third prompting
+    # without `--json`, sending nothing. D38's "the response's id where a response
+    # exists" half is discriminated by the routes, not just by the captures: on the
+    # both-flags path the scenario answers thread 9 with `{"id": 900, …}` and its
+    # comment with `{"id": 901, …}`, so the document (and the human lines) must say
+    # 900/901 where the arguments are 9/4 — an implementation that always used the
+    # arguments fails `prs comments update --content --status` by name. `delete` is
+    # the wave's third prompting
     # command: its question is `Close thread N? [y/N] ` / `Close comment N in
     # thread N? [y/N] `, and the oracle answers a refusal with `Cancelled.` on
     # stdout and exit 0 (R2/D30/D32): this build refuses on stderr with exit 1.
