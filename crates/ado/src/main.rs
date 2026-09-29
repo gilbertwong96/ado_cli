@@ -283,6 +283,23 @@ fn main() -> ExitCode {
                         .copied()
                         .expect("the positional is required"),
                 ),
+                Some(("diff", diff)) => commands::pull_requests::diff(
+                    &mut context,
+                    diff.get_one::<String>("project")
+                        .expect("the positional is required")
+                        .as_str(),
+                    diff.get_one::<String>("repo_id")
+                        .expect("the positional is required")
+                        .as_str(),
+                    diff.get_one::<i64>("pr_id")
+                        .copied()
+                        .expect("the positional is required"),
+                    commands::pull_requests::DiffOptions {
+                        file: diff.get_one::<String>("file").cloned(),
+                        iteration: diff.get_one::<i64>("iteration").copied(),
+                        unified: diff.get_flag("unified"),
+                    },
+                ),
                 _ => Err(AdoError::validation(MISSING_SUBCOMMAND)),
             }
         }

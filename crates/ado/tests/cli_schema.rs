@@ -117,8 +117,8 @@ fn schema_root_lists_exactly_the_shipped_subcommands() {
     );
 }
 
-/// Wave 1 ported the two read paths; Task 9 adds the five lifecycle mutations.
-/// `diff`, `comments` and `reviewers` are Tasks 10 and 11.
+/// Wave 1 ported the two read paths; Task 9 adds the five lifecycle mutations and
+/// Task 10 the diff. `comments` and `reviewers` are Task 11.
 #[test]
 fn schema_prs_node_lists_every_shipped_subcommand() {
     let prs = find_node("prs").expect("the prs node");
@@ -137,7 +137,8 @@ fn schema_prs_node_lists_every_shipped_subcommand() {
             "ado prs complete",
             "ado prs approve",
             "ado prs vote",
-            "ado prs abandon"
+            "ado prs abandon",
+            "ado prs diff"
         ]
     );
 }

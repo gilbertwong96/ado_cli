@@ -596,6 +596,56 @@ pub fn command() -> Command {
                                 .value_parser(clap::value_parser!(i64))
                                 .help("Numeric PR ID"),
                         ),
+                )
+                .subcommand(
+                    Command::new("diff")
+                        .about(
+                            "Show the diff for a pull request in one of three modes. Default: table of changed files (path, change type, +/- counts) — fast, no file content fetched. --file PATH: full unified diff for one file (like `git diff <path>`). --unified: single concatenated diff stream for all files (pipe to `less`, `delta`, `code --diff`). --iteration N: inspect an earlier iteration (default: latest = N-1 for a non-draft PR).",
+                        )
+                        .arg(
+                            Arg::new("project")
+                                .value_name("PROJECT")
+                                .required(true)
+                                .help("Project name or ID"),
+                        )
+                        .arg(
+                            Arg::new("repo_id")
+                                .value_name("REPO_ID")
+                                .required(true)
+                                .help("Repository name or ID"),
+                        )
+                        .arg(
+                            Arg::new("pr_id")
+                                .value_name("PR_ID")
+                                .required(true)
+                                .value_parser(clap::value_parser!(i64))
+                                .help("Numeric PR ID"),
+                        )
+                        .arg(
+                            Arg::new("file")
+                                .long("file")
+                                .value_name("PATH")
+                                .help(
+                                    "Show the full unified diff for a single path (relative to repo root, with or without leading slash). Must match a file in the default view's path column.",
+                                ),
+                        )
+                        .arg(
+                            Arg::new("iteration")
+                                .long("iteration")
+                                .value_name("N")
+                                .value_parser(clap::value_parser!(i64).range(1..))
+                                .help(
+                                    "Iteration number to inspect (default: latest). Iteration 1 is the first push, 2 is the first 'push' after a review, etc. Useful for reviewing earlier versions after force-pushes.",
+                                ),
+                        )
+                        .arg(
+                            Arg::new("unified")
+                                .long("unified")
+                                .action(ArgAction::SetTrue)
+                                .help(
+                                    "Output a single concatenated unified diff stream for ALL changed files (like `git diff` on the whole PR). Pipe to a pager or syntax highlighter.",
+                                ),
+                        ),
                 ),
         )
         .subcommand(

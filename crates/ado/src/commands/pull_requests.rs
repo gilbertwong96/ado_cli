@@ -1,8 +1,9 @@
-//! `ado prs list|show|create|complete|abandon|approve|vote` — the read and write
-//! paths of `lib/ado_cli/cli/pull_requests.ex`: the same REST surface, the same
-//! filters, the same merge and vote bodies, and the same human layouts.
+//! `ado prs list|show|create|complete|abandon|approve|vote|diff` — the read,
+//! write and diff paths of `lib/ado_cli/cli/pull_requests.ex`: the same REST
+//! surface, the same filters, the same merge and vote bodies, the same request
+//! chain for `diff`, and the same human layouts.
 //!
-//! `diff`, `comments` and `reviewers` are Tasks 10 and 11 and deliberately absent.
+//! `comments` and `reviewers` are Task 11 and deliberately absent.
 //!
 //! The captures settled four things a reader of the frozen help would get wrong.
 //! `complete` is a **two-request** command: it reads the PR for
@@ -21,8 +22,17 @@
 //! swallowed `KeyError`; this build requires the three and omits an absent
 //! description from the body (D34 for the missing required flags, D35 for the
 //! absent optional one).
+//!
+//! `diff` is a rendering task as much as a request one: the frozen chain is
+//! `GET …/pullRequests/{id}/iterations` (skipped when `--iteration N` is given),
+//! `GET …/iterations/{n}/changes`, and — only for `--file`/`--unified` — the
+//! iteration list again for its two commit ids, `GET …/items` per revision, and a
+//! locally computed unified diff (D36's captures). The human bytes are this
+//! build's own table and raw diff text (§8); the shapes — a file list, one
+//! unified diff on stdout, exactly one JSON document under `--json` — are
+//! contract.
 
-use ado_core::client::encode_path_segment;
+use ado_core::client::{RawBody, encode_path_segment};
 use ado_core::envelope::ok_value;
 use ado_core::error::{AdoError, ErrorCode};
 use serde_json::{Value, json};
@@ -376,6 +386,773 @@ fn vote_label(vote: i64) -> String {
         -10 => "-10 (rejected)".to_owned(),
         other => other.to_string(),
     }
+}
+
+/// `diff`'s options, grouped for the same reason as [`CreateOptions`].
+#[derive(Debug, Default, PartialEq)]
+pub struct DiffOptions {
+    pub file: Option<String>,
+    pub iteration: Option<i64>,
+    pub unified: bool,
+}
+
+/// `diff_pr/1`: one pull request's changed files in three modes. The captured
+/// request chain is the module's: resolve the iteration (`--iteration N` is used
+/// as given; otherwise the **last** entry of `GET …/pullRequests/{id}/iterations`),
+/// read `GET …/iterations/{n}/changes`, and only then — for `--file` and
+/// `--unified` — read the iteration list again for its two commit ids, fetch the
+/// file revisions from `GET …/items`, and render the unified diff locally. The
+/// default view fetches no content at all, and `--file` with `--unified` is
+/// refused before any request (captured: zero requests).
+pub fn diff(
+    context: &mut Context,
+    project: &str,
+    repo_id: &str,
+    pr_id: i64,
+    options: DiffOptions,
+) -> Result<Report, AdoError> {
+    if options.file.is_some() && options.unified {
+        return Err(AdoError::validation(
+            "Pass either --file or --unified, not both.",
+        ));
+    }
+
+    let iteration_id = resolve_iteration(context, project, repo_id, pr_id, options.iteration)?;
+    let changes = fetch_changes(
+        context,
+        &changes_path(project, repo_id, pr_id, iteration_id),
+    )?;
+
+    match &options.file {
+        Some(file) => file_diff(
+            context,
+            project,
+            repo_id,
+            pr_id,
+            iteration_id,
+            &changes,
+            file,
+        ),
+        None if options.unified => render_unified(
+            context,
+            project,
+            repo_id,
+            pr_id,
+            iteration_id,
+            changes.len(),
+        ),
+        None => Ok(
+            context.json_or_report(file_list_envelope(iteration_id, &changes), || {
+                file_list_table(&changes)
+            }),
+        ),
+    }
+}
+
+/// `resolve_iteration/2` with a number given is that number, with no request;
+/// otherwise the iteration list's last entry names it.
+fn resolve_iteration(
+    context: &mut Context,
+    project: &str,
+    repo_id: &str,
+    pr_id: i64,
+    iteration: Option<i64>,
+) -> Result<i64, AdoError> {
+    if let Some(iteration) = iteration {
+        return Ok(iteration);
+    }
+
+    let iterations = fetch_iterations(context, &iterations_path(project, repo_id, pr_id))?;
+    let Some(latest) = iterations.last() else {
+        return Err(AdoError {
+            code: ErrorCode::ApiError,
+            status: None,
+            message: format!("PR #{pr_id} has no iterations (nothing to diff)."),
+            details: None,
+        });
+    };
+
+    latest
+        .get("id")
+        .or_else(|| latest.get("number"))
+        .and_then(Value::as_i64)
+        .ok_or_else(|| AdoError {
+            code: ErrorCode::ApiError,
+            status: None,
+            message: "Could not determine latest iteration ID".to_owned(),
+            details: None,
+        })
+}
+
+/// `fetch_changes/2`: the module reads `changeEntries` first and `value` second;
+/// a body carrying neither reads as no changes here where the frozen case clause
+/// would crash (a swallowed exit 0).
+fn fetch_changes(context: &mut Context, path: &str) -> Result<Vec<Value>, AdoError> {
+    let response = context.client()?.get(path, &[])?;
+
+    Ok(response
+        .get("changeEntries")
+        .or_else(|| response.get("value"))
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default())
+}
+
+fn fetch_iterations(context: &mut Context, path: &str) -> Result<Vec<Value>, AdoError> {
+    let response = context.client()?.get(path, &[])?;
+
+    Ok(response
+        .get("value")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default())
+}
+
+/// `fetch_iteration_data/2`: a second read of the iteration list (the capture
+/// shows the repeated request), looked up by `id`.
+fn fetch_iteration_data(
+    context: &mut Context,
+    path: &str,
+    iteration_id: i64,
+) -> Result<Value, AdoError> {
+    fetch_iterations(context, path)?
+        .into_iter()
+        .find(|iteration| iteration.get("id").and_then(Value::as_i64) == Some(iteration_id))
+        .ok_or_else(|| AdoError::not_found(format!("Iteration {iteration_id} not found")))
+}
+
+/// `render_file_diff/5`: match the path, read the iteration for its commits, fetch
+/// both revisions, and emit the locally rendered unified diff.
+fn file_diff(
+    context: &mut Context,
+    project: &str,
+    repo_id: &str,
+    pr_id: i64,
+    iteration_id: i64,
+    changes: &[Value],
+    file: &str,
+) -> Result<Report, AdoError> {
+    let change = find_change(changes, file).ok_or_else(|| {
+        AdoError::validation(format!(
+            "No change matches --file '{file}'. Use 'ado prs diff' (no flags) to list files."
+        ))
+    })?;
+    let iteration = fetch_iteration_data(
+        context,
+        &iterations_path(project, repo_id, pr_id),
+        iteration_id,
+    )?;
+    let (base, target) = commit_pair(&iteration)?;
+    let path = change_path(change);
+    let change_type = change_type(change);
+    let old = fetch_revision(
+        context,
+        project,
+        repo_id,
+        &path,
+        &base,
+        &change_type,
+        Side::Base,
+    )?;
+    let new = fetch_revision(
+        context,
+        project,
+        repo_id,
+        &path,
+        &target,
+        &change_type,
+        Side::Target,
+    )?;
+    let content = unified_diff_text(&path, &old, &new);
+
+    Ok(context.json_or_report(
+        json!({
+            "ok": true,
+            "iteration": iteration_id,
+            "path": path,
+            "change_type": change_type,
+            "diff": content,
+        }),
+        || Report::Raw(format!("{content}\n")),
+    ))
+}
+
+/// `find_change_for_file/2`: an exact match on the change's path with the leading
+/// slash stripped from both sides, so `--file` takes either form. `originalPath`
+/// is deliberately not consulted (captured: a renamed file's old path matches
+/// nothing).
+fn find_change<'a>(changes: &'a [Value], file: &str) -> Option<&'a Value> {
+    let target = file.trim_start_matches('/');
+
+    changes
+        .iter()
+        .find(|change| change_path(change).trim_start_matches('/') == target)
+}
+
+/// `change_path/1`: the change's `item.path`, then `originalPath`, then `path`,
+/// then `?`.
+fn change_path(change: &Value) -> String {
+    change
+        .pointer("/item/path")
+        .and_then(Value::as_str)
+        .or_else(|| change.get("originalPath").and_then(Value::as_str))
+        .or_else(|| change.get("path").and_then(Value::as_str))
+        .unwrap_or("?")
+        .to_owned()
+}
+
+/// `change_type/1`: the five names pass through when spelled, an integer maps
+/// through the frozen table, and anything else is `change`.
+fn change_type(change: &Value) -> String {
+    match change.get("changeType") {
+        Some(Value::String(name))
+            if matches!(
+                name.as_str(),
+                "add" | "edit" | "delete" | "rename" | "directory"
+            ) =>
+        {
+            name.clone()
+        }
+        Some(Value::Number(number)) => int_change_type(number.as_i64()).to_owned(),
+        _ => "change".to_owned(),
+    }
+}
+
+fn int_change_type(number: Option<i64>) -> &'static str {
+    match number {
+        Some(1) => "add",
+        Some(2) => "edit",
+        Some(4) => "delete",
+        Some(8) => "rename",
+        Some(16) => "directory",
+        _ => "change",
+    }
+}
+
+/// `get_in(iteration, ["targetRefCommit", "commitId"])` and its source twin; both
+/// have to be present for either content mode (the captured guard).
+fn commit_pair(iteration: &Value) -> Result<(String, String), AdoError> {
+    let commit = |pointer: &str| {
+        iteration
+            .pointer(pointer)
+            .and_then(Value::as_str)
+            .map(str::to_owned)
+    };
+
+    match (
+        commit("/targetRefCommit/commitId"),
+        commit("/sourceRefCommit/commitId"),
+    ) {
+        (Some(base), Some(target)) => Ok((base, target)),
+        _ => Err(AdoError {
+            code: ErrorCode::ApiError,
+            status: None,
+            message: "Iteration is missing sourceRefCommit or targetRefCommit".to_owned(),
+            details: None,
+        }),
+    }
+}
+
+/// Which revision of a file a content fetch reads: the iteration's target commit
+/// ("base", the old side) or its source commit ("target", the new side).
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum Side {
+    Base,
+    Target,
+}
+
+/// `fetch_or_empty/6`: a 404 is an empty revision only when the file is known to
+/// be absent on that side — a new file's base, a deleted file's target; anything
+/// else is `File not found in commit {commit}`.
+fn fetch_revision(
+    context: &mut Context,
+    project: &str,
+    repo_id: &str,
+    path: &str,
+    commit: &str,
+    change_type: &str,
+    side: Side,
+) -> Result<String, AdoError> {
+    match fetch_item(context, project, repo_id, path, commit) {
+        Ok(content) => Ok(content),
+        Err(error) if error.status == Some(404) => {
+            let absent_side = matches!(
+                (change_type, side),
+                ("add", Side::Base) | ("delete", Side::Target)
+            );
+
+            if absent_side {
+                Ok(String::new())
+            } else {
+                Err(AdoError::not_found(format!(
+                    "File not found in commit {commit}"
+                )))
+            }
+        }
+        Err(error) => Err(error),
+    }
+}
+
+/// `GET …/items?path=…&versionType=commit&version=…`, read as text. The frozen
+/// `get_raw/2` would also send `api-version` (D25); this build's `url_for` merges
+/// it the same way, and the body is a file revision, not JSON.
+fn fetch_item(
+    context: &mut Context,
+    project: &str,
+    repo_id: &str,
+    path: &str,
+    commit: &str,
+) -> Result<String, AdoError> {
+    let url = context.client()?.url_for(
+        &items_path(project, repo_id),
+        &[
+            ("path".to_owned(), path.to_owned()),
+            ("versionType".to_owned(), "commit".to_owned()),
+            ("version".to_owned(), commit.to_owned()),
+        ],
+    );
+    let mut body = context.client()?.get_raw(&url)?;
+
+    read_raw_text(&mut body)
+}
+
+/// The body of a content fetch, streamed like every other raw read. A non-UTF-8
+/// revision is lossily substituted where the frozen CLI emits its bytes: a diff is
+/// text and this build's report layer carries `String` (§8).
+fn read_raw_text(body: &mut RawBody) -> Result<String, AdoError> {
+    let mut buffer = [0u8; 64 * 1024];
+    let mut bytes = Vec::new();
+
+    loop {
+        let read = body.read_chunk(&mut buffer)?;
+        if read == 0 {
+            break;
+        }
+        bytes.extend_from_slice(&buffer[..read]);
+    }
+
+    Ok(String::from_utf8_lossy(&bytes).into_owned())
+}
+
+/// `render_unified/5`: the whole-repo diff between the iteration's two commits.
+/// `file_count` is the *change list's* length, not the `/diffs/commits` count
+/// (captured: the two differ), and the content is the per-file diffs joined with
+/// a blank line, where a file whose revisions cannot be read is dropped rather
+/// than failing the stream (the frozen `collect_diffs/5`).
+fn render_unified(
+    context: &mut Context,
+    project: &str,
+    repo_id: &str,
+    pr_id: i64,
+    iteration_id: i64,
+    file_count: usize,
+) -> Result<Report, AdoError> {
+    let iteration = fetch_iteration_data(
+        context,
+        &iterations_path(project, repo_id, pr_id),
+        iteration_id,
+    )?;
+    let (base, target) = commit_pair(&iteration)?;
+    let response = context.client()?.get(
+        &diffs_path(project, repo_id),
+        &[
+            ("baseVersionType".to_owned(), "commit".to_owned()),
+            ("baseVersion".to_owned(), base.clone()),
+            ("targetVersionType".to_owned(), "commit".to_owned()),
+            ("targetVersion".to_owned(), target.clone()),
+        ],
+    )?;
+    let changes = response
+        .get("changes")
+        .and_then(Value::as_array)
+        .cloned()
+        .ok_or_else(|| AdoError {
+            code: ErrorCode::ApiError,
+            status: None,
+            message: "No changes found".to_owned(),
+            details: None,
+        })?;
+
+    let mut blocks = Vec::new();
+
+    for change in &changes {
+        if let Some(block) =
+            unified_change_block(context, project, repo_id, change, &base, &target)?
+        {
+            blocks.push(block);
+        }
+    }
+
+    let content = blocks.join("\n");
+
+    Ok(context.json_or_report(
+        json!({
+            "ok": true,
+            "iteration": iteration_id,
+            "mode": "unified",
+            "file_count": file_count,
+            "diff": content,
+        }),
+        || Report::Raw(format!("{content}\n\n")),
+    ))
+}
+
+fn unified_change_block(
+    context: &mut Context,
+    project: &str,
+    repo_id: &str,
+    change: &Value,
+    base: &str,
+    target: &str,
+) -> Result<Option<String>, AdoError> {
+    let Some(path) = change.pointer("/item/path").and_then(Value::as_str) else {
+        return Ok(None);
+    };
+    let change_type = change.get("changeType");
+
+    let Some(old) = raw_revision(
+        context,
+        project,
+        repo_id,
+        path,
+        base,
+        change_type,
+        Side::Base,
+    )?
+    else {
+        return Ok(None);
+    };
+    let Some(new) = raw_revision(
+        context,
+        project,
+        repo_id,
+        path,
+        target,
+        change_type,
+        Side::Target,
+    )?
+    else {
+        return Ok(None);
+    };
+
+    Ok(Some(unified_diff_text(path, &old, &new)))
+}
+
+/// `fetch_or_empty_raw/6`: the raw `changeType` (1/"add", 4/"delete") short-
+/// circuits the side that cannot have content, and every other failure — including
+/// a 404 on a file that should exist — drops the file from the stream, which is
+/// what the frozen `collect_diffs`' `else -> nil` does.
+fn raw_revision(
+    context: &mut Context,
+    project: &str,
+    repo_id: &str,
+    path: &str,
+    commit: &str,
+    change_type: Option<&Value>,
+    side: Side,
+) -> Result<Option<String>, AdoError> {
+    let absent = (side == Side::Base && change_type_is(change_type, 1, "add"))
+        || (side == Side::Target && change_type_is(change_type, 4, "delete"));
+
+    if absent {
+        return Ok(Some(String::new()));
+    }
+
+    match fetch_item(context, project, repo_id, path, commit) {
+        Ok(content) => Ok(Some(content)),
+        Err(_) => Ok(None),
+    }
+}
+
+fn change_type_is(change_type: Option<&Value>, number: i64, name: &str) -> bool {
+    match change_type {
+        Some(Value::Number(value)) => value.as_i64() == Some(number),
+        Some(Value::String(value)) => value == name,
+        _ => false,
+    }
+}
+
+/// `format_unified_diff/5`: the git header for `path`, then one hunk covering the
+/// whole file — `@@ -0,0 +1,n @@` for a new file, `@@ -1,n +0,0 @@` for a deleted
+/// one, and no hunk at all when the two revisions are textually equal (all
+/// captured). Content splits on `\n` with the trailing empty element the frozen
+/// `String.split/2` keeps, so a file ending in a newline renders a final ` \n`
+/// context line.
+fn unified_diff_text(path: &str, old: &str, new: &str) -> String {
+    let path = ensure_leading_slash(path);
+    let mut text = format!("diff --git a{path} b{path}\n--- a{path}\n+++ b{path}\n");
+    let old_lines = split_lines(old);
+    let new_lines = split_lines(new);
+
+    if old_lines.is_empty() && new_lines.is_empty() {
+        return text;
+    }
+
+    if old_lines.is_empty() {
+        text.push_str(&format!("@@ -0,0 +1,{} @@\n", new_lines.len()));
+        push_diff_lines(&mut text, &new_lines, '+');
+        return text;
+    }
+
+    if new_lines.is_empty() {
+        text.push_str(&format!("@@ -1,{} +0,0 @@\n", old_lines.len()));
+        push_diff_lines(&mut text, &old_lines, '-');
+        return text;
+    }
+
+    let edits = line_diff(&old_lines, &new_lines);
+
+    if edits.iter().all(|edit| matches!(edit, Edit::Equal(_))) {
+        return text;
+    }
+
+    text.push_str(&format!(
+        "@@ -1,{} +1,{} @@\n",
+        old_lines.len(),
+        new_lines.len()
+    ));
+
+    for edit in edits {
+        match edit {
+            Edit::Equal(line) => push_diff_line(&mut text, line, ' '),
+            Edit::Delete(line) => push_diff_line(&mut text, line, '-'),
+            Edit::Insert(line) => push_diff_line(&mut text, line, '+'),
+        }
+    }
+
+    text
+}
+
+fn split_lines(content: &str) -> Vec<&str> {
+    if content.is_empty() {
+        Vec::new()
+    } else {
+        content.split('\n').collect()
+    }
+}
+
+fn push_diff_lines(text: &mut String, lines: &[&str], prefix: char) {
+    for line in lines {
+        push_diff_line(text, line, prefix);
+    }
+}
+
+fn push_diff_line(text: &mut String, line: &str, prefix: char) {
+    text.push(prefix);
+    text.push_str(line);
+    text.push('\n');
+}
+
+fn ensure_leading_slash(path: &str) -> String {
+    if path.starts_with('/') {
+        path.to_owned()
+    } else {
+        format!("/{path}")
+    }
+}
+
+/// One line of the diff between the two revisions. The two sides' common prefix
+/// and suffix are kept as context and the middle is diffed with a longest-common-
+/// subsequence walk whose ties prefer a delete first, which is the order the
+/// listener capture shows (`-` before `+` for a replaced line).
+#[derive(Debug, PartialEq)]
+enum Edit<'a> {
+    Equal(&'a str),
+    Delete(&'a str),
+    Insert(&'a str),
+}
+
+/// Beyond this many cells the middle is rendered as every line deleted then every
+/// line inserted: still a valid unified diff, and the guard keeps a pathological
+/// pair of revisions from allocating an unbounded table. A file whose changes are
+/// small keeps its exact diff — the prefix/suffix trim already leaves only the
+/// changed region.
+const MAX_DIFF_CELLS: usize = 1_000_000;
+
+fn line_diff<'a>(old: &[&'a str], new: &[&'a str]) -> Vec<Edit<'a>> {
+    let mut prefix = 0;
+    while prefix < old.len() && prefix < new.len() && old[prefix] == new[prefix] {
+        prefix += 1;
+    }
+
+    let mut suffix = 0;
+    while suffix < old.len() - prefix
+        && suffix < new.len() - prefix
+        && old[old.len() - 1 - suffix] == new[new.len() - 1 - suffix]
+    {
+        suffix += 1;
+    }
+
+    let middle_old = &old[prefix..old.len() - suffix];
+    let middle_new = &new[prefix..new.len() - suffix];
+    let mut edits = Vec::with_capacity(old.len() + new.len());
+
+    edits.extend(old[..prefix].iter().map(|line| Edit::Equal(line)));
+
+    if middle_old.len().saturating_mul(middle_new.len()) > MAX_DIFF_CELLS {
+        edits.extend(middle_old.iter().map(|line| Edit::Delete(line)));
+        edits.extend(middle_new.iter().map(|line| Edit::Insert(line)));
+    } else {
+        edits.extend(lcs_edits(middle_old, middle_new));
+    }
+
+    edits.extend(
+        old[old.len() - suffix..]
+            .iter()
+            .map(|line| Edit::Equal(line)),
+    );
+
+    edits
+}
+
+fn lcs_edits<'a>(old: &[&'a str], new: &[&'a str]) -> Vec<Edit<'a>> {
+    let rows = old.len() + 1;
+    let columns = new.len() + 1;
+    let mut lcs = vec![0u32; rows * columns];
+
+    for i in (0..old.len()).rev() {
+        for j in (0..new.len()).rev() {
+            lcs[i * columns + j] = if old[i] == new[j] {
+                lcs[(i + 1) * columns + j + 1] + 1
+            } else {
+                lcs[(i + 1) * columns + j].max(lcs[i * columns + j + 1])
+            };
+        }
+    }
+
+    let mut edits = Vec::new();
+    let (mut i, mut j) = (0, 0);
+
+    while i < old.len() && j < new.len() {
+        if old[i] == new[j] {
+            edits.push(Edit::Equal(old[i]));
+            i += 1;
+            j += 1;
+        } else if lcs[(i + 1) * columns + j] >= lcs[i * columns + j + 1] {
+            edits.push(Edit::Delete(old[i]));
+            i += 1;
+        } else {
+            edits.push(Edit::Insert(new[j]));
+            j += 1;
+        }
+    }
+
+    edits.extend(old[i..].iter().map(|line| Edit::Delete(line)));
+    edits.extend(new[j..].iter().map(|line| Edit::Insert(line)));
+
+    edits
+}
+
+/// The default view's `--json` envelope, which is the frozen `render_file_list`'s
+/// own shape — `ok`, the iteration, the counts and the per-file objects — not this
+/// build's `{ok, result}` (the `version`/`schema` `ok_named` precedent: a frozen
+/// envelope this build mirrors rather than rewrites).
+fn file_list_envelope(iteration_id: i64, changes: &[Value]) -> Value {
+    json!({
+        "ok": true,
+        "iteration": iteration_id,
+        "count": changes.len(),
+        "total_additions": total_items(changes, "additions"),
+        "total_deletions": total_items(changes, "deletions"),
+        "changes": changes
+            .iter()
+            .map(|change| json!({
+                "path": change_path(change),
+                "change_type": change_type(change),
+                "change_id": or_default(change.get("changeId").or_else(|| change.get("id")), Value::Null),
+                "additions": item_count(change, "additions"),
+                "deletions": item_count(change, "deletions"),
+            }))
+            .collect::<Vec<_>>(),
+    })
+}
+
+/// The default view's human form: this build's one table style (spec §8; D37's
+/// row covers the frozen fixed-width layout this replaces).
+fn file_list_table(changes: &[Value]) -> Report {
+    if changes.is_empty() {
+        return Report::Text("No changes found.".to_owned());
+    }
+
+    Report::Table {
+        headers: vec![
+            "PATH".to_owned(),
+            "TYPE".to_owned(),
+            "ADDITIONS".to_owned(),
+            "DELETIONS".to_owned(),
+        ],
+        rows: changes
+            .iter()
+            .map(|change| {
+                vec![
+                    change_path(change),
+                    change_type(change),
+                    cell(&item_count(change, "additions")),
+                    cell(&item_count(change, "deletions")),
+                ]
+            })
+            .collect(),
+    }
+}
+
+fn item_count(change: &Value, key: &str) -> Value {
+    or_default(change.pointer(&format!("/item/{key}")), json!(0))
+}
+
+fn total_items(changes: &[Value], key: &str) -> i64 {
+    changes
+        .iter()
+        .map(|change| item_count(change, key).as_i64().unwrap_or(0))
+        .sum()
+}
+
+/// Elixir's `||` over a JSON value: `null` and `false` fall through to the
+/// default, every other value stands.
+fn or_default(value: Option<&Value>, default: Value) -> Value {
+    match value {
+        Some(value) if !value.is_null() && *value != Value::Bool(false) => value.clone(),
+        _ => default,
+    }
+}
+
+fn cell(value: &Value) -> String {
+    match value {
+        Value::String(text) => text.clone(),
+        other => other.to_string(),
+    }
+}
+
+fn iterations_path(project: &str, repo_id: &str, pr_id: i64) -> String {
+    format!(
+        "{}/pullRequests/{pr_id}/iterations",
+        repository_path(project, repo_id)
+    )
+}
+
+fn changes_path(project: &str, repo_id: &str, pr_id: i64, iteration_id: i64) -> String {
+    format!(
+        "{}/{iteration_id}/changes",
+        iterations_path(project, repo_id, pr_id)
+    )
+}
+
+fn items_path(project: &str, repo_id: &str) -> String {
+    format!("{}/items", repository_path(project, repo_id))
+}
+
+fn diffs_path(project: &str, repo_id: &str) -> String {
+    format!("{}/diffs/commits", repository_path(project, repo_id))
+}
+
+/// `/…/git/repositories/{repo_id}` — the collection both the diff paths and the
+/// items/diffs endpoints hang off. The module spells `pullRequests` with a capital
+/// R on its diff paths (captured), unlike the `pullrequests` of the list paths.
+fn repository_path(project: &str, repo_id: &str) -> String {
+    format!(
+        "/{}/_apis/git/repositories/{}",
+        encode_path_segment(project),
+        encode_path_segment(repo_id)
+    )
 }
 
 /// The module's `list_prs/1` criteria: `searchCriteria.status` always — its
