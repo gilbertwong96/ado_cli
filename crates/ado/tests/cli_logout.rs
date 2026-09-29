@@ -183,7 +183,8 @@ fn logout_clears_the_credential_and_its_entry_but_keeps_the_other_settings() {
     );
 
     // The post-condition the command exists for: the next run cannot resolve the
-    // credential that was logged out, and it fails before any request is built.
+    // credential that was logged out — it reports `auth_required`, the code a
+    // resolution failure returns.
     let next = run(&home, &["projects", "list", "--org", ORG, "--json"]);
 
     assert_eq!(next.status.code(), Some(1));
