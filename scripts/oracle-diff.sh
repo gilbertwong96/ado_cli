@@ -1505,6 +1505,11 @@ run_mock_cases() {
     envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the value envelope'
     mock_case prs-approve "prs approve" prs approve Alpha Alpha.Core 137 --json
 
+    case_stdin=$'n\n'
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the value envelope'
+    mock_case prs-approve-stdin-n "prs approve (stdin n — no prompt)" \
+        prs approve Alpha Alpha.Core 137 --json
+
     envelope_rule='D4: the frozen CLI writes the 404 to stderr with no envelope under --json where this build emits the error envelope'
     mock_case prs-approve-put-404 "prs approve (PUT 404)" prs approve Alpha Alpha.Core 999 --json
 
