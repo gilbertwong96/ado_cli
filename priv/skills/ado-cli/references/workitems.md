@@ -15,7 +15,7 @@ ado workitems query MyProject --wiql "SELECT [System.Id] FROM WorkItems WHERE [S
 ado workitems create MyProject --type Bug --title "Login fails" --description "Steps to reproduce: ..." --tags "ui,critical" --priority 1
 
 # Update state or fields
-ado workitems update 42 --state Resolved --assigned_to "Jane Smith"
+ado workitems update 42 --state Resolved --assigned-to "Jane Smith"
 
 # Delete
 ado workitems delete 42

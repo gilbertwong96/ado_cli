@@ -10,7 +10,7 @@ ado repos list MyProject
 ado repos show MyProject MyRepo
 
 # Create a repo
-ado repos create MyProject --name "new-repo" --default_branch main
+ado repos create MyProject new-repo --default-branch main
 
 # List branches
 ado repos branches MyProject MyRepo

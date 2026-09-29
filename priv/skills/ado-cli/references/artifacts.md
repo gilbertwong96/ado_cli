@@ -4,7 +4,7 @@
 
 
 ```bash
-ado releases list MyProject --definition_id 5 --status active
+ado releases list MyProject --definition-id 5 --status active
 ado releases show MyProject 42
 ```
 
