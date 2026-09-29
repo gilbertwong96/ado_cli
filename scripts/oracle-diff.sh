@@ -919,7 +919,12 @@ run_mock_cases() {
     # with exit 1 and sends nothing (R6, D32). The upload posts raw bytes, not
     # JSON; its route's `request_body` is the UTF-8 fixture's exact text — the
     # log's lossy decode is exact for it (the pin cannot prove bytes that are not
-    # valid UTF-8, which is why the fixture is text).
+    # valid UTF-8, which is why the fixture is text). The three captured upload
+    # failure paths — the 409 conflict, a failed replace DELETE and a failed
+    # lookup GET — each get their own project-named route with the same fixture
+    # pin; the display-spelling case is the counter-case to the underscore
+    # spelling the other secure-files cases invoke (Task 4's builds-space-spelling
+    # analogue).
 
     mock_case pipelines-variables-list "pipelines variables list" \
         pipelines variables list Alpha 13 --json
@@ -934,6 +939,10 @@ run_mock_cases() {
     envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the message envelope'
     mock_case pipelines-variables-create "pipelines variables create" \
         pipelines variables create Alpha 13 --key ENV --value staging --json
+
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the message envelope'
+    mock_case pipelines-variables-create-secret "pipelines variables create --secret" \
+        pipelines variables create Alpha 16 --key API_KEY --value s3cret --secret --json
 
     status_rule='D5/D23 (R4): a required option the oracle never validates is a silent exit 0 there; this build makes it a loud usage error'
     stdout_mode=text
@@ -991,6 +1000,11 @@ run_mock_cases() {
         pipelines secure_files upload Alpha cert.pem \
         --file "$root/crates/ado-testkit/fixtures/absent.pem" --json
 
+    envelope_rule='D4: the frozen CLI writes the 409 conflict to stderr with no envelope under --json where this build emits the error envelope'
+    mock_case pipelines-secure-files-upload-conflict "pipelines secure_files upload (409 conflict)" \
+        pipelines secure_files upload UploadConflict cert.pem \
+        --file "$root/crates/ado-testkit/fixtures/secure_file_upload.pem" --json
+
     case_stdin=$'n\n'
     envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the message envelope'
     mock_case pipelines-secure-files-upload-allow-exists "pipelines secure_files upload --allow-exists (stdin n — no prompt)" \
@@ -1000,6 +1014,15 @@ run_mock_cases() {
     envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the message envelope'
     mock_case pipelines-secure-files-upload-allow-exists-miss "pipelines secure_files upload --allow-exists (lookup miss)" \
         pipelines secure_files upload Alpha new-cert.pem \
+        --file "$root/crates/ado-testkit/fixtures/secure_file_upload.pem" --allow-exists --json
+
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the message envelope'
+    mock_case pipelines-secure-files-upload-allow-exists-lookup-fails "pipelines secure_files upload --allow-exists (lookup 500)" \
+        pipelines secure_files upload LookupBroken cert.pem \
+        --file "$root/crates/ado-testkit/fixtures/secure_file_upload.pem" --allow-exists --json
+
+    mock_case pipelines-secure-files-upload-allow-exists-delete-fails "pipelines secure_files upload --allow-exists (delete failure)" \
+        pipelines secure_files upload ReplaceBroken prod-cert.pem \
         --file "$root/crates/ado-testkit/fixtures/secure_file_upload.pem" --allow-exists --json
 
     case_stdin=$'n\n'
@@ -1017,6 +1040,11 @@ run_mock_cases() {
     envelope_rule='D4: the frozen CLI writes the 404 to stderr with no envelope under --json where this build emits the error envelope'
     mock_case pipelines-secure-files-delete-404 "pipelines secure_files delete (404)" \
         pipelines secure_files delete Alpha 00000000-0000-4000-8000-000000000999 --force --json
+
+    envelope_rule='D18/R3: only the underscore spelling parses; the hyphenated display spelling is a usage error on both sides and the wording is §8 regenerated surface (D5)'
+    stdout_mode=text
+    mock_case pipelines-secure-files-display-spelling "pipelines secure-files list (display spelling)" \
+        pipelines secure-files list Alpha --json
 
     # ── Wave 2: pipeline folders and the builds gaps (Task 6) ──
     #

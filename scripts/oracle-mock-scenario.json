@@ -341,6 +341,48 @@
       },
       "json": {"id": 7, "name": "Alpha Nightly", "revision": 2}
     },
+    {
+      "method": "GET",
+      "path": "/ado-harness/Alpha/_apis/pipelines/16",
+      "json": {
+        "id": 16,
+        "name": "Alpha Secrets",
+        "folder": "\\",
+        "revision": 1,
+        "configuration": {
+          "type": "yaml",
+          "path": "pipelines/ci.yml",
+          "variables": {
+            "DB_HOST": {"value": "db.example.com"},
+            "DB_PASS": {"isSecret": true},
+            "DEBUG": {"value": "false"}
+          }
+        },
+        "url": "https://dev.azure.com/ado-harness/Alpha/_apis/pipelines/16?revision=1"
+      }
+    },
+    {
+      "method": "PATCH",
+      "path": "/ado-harness/Alpha/_apis/pipelines/16",
+      "request_body": {
+        "id": 16,
+        "name": "Alpha Secrets",
+        "folder": "\\",
+        "revision": 1,
+        "configuration": {
+          "type": "yaml",
+          "path": "pipelines/ci.yml",
+          "variables": {
+            "API_KEY": {"value": "s3cret", "isSecret": true},
+            "DB_HOST": {"value": "db.example.com"},
+            "DB_PASS": {"isSecret": true},
+            "DEBUG": {"value": "false"}
+          }
+        },
+        "url": "https://dev.azure.com/ado-harness/Alpha/_apis/pipelines/16?revision=1"
+      },
+      "json": {"id": 16, "name": "Alpha Secrets", "revision": 2}
+    },
 
     {
       "method": "GET",
@@ -400,6 +442,26 @@
     },
     {"method": "DELETE", "path": "/ado-harness/Alpha/_apis/distributedtask/securefiles/f47ac10b-58cc-4372-a567-0e02b2c3d479", "json": {"id": "f47ac10b-58cc-4372-a567-0e02b2c3d479"}},
     {"method": "DELETE", "path": "/ado-harness/Alpha/_apis/distributedtask/securefiles/00000000-0000-4000-8000-000000000999", "status": 404, "json": {"message": "Secure file not found."}},
+    {
+      "method": "POST",
+      "path": "/ado-harness/UploadConflict/_apis/distributedtask/securefiles",
+      "request_body": "-----BEGIN CERTIFICATE-----\ncafé-ü-ado-harness-fixture\n-----END CERTIFICATE-----\n",
+      "status": 409,
+      "json": {"message": "A secure file with name 'cert.pem' already exists.", "$id": "1", "typeName": "Microsoft.TeamFoundation.DistributedTask.WebApi.SecureFile"}
+    },
+    {
+      "method": "GET",
+      "path": "/ado-harness/ReplaceBroken/_apis/distributedtask/securefiles",
+      "json": {"count": 1, "value": [{"id": "f47ac10b-58cc-4372-a567-0e02b2c3d479", "name": "prod-cert.pem", "contentLength": 2048}]}
+    },
+    {"method": "DELETE", "path": "/ado-harness/ReplaceBroken/_apis/distributedtask/securefiles/f47ac10b-58cc-4372-a567-0e02b2c3d479", "status": 500, "json": {"message": "TF400813: The user is not authorized."}},
+    {"method": "GET", "path": "/ado-harness/LookupBroken/_apis/distributedtask/securefiles", "status": 500, "json": {"message": "TF400813: The user is not authorized."}},
+    {
+      "method": "POST",
+      "path": "/ado-harness/LookupBroken/_apis/distributedtask/securefiles",
+      "request_body": "-----BEGIN CERTIFICATE-----\ncafé-ü-ado-harness-fixture\n-----END CERTIFICATE-----\n",
+      "json": {"id": "b7e2c9a0-1111-4222-8333-444455556666", "name": "cert.pem", "contentLength": 83}
+    },
 
     {
       "method": "GET",
