@@ -408,6 +408,194 @@ pub fn command() -> Command {
                                 .value_parser(clap::value_parser!(i64))
                                 .help("Numeric pull request ID"),
                         ),
+                )
+                .subcommand(
+                    Command::new("create")
+                        .about(
+                            "Create a new pull request. The source and target branches must exist; the source must be different from the target. Returns the new PR ID and web URL.",
+                        )
+                        .arg(
+                            Arg::new("project")
+                                .value_name("PROJECT")
+                                .required(true)
+                                .help("Project name or ID"),
+                        )
+                        .arg(
+                            Arg::new("repo_id")
+                                .value_name("REPO_ID")
+                                .required(true)
+                                .help("Repository name or ID"),
+                        )
+                        .arg(
+                            Arg::new("title")
+                                .long("title")
+                                .value_name("TITLE")
+                                .required(true)
+                                .help(
+                                    "PR title (required). Shown in the PR list and as the merge commit subject (depending on merge strategy). Multi-word values do not need quoting.",
+                                ),
+                        )
+                        .arg(
+                            Arg::new("description")
+                                .long("description")
+                                .value_name("DESC")
+                                .help(
+                                    "PR description (markdown supported). Shown in the PR overview. Multi-word values do not need quoting.",
+                                ),
+                        )
+                        .arg(
+                            Arg::new("source")
+                                .long("source")
+                                .value_name("BRANCH")
+                                .required(true)
+                                .help(
+                                    "Source branch as a full ref (e.g. 'refs/heads/feature/my-branch'). Use the short name ('my-branch') — 'refs/heads/' is added automatically.",
+                                ),
+                        )
+                        .arg(
+                            Arg::new("target")
+                                .long("target")
+                                .value_name("BRANCH")
+                                .required(true)
+                                .help(
+                                    "Target branch as a full ref (e.g. 'refs/heads/main') or short name ('main'). Default: the repo's default branch (usually 'main' or 'master').",
+                                ),
+                        )
+                        .arg(
+                            Arg::new("draft")
+                                .long("draft")
+                                .action(ArgAction::SetTrue)
+                                .help(
+                                    "Create as a draft PR. Drafts are visible in lists but cannot be completed (merged) until you click 'Ready for review' in the UI.",
+                                ),
+                        ),
+                )
+                .subcommand(
+                    Command::new("complete")
+                        .about(
+                            "Complete (merge) a pull request. Fails if any required policies haven't passed (builds, required reviewers, branch policies). The merge is non-atomic: the API may return success but the actual merge can take seconds to minutes.",
+                        )
+                        .arg(
+                            Arg::new("project")
+                                .value_name("PROJECT")
+                                .required(true)
+                                .help("Project name or ID"),
+                        )
+                        .arg(
+                            Arg::new("repo_id")
+                                .value_name("REPO_ID")
+                                .required(true)
+                                .help("Repository name or ID"),
+                        )
+                        .arg(
+                            Arg::new("pr_id")
+                                .value_name("PR_ID")
+                                .required(true)
+                                .value_parser(clap::value_parser!(i64))
+                                .help("Numeric PR ID"),
+                        )
+                        .arg(
+                            Arg::new("delete-source")
+                                .long("delete-source")
+                                .action(ArgAction::SetTrue)
+                                .help(
+                                    "Delete the source branch after the merge succeeds. Useful for keeping the repo clean; if the merge fails, the branch is not deleted.",
+                                ),
+                        )
+                        .arg(
+                            Arg::new("merge-strategy")
+                                .long("merge-strategy")
+                                .value_name("STRATEGY")
+                                .help(
+                                    "Merge strategy. Valid: 'squash' (combine all commits into one on target, default for most repos), 'rebase' (replay commits without merge), 'noFastForward' (preserve all commits with a merge commit). The strategy must be enabled in the repo's branch policies.",
+                                ),
+                        ),
+                )
+                .subcommand(
+                    Command::new("approve")
+                        .about(
+                            "Approve a pull request (records a +10 vote on your behalf). If you're not already a reviewer, the API auto-adds you as one. The approval counts toward branch policies that require N approvals.",
+                        )
+                        .arg(
+                            Arg::new("project")
+                                .value_name("PROJECT")
+                                .required(true)
+                                .help("Project name or ID"),
+                        )
+                        .arg(
+                            Arg::new("repo_id")
+                                .value_name("REPO_ID")
+                                .required(true)
+                                .help("Repository name or ID"),
+                        )
+                        .arg(
+                            Arg::new("pr_id")
+                                .value_name("PR_ID")
+                                .required(true)
+                                .value_parser(clap::value_parser!(i64))
+                                .help("Numeric PR ID"),
+                        ),
+                )
+                .subcommand(
+                    Command::new("vote")
+                        .about(
+                            "Record a vote on a pull request with a specific value. Use `ado prs approve` as a shortcut for +10. To change or remove your vote, simply vote again with the new value.",
+                        )
+                        .arg(
+                            Arg::new("project")
+                                .value_name("PROJECT")
+                                .required(true)
+                                .help("Project name or ID"),
+                        )
+                        .arg(
+                            Arg::new("repo_id")
+                                .value_name("REPO_ID")
+                                .required(true)
+                                .help("Repository name or ID"),
+                        )
+                        .arg(
+                            Arg::new("pr_id")
+                                .value_name("PR_ID")
+                                .required(true)
+                                .value_parser(clap::value_parser!(i64))
+                                .help("Numeric PR ID"),
+                        )
+                        .arg(
+                            Arg::new("vote")
+                                .long("vote")
+                                .value_name("VOTE")
+                                .required(true)
+                                .value_parser(clap::value_parser!(i64))
+                                .allow_negative_numbers(true)
+                                .help(
+                                    "Vote value. Valid: 10 (approve), 5 (approve with suggestions, still allows merge), 0 (reset/withdraw your vote), -5 (wait for author, blocks merge), -10 (reject, blocks merge).",
+                                ),
+                        ),
+                )
+                .subcommand(
+                    Command::new("abandon")
+                        .about(
+                            "Abandon a pull request (close without merging). The PR stays in the list with status 'abandoned'; the source branch is preserved. The action is reversible in the web UI but not from the CLI.",
+                        )
+                        .arg(
+                            Arg::new("project")
+                                .value_name("PROJECT")
+                                .required(true)
+                                .help("Project name or ID"),
+                        )
+                        .arg(
+                            Arg::new("repo_id")
+                                .value_name("REPO_ID")
+                                .required(true)
+                                .help("Repository name or ID"),
+                        )
+                        .arg(
+                            Arg::new("pr_id")
+                                .value_name("PR_ID")
+                                .required(true)
+                                .value_parser(clap::value_parser!(i64))
+                                .help("Numeric PR ID"),
+                        ),
                 ),
         )
         .subcommand(

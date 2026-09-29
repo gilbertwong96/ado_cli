@@ -194,6 +194,95 @@ fn main() -> ExitCode {
                         .copied()
                         .expect("the positional is required"),
                 ),
+                Some(("create", create)) => commands::pull_requests::create(
+                    &mut context,
+                    create
+                        .get_one::<String>("project")
+                        .expect("the positional is required")
+                        .as_str(),
+                    create
+                        .get_one::<String>("repo_id")
+                        .expect("the positional is required")
+                        .as_str(),
+                    commands::pull_requests::CreateOptions {
+                        title: create
+                            .get_one::<String>("title")
+                            .expect("the option is required")
+                            .clone(),
+                        description: create.get_one::<String>("description").cloned(),
+                        source: create
+                            .get_one::<String>("source")
+                            .expect("the option is required")
+                            .clone(),
+                        target: create
+                            .get_one::<String>("target")
+                            .expect("the option is required")
+                            .clone(),
+                        draft: create.get_flag("draft"),
+                    },
+                ),
+                Some(("complete", complete)) => commands::pull_requests::complete(
+                    &mut context,
+                    complete
+                        .get_one::<String>("project")
+                        .expect("the positional is required")
+                        .as_str(),
+                    complete
+                        .get_one::<String>("repo_id")
+                        .expect("the positional is required")
+                        .as_str(),
+                    complete
+                        .get_one::<i64>("pr_id")
+                        .copied()
+                        .expect("the positional is required"),
+                    complete.get_flag("delete-source"),
+                    complete.get_one::<String>("merge-strategy").cloned(),
+                ),
+                Some(("approve", approve)) => commands::pull_requests::approve(
+                    &mut context,
+                    approve
+                        .get_one::<String>("project")
+                        .expect("the positional is required")
+                        .as_str(),
+                    approve
+                        .get_one::<String>("repo_id")
+                        .expect("the positional is required")
+                        .as_str(),
+                    approve
+                        .get_one::<i64>("pr_id")
+                        .copied()
+                        .expect("the positional is required"),
+                ),
+                Some(("vote", vote)) => commands::pull_requests::vote(
+                    &mut context,
+                    vote.get_one::<String>("project")
+                        .expect("the positional is required")
+                        .as_str(),
+                    vote.get_one::<String>("repo_id")
+                        .expect("the positional is required")
+                        .as_str(),
+                    vote.get_one::<i64>("pr_id")
+                        .copied()
+                        .expect("the positional is required"),
+                    vote.get_one::<i64>("vote")
+                        .copied()
+                        .expect("the option is required"),
+                ),
+                Some(("abandon", abandon)) => commands::pull_requests::abandon(
+                    &mut context,
+                    abandon
+                        .get_one::<String>("project")
+                        .expect("the positional is required")
+                        .as_str(),
+                    abandon
+                        .get_one::<String>("repo_id")
+                        .expect("the positional is required")
+                        .as_str(),
+                    abandon
+                        .get_one::<i64>("pr_id")
+                        .copied()
+                        .expect("the positional is required"),
+                ),
                 _ => Err(AdoError::validation(MISSING_SUBCOMMAND)),
             }
         }

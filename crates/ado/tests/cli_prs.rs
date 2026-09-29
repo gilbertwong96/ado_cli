@@ -1,17 +1,21 @@
-//! End-to-end tests for `ado prs list|show`: the REST surface the frozen
-//! `lib/ado_cli/cli/pull_requests.ex` builds — every method, path and query pair
-//! verified against the frozen escript — the `--json` envelopes it emits, and the
-//! human table/detail the module's formatters define.
+//! End-to-end tests for `ado prs list|show|create|complete|abandon|approve|vote`:
+//! the REST surface the frozen `lib/ado_cli/cli/pull_requests.ex` builds — every
+//! method, path, query pair and body verified against the frozen escript — the
+//! `--json` envelopes it emits, and the human table/detail/success the module's
+//! formatters define.
 //!
-//! Both envelopes are pinned **byte-equal** to the captured oracle lines: every map
-//! in the fixtures stays below Elixir's small-map threshold, so the term order the
-//! oracle encodes is serde's sorted order, and each capture was confirmed
-//! byte-identical to its `jq -S` form (W1-R12).
+//! Both read envelopes are pinned **byte-equal** to the captured oracle lines:
+//! every map in the fixtures stays below Elixir's small-map threshold, so the term
+//! order the oracle encodes is serde's sorted order, and each capture was confirmed
+//! byte-identical to its `jq -S` form (W1-R12). The write paths' envelopes are this
+//! build's own (D33): the oracle prints its human success line even under `--json`.
 //!
 //! Every test owns its environment: a `TempHome` for the config directory, a mock
 //! server behind `ADO_SERVER`, and explicit `ADO_ORG`/`ADO_PAT` credentials so no
-//! credential resolution reaches the developer's keychain.
+//! credential resolution reaches the developer's keychain. No test reaches a real
+//! organization; a stdin-driven run pipes bytes or closes the stream (R8).
 
+use std::io::Write;
 use std::process::{Command, Output, Stdio};
 
 use ado_testkit::{
@@ -824,4 +828,1109 @@ fn a_closed_stdout_is_a_silent_success() {
         stderr_of(&output)
     );
     assert!(output.stderr.is_empty(), "stderr: {}", stderr_of(&output));
+}
+
+// ── Wave 2: the `prs` lifecycle mutations (Task 9) ───────────────────────────
+//
+// The five commands were captured against the standalone mock before porting
+// (`captures/task9/`): `create` one POST, `complete` a GET-then-PATCH pair,
+// `abandon` one PATCH, `approve`/`vote` a connectionData GET (no `api-version`)
+// then a reviewer PUT. None of the five prompts — every one was re-run with `n`
+// on stdin and on EOF (R5), and the stdin tests below are that evidence. The
+// oracle's `create` crashes on an absent `--description` and exits 0 silently
+// (`opts.description` on a map without the key), so `--title`/`--source`/`--target`
+// are clap-required here (D34) and an absent description is omitted from the body
+// (D35). The invocations table's `--delete_source`/`--merge_strategy` are rejected
+// by the frozen parser; the hyphenated spellings are the runnable ones (D17).
+
+const CONNECTION_DATA_PATH: &str = "/myorg/_apis/connectionData";
+const REVIEWER_ID: &str = "c1d2e3f4-0002-0002-0002-000000000002";
+
+/// `/myorg/Alpha/_apis/git/repositories/Alpha.Core/pullrequests/{id}`.
+fn pr_path(pr_id: i64) -> String {
+    format!("{LIST_PATH}/{pr_id}")
+}
+
+/// `/myorg/Alpha/_apis/git/repositories/Alpha.Core/pullrequests/{id}/reviewers/{reviewer}`.
+fn reviewer_path(pr_id: i64, reviewer: &str) -> String {
+    format!("{}/reviewers/{reviewer}", pr_path(pr_id))
+}
+
+/// Runs the binary with `stdin` written to a pipe (never a terminal); an empty
+/// slice is EOF.
+fn run_with_stdin(home: &TempHome, server: &MockServer, args: &[&str], stdin: &[u8]) -> Output {
+    let mut child = command(home, server, args)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn ado");
+    child
+        .stdin
+        .take()
+        .expect("a piped stdin")
+        .write_all(stdin)
+        .expect("write the scripted stdin");
+    child.wait_with_output().expect("wait for ado")
+}
+
+/// The request body as JSON.
+fn sent_body(request: &RecordedRequest) -> Value {
+    serde_json::from_str(request.body.as_deref().expect("a request body"))
+        .expect("the request body is JSON")
+}
+
+/// The captured `POST …/pullrequests` answer: a created pull request with a web
+/// link, which is what the human success line names.
+fn created_pull_request() -> Value {
+    json!({
+        "pullRequestId": 145,
+        "title": "Add checkout retries",
+        "status": "active",
+        "sourceRefName": "refs/heads/feature/payments",
+        "targetRefName": "refs/heads/main",
+        "creationDate": "2026-09-27T10:00:00.000Z",
+        "_links": {"web": {"href": "https://dev.azure.com/myorg/Alpha/_git/Alpha.Core/pullrequest/145"}},
+    })
+}
+
+/// The connectionData answer the vote flow reads: `authenticatedUser.id` is the
+/// reviewer the PUT addresses.
+fn connection_data() -> MockResponse {
+    MockResponse::json(
+        200,
+        json!({"authenticatedUser": {"id": REVIEWER_ID, "displayName": "Ada Example"}}),
+    )
+}
+
+fn expect_connection_data(server: &MockServer) {
+    server.expect("GET", CONNECTION_DATA_PATH, connection_data());
+}
+
+/// The 137 fixture carries `lastMergeSourceCommit.commitId`, which `complete`
+/// reads before PATCHing.
+fn expect_complete_read(server: &MockServer) {
+    server.expect("GET", &pr_path(137), MockResponse::from_fixture("prs_show"));
+}
+
+#[test]
+fn create_sends_the_captured_body_and_returns_the_created_pull_request() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "POST",
+        LIST_PATH,
+        MockResponse::json(200, created_pull_request()),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "prs",
+            "create",
+            "Alpha",
+            "Alpha.Core",
+            "--title",
+            "Add checkout retries",
+            "--description",
+            "Retries soft declines.",
+            "--source",
+            "feature/payments",
+            "--target",
+            "main",
+            "--draft",
+            "--json",
+        ],
+    );
+
+    assert_success(&output);
+    assert_eq!(
+        stdout_of(&output),
+        format!(
+            "{}\n",
+            json!({"ok": true, "result": created_pull_request()})
+        ),
+        "the value envelope (D33: the oracle prints its human line here)"
+    );
+
+    let received = server.received();
+    assert_eq!(received.len(), 1, "one POST");
+    assert_eq!(received[0].method, "POST");
+    assert_eq!(received[0].path, LIST_PATH);
+    assert_eq!(received[0].query_pairs(), vec![api_version()]);
+    assert_eq!(
+        received[0].header("content-type"),
+        Some("application/json"),
+        "the frozen post/3 sends application/json"
+    );
+    assert_eq!(
+        sent_body(&received[0]),
+        json!({
+            "title": "Add checkout retries",
+            "description": "Retries soft declines.",
+            "sourceRefName": "refs/heads/feature/payments",
+            "targetRefName": "refs/heads/main",
+            "isDraft": true,
+        }),
+        "the captured create body, with the short branch names prefixed"
+    );
+}
+
+/// D35: the oracle's `create` raises on an absent `--description` and exits 0
+/// having sent nothing; this build sends the four-key body instead. The body has
+/// no `description` key at all.
+#[test]
+fn create_without_a_description_sends_the_body_without_the_key() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "POST",
+        LIST_PATH,
+        MockResponse::json(200, created_pull_request()),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "prs",
+            "create",
+            "Alpha",
+            "Alpha.Core",
+            "--title",
+            "Add checkout retries",
+            "--source",
+            "feature/payments",
+            "--target",
+            "main",
+        ],
+    );
+
+    assert_success(&output);
+    assert_eq!(
+        server.received().len(),
+        1,
+        "the request the oracle never sent"
+    );
+    assert_eq!(
+        sent_body(&server.received()[0]),
+        json!({
+            "title": "Add checkout retries",
+            "sourceRefName": "refs/heads/feature/payments",
+            "targetRefName": "refs/heads/main",
+            "isDraft": false,
+        }),
+        "an absent description is omitted, not sent empty"
+    );
+    assert!(
+        stdout_of(&output).contains("Pull request #145 created: Add checkout retries"),
+        "the human line runs without --json: {}",
+        stdout_of(&output)
+    );
+}
+
+/// `ensure_ref_prefix/1`: a `refs/`-prefixed ref is kept verbatim (including a
+/// tag ref), anything else gains `refs/heads/`.
+#[test]
+fn create_keeps_full_refs_and_prefixes_short_names() {
+    let home = TempHome::new();
+
+    for (source, target, expected_source, expected_target) in [
+        (
+            "refs/heads/feature/payments",
+            "refs/heads/main",
+            "refs/heads/feature/payments",
+            "refs/heads/main",
+        ),
+        ("refs/tags/v1", "main", "refs/tags/v1", "refs/heads/main"),
+    ] {
+        let server = MockServer::start();
+        server.expect(
+            "POST",
+            LIST_PATH,
+            MockResponse::json(200, created_pull_request()),
+        );
+
+        let output = run(
+            &home,
+            &server,
+            &[
+                "prs",
+                "create",
+                "Alpha",
+                "Alpha.Core",
+                "--title",
+                "Add checkout retries",
+                "--source",
+                source,
+                "--target",
+                target,
+            ],
+        );
+
+        assert_success(&output);
+        let body = sent_body(&server.received()[0]);
+        assert_eq!(body["sourceRefName"], json!(expected_source));
+        assert_eq!(body["targetRefName"], json!(expected_target));
+    }
+}
+
+/// D34: a missing required option is a silent exit 0 in the oracle (its `opts.*`
+/// access raises first); this build is a loud usage error naming the flag, with no
+/// request.
+#[test]
+fn create_without_a_required_flag_is_a_loud_usage_error() {
+    let home = TempHome::new();
+
+    for (flag, argv) in [
+        (
+            "--title",
+            vec![
+                "prs",
+                "create",
+                "Alpha",
+                "Alpha.Core",
+                "--source",
+                "s",
+                "--target",
+                "t",
+            ],
+        ),
+        (
+            "--source",
+            vec![
+                "prs",
+                "create",
+                "Alpha",
+                "Alpha.Core",
+                "--title",
+                "T",
+                "--target",
+                "t",
+            ],
+        ),
+        (
+            "--target",
+            vec![
+                "prs",
+                "create",
+                "Alpha",
+                "Alpha.Core",
+                "--title",
+                "T",
+                "--source",
+                "s",
+            ],
+        ),
+    ] {
+        let server = MockServer::start();
+
+        let output = run(&home, &server, &argv);
+
+        assert_eq!(output.status.code(), Some(1), "{flag} is required");
+        assert!(
+            stdout_of(&output).is_empty(),
+            "no envelope for a usage error: {}",
+            stdout_of(&output)
+        );
+        assert!(
+            stderr_of(&output).contains(flag),
+            "stderr names {flag}: {}",
+            stderr_of(&output)
+        );
+        assert!(server.received().is_empty(), "{flag} missing: no request");
+    }
+}
+
+#[test]
+fn create_400_is_the_api_error_envelope() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "POST",
+        LIST_PATH,
+        MockResponse::json(
+            400,
+            json!({"message": "TF401179: The source branch does not exist."}),
+        ),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "prs",
+            "create",
+            "Alpha",
+            "Alpha.Core",
+            "--title",
+            "Add checkout retries",
+            "--source",
+            "feature/payments",
+            "--target",
+            "main",
+            "--json",
+        ],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    let envelope: Value =
+        serde_json::from_str(&stdout_of(&output)).expect("stdout is one JSON document");
+    assert_eq!(envelope["ok"], json!(false));
+    assert_eq!(envelope["error"]["code"], json!("api_error"));
+    assert_eq!(envelope["error"]["status"], json!(400));
+    assert!(
+        envelope["error"]["message"]
+            .as_str()
+            .expect("a message")
+            .contains("API error 400"),
+        "the captured 400 class (R7): {envelope}"
+    );
+    assert!(
+        stderr_of(&output).is_empty(),
+        "the envelope carries the failure: {}",
+        stderr_of(&output)
+    );
+}
+
+#[test]
+fn create_human_output_names_the_created_pull_request() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "POST",
+        LIST_PATH,
+        MockResponse::json(200, created_pull_request()),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "prs",
+            "create",
+            "Alpha",
+            "Alpha.Core",
+            "--title",
+            "Add checkout retries",
+            "--source",
+            "feature/payments",
+            "--target",
+            "main",
+        ],
+    );
+
+    assert_success(&output);
+    let stdout = stdout_of(&output);
+
+    assert!(
+        stdout.contains("Pull request #145 created: Add checkout retries\n"),
+        "stdout: {stdout}"
+    );
+    assert!(stdout.contains("  Status:    active\n"), "stdout: {stdout}");
+    assert!(
+        stdout.contains("  Source:    refs/heads/feature/payments\n"),
+        "stdout: {stdout}"
+    );
+    assert!(
+        stdout.contains("  Target:    refs/heads/main\n"),
+        "stdout: {stdout}"
+    );
+    assert!(
+        stdout.contains("  Created:   2026-09-27T10:00:00.000Z\n"),
+        "stdout: {stdout}"
+    );
+    assert!(
+        stdout.contains(
+            "  URL:       https://dev.azure.com/myorg/Alpha/_git/Alpha.Core/pullrequest/145\n"
+        ),
+        "stdout: {stdout}"
+    );
+}
+
+#[test]
+fn complete_reads_the_pr_then_patches_the_captured_body() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    expect_complete_read(&server);
+    server.expect(
+        "PATCH",
+        &pr_path(137),
+        MockResponse::json(200, json!({"pullRequestId": 137, "status": "completed"})),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &["prs", "complete", "Alpha", "Alpha.Core", "137", "--json"],
+    );
+
+    assert_success(&output);
+    assert_eq!(
+        stdout_of(&output),
+        "{\"ok\":true,\"result\":{\"pullRequestId\":137,\"status\":\"completed\"}}\n",
+        "the value envelope (D33)"
+    );
+
+    let received = server.received();
+    assert_eq!(received.len(), 2, "the read and the patch");
+    assert_eq!(received[0].method, "GET");
+    assert_eq!(received[0].path, pr_path(137));
+    assert_eq!(received[0].query_pairs(), vec![api_version()]);
+    assert_eq!(received[1].method, "PATCH");
+    assert_eq!(received[1].path, pr_path(137));
+    assert_eq!(received[1].query_pairs(), vec![api_version()]);
+    assert_eq!(received[1].header("content-type"), Some("application/json"));
+    assert_eq!(
+        sent_body(&received[1]),
+        json!({
+            "status": "completed",
+            "lastMergeSourceCommit": {"commitId": "1111111111111111111111111111111111111111"},
+            "deleteSourceBranch": false,
+        }),
+        "the captured completion body; no mergeStrategy key when the option is absent"
+    );
+}
+
+/// The captured merge-strategy mapping: `squash` and `rebase` become the API's
+/// camelCase values, `noFastForward` passes through, an unknown value passes
+/// through, and an explicit empty value sends `""` (the key is present because the
+/// option was present).
+#[test]
+fn complete_maps_the_merge_strategies_onto_the_captured_bodies() {
+    let home = TempHome::new();
+
+    for (option, expected) in [
+        ("squash", "squashMerge"),
+        ("rebase", "rebaseMerge"),
+        ("noFastForward", "noFastForward"),
+        ("merge", "merge"),
+        ("", ""),
+    ] {
+        let server = MockServer::start();
+        expect_complete_read(&server);
+        server.expect(
+            "PATCH",
+            &pr_path(137),
+            MockResponse::json(200, json!({"pullRequestId": 137, "status": "completed"})),
+        );
+
+        let output = run(
+            &home,
+            &server,
+            &[
+                "prs",
+                "complete",
+                "Alpha",
+                "Alpha.Core",
+                "137",
+                "--delete-source",
+                "--merge-strategy",
+                option,
+                "--json",
+            ],
+        );
+
+        assert_success(&output);
+        let body = sent_body(&server.received()[1]);
+        assert_eq!(body["deleteSourceBranch"], json!(true));
+        assert_eq!(
+            body["mergeStrategy"],
+            json!(expected),
+            "{option:?} maps to {expected:?}"
+        );
+    }
+}
+
+#[test]
+fn complete_without_a_last_merge_source_commit_is_loud() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "GET",
+        &pr_path(137),
+        MockResponse::json(200, json!({"pullRequestId": 137, "status": "active"})),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &["prs", "complete", "Alpha", "Alpha.Core", "137", "--json"],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    let envelope: Value =
+        serde_json::from_str(&stdout_of(&output)).expect("stdout is one JSON document");
+    assert_eq!(envelope["error"]["code"], json!("api_error"));
+    assert_eq!(
+        envelope["error"]["message"],
+        json!("Cannot complete PR #137: no lastMergeSourceCommit.commitId in the PR data.")
+    );
+    assert_eq!(
+        server.received().len(),
+        1,
+        "no PATCH is attempted without a commit id"
+    );
+}
+
+/// The captured GET 404 goes through the generic error handler, not the module's
+/// message — the `not_found` class with the status's own wording.
+#[test]
+fn complete_get_404_keeps_the_generic_not_found_error() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "GET",
+        &pr_path(999),
+        MockResponse::from_fixture("error_404").with_status(404),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &["prs", "complete", "Alpha", "Alpha.Core", "999", "--json"],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    let envelope: Value =
+        serde_json::from_str(&stdout_of(&output)).expect("stdout is one JSON document");
+    assert_eq!(envelope["error"]["code"], json!("not_found"));
+    assert_eq!(envelope["error"]["status"], json!(404));
+    assert_eq!(
+        envelope["error"]["message"],
+        json!("Resource not found. Check the project/repo/build ID and your permissions."),
+        "the generic handler's message, not `Pull request #999 not found`"
+    );
+    assert_eq!(server.received().len(), 1, "the read 404 stops the flow");
+}
+
+#[test]
+fn complete_patch_404_reports_the_module_message() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    expect_complete_read(&server);
+    server.expect(
+        "PATCH",
+        &pr_path(137),
+        MockResponse::from_fixture("error_404").with_status(404),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &["prs", "complete", "Alpha", "Alpha.Core", "137", "--json"],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    let envelope: Value =
+        serde_json::from_str(&stdout_of(&output)).expect("stdout is one JSON document");
+    assert_eq!(envelope["error"]["code"], json!("not_found"));
+    assert_eq!(
+        envelope["error"]["message"],
+        json!("Pull request #137 not found"),
+        "the module's own halt_error wording"
+    );
+    assert_eq!(
+        server.received().len(),
+        2,
+        "the read succeeded, then the patch 404ed"
+    );
+}
+
+#[test]
+fn complete_without_the_id_is_a_usage_error() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+
+    let output = run(&home, &server, &["prs", "complete", "Alpha", "Alpha.Core"]);
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        stderr_of(&output).contains("PR_ID"),
+        "stderr: {}",
+        stderr_of(&output)
+    );
+    assert!(server.received().is_empty());
+}
+
+/// D17: the invocations table's `--delete_source` is the schema's option name; the
+/// frozen parser and this build both reject it, only `--delete-source` runs.
+#[test]
+fn complete_rejects_the_underscore_spelling() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "prs",
+            "complete",
+            "Alpha",
+            "Alpha.Core",
+            "137",
+            "--delete_source",
+        ],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        stderr_of(&output).contains("--delete_source"),
+        "stderr: {}",
+        stderr_of(&output)
+    );
+    assert!(
+        server.received().is_empty(),
+        "the rejected flag sends nothing"
+    );
+}
+
+/// R5: `complete` changes a pull request's state and still asks nothing — with `n`
+/// on stdin against a mock that serves the GET, the PATCH goes out.
+#[test]
+fn complete_with_n_on_stdin_still_patches() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    expect_complete_read(&server);
+    server.expect(
+        "PATCH",
+        &pr_path(137),
+        MockResponse::json(200, json!({"pullRequestId": 137, "status": "completed"})),
+    );
+
+    let output = run_with_stdin(
+        &home,
+        &server,
+        &["prs", "complete", "Alpha", "Alpha.Core", "137"],
+        b"n\n",
+    );
+
+    assert_success(&output);
+    assert_eq!(
+        server.received().len(),
+        2,
+        "the read and the patch both went out on `n`"
+    );
+    assert!(
+        stdout_of(&output).contains("Pull request #137 completed (merged)."),
+        "stdout: {}",
+        stdout_of(&output)
+    );
+}
+
+#[test]
+fn abandon_sends_the_abandoned_status_and_returns_the_pull_request() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "PATCH",
+        &pr_path(138),
+        MockResponse::json(200, json!({"pullRequestId": 138, "status": "abandoned"})),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &["prs", "abandon", "Alpha", "Alpha.Core", "138", "--json"],
+    );
+
+    assert_success(&output);
+    assert_eq!(
+        stdout_of(&output),
+        "{\"ok\":true,\"result\":{\"pullRequestId\":138,\"status\":\"abandoned\"}}\n",
+        "the value envelope (D33)"
+    );
+
+    let received = server.received();
+    assert_eq!(received.len(), 1, "one PATCH and no read");
+    assert_eq!(received[0].method, "PATCH");
+    assert_eq!(received[0].path, pr_path(138));
+    assert_eq!(received[0].query_pairs(), vec![api_version()]);
+    assert_eq!(sent_body(&received[0]), json!({"status": "abandoned"}));
+}
+
+#[test]
+fn abandon_404_reports_the_module_message() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "PATCH",
+        &pr_path(999),
+        MockResponse::from_fixture("error_404").with_status(404),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &["prs", "abandon", "Alpha", "Alpha.Core", "999", "--json"],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    let envelope: Value =
+        serde_json::from_str(&stdout_of(&output)).expect("stdout is one JSON document");
+    assert_eq!(envelope["error"]["code"], json!("not_found"));
+    assert_eq!(
+        envelope["error"]["message"],
+        json!("Pull request #999 not found")
+    );
+}
+
+#[test]
+fn abandon_without_the_id_is_a_usage_error() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+
+    let output = run(&home, &server, &["prs", "abandon", "Alpha", "Alpha.Core"]);
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        stderr_of(&output).contains("PR_ID"),
+        "stderr: {}",
+        stderr_of(&output)
+    );
+    assert!(server.received().is_empty());
+}
+
+/// R5: `abandon` proceeds with `n` on stdin and with EOF — no prompt, no `--force`.
+#[test]
+fn abandon_does_not_prompt() {
+    let home = TempHome::new();
+
+    for stdin in [b"n\n".as_slice(), b"".as_slice()] {
+        let server = MockServer::start();
+        server.expect(
+            "PATCH",
+            &pr_path(138),
+            MockResponse::json(200, json!({"pullRequestId": 138, "status": "abandoned"})),
+        );
+
+        let output = run_with_stdin(
+            &home,
+            &server,
+            &["prs", "abandon", "Alpha", "Alpha.Core", "138"],
+            stdin,
+        );
+
+        assert_success(&output);
+        assert_eq!(
+            server.received().len(),
+            1,
+            "the PATCH goes out with {stdin:?} on stdin"
+        );
+        assert_eq!(
+            sent_body(&server.received()[0]),
+            json!({"status": "abandoned"})
+        );
+    }
+}
+
+#[test]
+fn approve_reads_connection_data_then_puts_the_vote() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    expect_connection_data(&server);
+    server.expect(
+        "PUT",
+        &reviewer_path(137, REVIEWER_ID),
+        MockResponse::json(
+            200,
+            json!({"id": REVIEWER_ID, "vote": 10, "displayName": "Ada Example"}),
+        ),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &["prs", "approve", "Alpha", "Alpha.Core", "137", "--json"],
+    );
+
+    assert_success(&output);
+    assert_eq!(
+        stdout_of(&output),
+        format!(
+            "{}\n",
+            json!({"ok": true, "result": {"id": REVIEWER_ID, "vote": 10, "displayName": "Ada Example"}})
+        ),
+        "the reviewer is the value envelope (D33)"
+    );
+
+    let received = server.received();
+    assert_eq!(received.len(), 2, "the identity read and the vote");
+    assert_eq!(received[0].method, "GET");
+    assert_eq!(received[0].path, CONNECTION_DATA_PATH);
+    assert_eq!(
+        received[0].query_pairs(),
+        Vec::<(String, String)>::new(),
+        "the captured connectionData request carries no api-version at all"
+    );
+    assert_eq!(received[1].method, "PUT");
+    assert_eq!(received[1].path, reviewer_path(137, REVIEWER_ID));
+    assert_eq!(received[1].query_pairs(), vec![api_version()]);
+    assert_eq!(sent_body(&received[1]), json!({"vote": 10}));
+}
+
+#[test]
+fn approve_without_an_authenticated_user_id_is_loud() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "GET",
+        CONNECTION_DATA_PATH,
+        MockResponse::json(
+            200,
+            json!({"authenticatedUser": {"displayName": "Ada Example"}}),
+        ),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &["prs", "approve", "Alpha", "Alpha.Core", "137", "--json"],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    let envelope: Value =
+        serde_json::from_str(&stdout_of(&output)).expect("stdout is one JSON document");
+    assert_eq!(envelope["error"]["code"], json!("auth_required"));
+    assert_eq!(
+        envelope["error"]["message"],
+        json!(
+            "Cannot determine authenticated user identity for PR #137: Connection data did not include an authenticated user ID"
+        )
+    );
+    assert_eq!(server.received().len(), 1, "no vote without an identity");
+}
+
+#[test]
+fn approve_connection_data_failure_is_loud() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "GET",
+        CONNECTION_DATA_PATH,
+        MockResponse::from_fixture("error_404").with_status(404),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &["prs", "approve", "Alpha", "Alpha.Core", "137", "--json"],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    let envelope: Value =
+        serde_json::from_str(&stdout_of(&output)).expect("stdout is one JSON document");
+    assert_eq!(envelope["error"]["code"], json!("not_found"));
+    assert_eq!(envelope["error"]["status"], json!(404));
+    assert!(
+        envelope["error"]["message"]
+            .as_str()
+            .expect("a message")
+            .starts_with("Cannot determine authenticated user identity for PR #137:"),
+        "the identity prefix is kept: {envelope}"
+    );
+    assert_eq!(
+        server.received().len(),
+        1,
+        "no vote after a failed identity read"
+    );
+}
+
+/// The five named values and the bare integer: the captured `vote_label/1` table,
+/// each with its `{"vote": N}` body.
+#[test]
+fn vote_sends_each_value_and_labels_the_line() {
+    let home = TempHome::new();
+
+    for (vote, label) in [
+        (10, "+10 (approved)"),
+        (5, "+5 (approved with suggestions)"),
+        (0, "0 (reset)"),
+        (-5, "-5 (waiting for author)"),
+        (-10, "-10 (rejected)"),
+        (7, "7"),
+    ] {
+        let server = MockServer::start();
+        expect_connection_data(&server);
+        server.expect(
+            "PUT",
+            &reviewer_path(137, REVIEWER_ID),
+            MockResponse::json(200, json!({"id": REVIEWER_ID, "vote": vote})),
+        );
+
+        let vote_arg = vote.to_string();
+        let output = run(
+            &home,
+            &server,
+            &[
+                "prs",
+                "vote",
+                "Alpha",
+                "Alpha.Core",
+                "137",
+                "--vote",
+                &vote_arg,
+            ],
+        );
+
+        assert_success(&output);
+        assert_eq!(
+            stdout_of(&output),
+            format!("Voted {label} on PR #137.\n"),
+            "the captured label for {vote}"
+        );
+        assert_eq!(
+            sent_body(&server.received()[1]),
+            json!({"vote": vote}),
+            "the body carries the raw integer"
+        );
+    }
+}
+
+/// D34: the oracle's schema marks `--vote` required and CliMate never enforces it;
+/// its `parsed.options.vote` access then exits 0 silently. This build is a loud
+/// usage error.
+#[test]
+fn vote_without_the_option_is_a_loud_usage_error() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+
+    let output = run(
+        &home,
+        &server,
+        &["prs", "vote", "Alpha", "Alpha.Core", "137", "--json"],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        stdout_of(&output).is_empty(),
+        "no envelope for a usage error: {}",
+        stdout_of(&output)
+    );
+    assert!(
+        stderr_of(&output).contains("--vote"),
+        "stderr: {}",
+        stderr_of(&output)
+    );
+    assert!(server.received().is_empty(), "no request without --vote");
+}
+
+#[test]
+fn vote_with_a_non_integer_is_a_usage_error() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+
+    let output = run(
+        &home,
+        &server,
+        &["prs", "vote", "Alpha", "Alpha.Core", "137", "--vote", "abc"],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        stderr_of(&output).contains("--vote"),
+        "stderr: {}",
+        stderr_of(&output)
+    );
+    assert!(server.received().is_empty());
+}
+
+#[test]
+fn vote_404_reports_the_module_message() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    expect_connection_data(&server);
+    server.expect(
+        "PUT",
+        &reviewer_path(999, REVIEWER_ID),
+        MockResponse::from_fixture("error_404").with_status(404),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "prs",
+            "vote",
+            "Alpha",
+            "Alpha.Core",
+            "999",
+            "--vote",
+            "10",
+            "--json",
+        ],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    let envelope: Value =
+        serde_json::from_str(&stdout_of(&output)).expect("stdout is one JSON document");
+    assert_eq!(envelope["error"]["code"], json!("not_found"));
+    assert_eq!(
+        envelope["error"]["message"],
+        json!("Pull request #999 not found")
+    );
+    assert_eq!(server.received().len(), 2);
+}
+
+/// R5: `vote` proceeds with `n` on stdin — the mock serves the connectionData GET,
+/// so a post-fetch prompt would have shown.
+#[test]
+fn vote_with_n_on_stdin_still_puts() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    expect_connection_data(&server);
+    server.expect(
+        "PUT",
+        &reviewer_path(137, REVIEWER_ID),
+        MockResponse::json(200, json!({"id": REVIEWER_ID, "vote": 10})),
+    );
+
+    let output = run_with_stdin(
+        &home,
+        &server,
+        &["prs", "vote", "Alpha", "Alpha.Core", "137", "--vote", "10"],
+        b"n\n",
+    );
+
+    assert_success(&output);
+    assert_eq!(
+        server.received().len(),
+        2,
+        "the identity read and the vote both went out on `n`"
+    );
+    assert_eq!(stdout_of(&output), "Voted +10 (approved) on PR #137.\n");
+}
+
+/// `create` was probed the same way: with `n` on stdin the POST still goes out.
+#[test]
+fn create_with_n_on_stdin_still_posts() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "POST",
+        LIST_PATH,
+        MockResponse::json(200, created_pull_request()),
+    );
+
+    let output = run_with_stdin(
+        &home,
+        &server,
+        &[
+            "prs",
+            "create",
+            "Alpha",
+            "Alpha.Core",
+            "--title",
+            "Add checkout retries",
+            "--source",
+            "feature/payments",
+            "--target",
+            "main",
+        ],
+        b"n\n",
+    );
+
+    assert_success(&output);
+    assert_eq!(server.received().len(), 1, "the POST goes out on `n`");
 }

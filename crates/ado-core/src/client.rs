@@ -89,15 +89,65 @@ impl Client {
         let path = path.trim_start_matches('/');
         let query = encode_query(&with_api_version(params));
 
+        self.absolute_url(path, &query)
+    }
+
+    /// The absolute URL for `path` with no query string at all: the connectionData
+    /// lookup is the one captured endpoint that rejects `api-version`
+    /// (`Client.get_raw_no_version/1`, `lib/ado_cli/client.ex:102-116`), so it must
+    /// not reuse [`Client::url_for`]'s merge.
+    fn url_for_unversioned(&self, path: &str) -> String {
+        self.absolute_url(path.trim_start_matches('/'), "")
+    }
+
+    fn absolute_url(&self, path: &str, query: &str) -> String {
         match &self.base {
-            Base::Cloud => format!("https://{}.visualstudio.com/{path}?{query}", self.org),
-            Base::Server(server) => with_org(server, &self.org, path, &query),
+            Base::Cloud => {
+                let suffix = if query.is_empty() {
+                    String::new()
+                } else {
+                    format!("?{query}")
+                };
+
+                format!("https://{}.visualstudio.com/{path}{suffix}", self.org)
+            }
+            Base::Server(server) => with_org(server, &self.org, path, query),
         }
     }
 
     /// `GET` with the JSON body decoded.
     pub fn get(&self, path: &str, params: &[(String, String)]) -> Result<Value, AdoError> {
         self.send("GET", path, params, None)?.json()
+    }
+
+    /// `GET` a path with no `api-version` query parameter (and no other params).
+    /// Only `/_apis/connectionData` needs it: the endpoint is the frozen CLI's
+    /// `get_raw_no_version` target, and the captured request carries no query at
+    /// all.
+    pub fn get_without_version(&self, path: &str) -> Result<Value, AdoError> {
+        let url = self.url_for_unversioned(path);
+        let request = http::Request::builder()
+            .method("GET")
+            .uri(&url)
+            .header(self.auth.0.as_str(), self.auth.1.as_str())
+            .body(())
+            .map_err(|error| build_failed(&error))?;
+        let mut response = self
+            .agent
+            .run(request)
+            .map_err(|error| AdoError::from_transport(&error))?;
+        let status = response.status().as_u16();
+        let has_location = response.headers().contains_key("location");
+        let body = response
+            .body_mut()
+            .read_to_string()
+            .map_err(|error| AdoError::from_transport(&error))?;
+
+        if REDIRECT_STATUSES.contains(&status) {
+            return Err(redirect_error(status, has_location));
+        }
+
+        Reply { status, body }.json()
     }
 
     /// `GET` for the list endpoints: `{"value": [...]}` unwraps to the array, and a
@@ -435,14 +485,21 @@ pub fn encode_path_segment(value: &str) -> String {
 }
 
 /// A self-hosted base URL with `/{org}` inserted after the host, so a collection
-/// URL such as `https://server.test/tfs` keeps its path.
+/// URL such as `https://server.test/tfs` keeps its path. An empty `query` adds no
+/// `?` at all — the unversioned connectionData request carries no query string.
 fn with_org(server: &str, org: &str, path: &str, query: &str) -> String {
+    let suffix = if query.is_empty() {
+        String::new()
+    } else {
+        format!("?{query}")
+    };
+
     match server.split_once("://") {
         Some((scheme, rest)) => match rest.split_once('/') {
-            Some((host, tail)) => format!("{scheme}://{host}/{org}/{tail}/{path}?{query}"),
-            None => format!("{scheme}://{rest}/{org}/{path}?{query}"),
+            Some((host, tail)) => format!("{scheme}://{host}/{org}/{tail}/{path}{suffix}"),
+            None => format!("{scheme}://{rest}/{org}/{path}{suffix}"),
         },
-        None => format!("{server}/{org}/{path}?{query}"),
+        None => format!("{server}/{org}/{path}{suffix}"),
     }
 }
 
@@ -506,6 +563,21 @@ mod tests {
         assert_eq!(
             client(Some("https://server.test/tfs/")).url_for("_apis/projects", &[]),
             "https://server.test/myorg/tfs/_apis/projects?api-version=7.1"
+        );
+    }
+
+    /// The connectionData lookup is the one captured request with no query at
+    /// all, on both bases: the cloud host gets no `?api-version=`, and the
+    /// self-hosted builder gets no dangling `?` either.
+    #[test]
+    fn an_unversioned_url_carries_no_query() {
+        assert_eq!(
+            client(None).url_for_unversioned("/_apis/connectionData"),
+            "https://myorg.visualstudio.com/_apis/connectionData"
+        );
+        assert_eq!(
+            client(Some("https://server.test/tfs/")).url_for_unversioned("_apis/connectionData"),
+            "https://server.test/myorg/tfs/_apis/connectionData"
         );
     }
 
