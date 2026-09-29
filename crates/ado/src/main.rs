@@ -367,6 +367,100 @@ fn main() -> ExitCode {
                     ),
                     _ => Err(AdoError::validation(MISSING_SUBCOMMAND)),
                 },
+                Some(("variables", variables)) => match variables.subcommand() {
+                    Some(("list", list)) => commands::pipelines::variables_list(
+                        &mut context,
+                        list.get_one::<String>("project")
+                            .expect("the positional is required")
+                            .as_str(),
+                        list.get_one::<i64>("pipeline_id")
+                            .copied()
+                            .expect("the positional is required"),
+                    ),
+                    Some(("create", create)) => commands::pipelines::variables_create(
+                        &mut context,
+                        create
+                            .get_one::<String>("project")
+                            .expect("the positional is required")
+                            .as_str(),
+                        create
+                            .get_one::<i64>("pipeline_id")
+                            .copied()
+                            .expect("the positional is required"),
+                        create
+                            .get_one::<String>("key")
+                            .expect("the option is required")
+                            .as_str(),
+                        create
+                            .get_one::<String>("value")
+                            .expect("the option is required")
+                            .as_str(),
+                        create.get_flag("secret"),
+                    ),
+                    Some(("delete", delete)) => commands::pipelines::variables_delete(
+                        &mut context,
+                        delete
+                            .get_one::<String>("project")
+                            .expect("the positional is required")
+                            .as_str(),
+                        delete
+                            .get_one::<i64>("pipeline_id")
+                            .copied()
+                            .expect("the positional is required"),
+                        delete
+                            .get_one::<String>("key")
+                            .expect("the option is required")
+                            .as_str(),
+                    ),
+                    _ => Err(AdoError::validation(MISSING_SUBCOMMAND)),
+                },
+                Some(("secure_files", secure_files)) => match secure_files.subcommand() {
+                    Some(("list", list)) => commands::pipelines::secure_files_list(
+                        &mut context,
+                        list.get_one::<String>("project")
+                            .expect("the positional is required")
+                            .as_str(),
+                        list.get_one::<i64>("top").copied(),
+                    ),
+                    Some(("show", show)) => commands::pipelines::secure_files_show(
+                        &mut context,
+                        show.get_one::<String>("project")
+                            .expect("the positional is required")
+                            .as_str(),
+                        show.get_one::<String>("secure_file_id")
+                            .expect("the positional is required")
+                            .as_str(),
+                    ),
+                    Some(("upload", upload)) => commands::pipelines::secure_files_upload(
+                        &mut context,
+                        upload
+                            .get_one::<String>("project")
+                            .expect("the positional is required")
+                            .as_str(),
+                        upload
+                            .get_one::<String>("name")
+                            .expect("the positional is required")
+                            .as_str(),
+                        upload
+                            .get_one::<String>("file")
+                            .expect("the option is required")
+                            .as_str(),
+                        upload.get_flag("allow_exists"),
+                    ),
+                    Some(("delete", delete)) => commands::pipelines::secure_files_delete(
+                        &mut context,
+                        delete
+                            .get_one::<String>("project")
+                            .expect("the positional is required")
+                            .as_str(),
+                        delete
+                            .get_one::<String>("secure_file_id")
+                            .expect("the positional is required")
+                            .as_str(),
+                        delete.get_flag("force"),
+                    ),
+                    _ => Err(AdoError::validation(MISSING_SUBCOMMAND)),
+                },
                 _ => Err(AdoError::validation(MISSING_SUBCOMMAND)),
             }
         }

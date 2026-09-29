@@ -168,8 +168,12 @@ fn schema_login_node_has_the_method_option_and_the_globals() {
 }
 
 /// Wave 2 completes the pipelines node: the two reads, the four definition
-/// mutations and the `vars` group (Task 4). `pipelines variables` and
-/// `pipelines secure-files` are still absent (Tasks 5 and 6).
+/// mutations, the `vars` group (Task 4) and the two Task 5 groups — `variables`
+/// and `secure_files`.
+///
+/// R3: the schema's display name is `pipelines secure-files`, but the runnable
+/// spelling is the underscore — `ado pipelines secure-files …` prints the parent's
+/// help, so this build reports the name argv accepts (D18's rule).
 #[test]
 fn schema_pipelines_node_has_the_wave_two_subcommands() {
     let pipelines = find_node("pipelines").expect("the pipelines node");
@@ -189,6 +193,8 @@ fn schema_pipelines_node_has_the_wave_two_subcommands() {
             "ado pipelines update",
             "ado pipelines delete",
             "ado pipelines vars",
+            "ado pipelines variables",
+            "ado pipelines secure_files",
         ]
     );
 
@@ -212,6 +218,94 @@ fn schema_pipelines_node_has_the_wave_two_subcommands() {
             "ado pipelines vars update",
             "ado pipelines vars delete",
         ]
+    );
+
+    let variables = pipelines["subcommands"]
+        .as_array()
+        .expect("the subcommand array")
+        .iter()
+        .find(|sub| sub["name"] == json!("ado pipelines variables"))
+        .expect("the variables node");
+    let variables_names = subcommands(variables)
+        .iter()
+        .map(|sub| sub["name"].as_str().expect("a subcommand name"))
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        variables_names,
+        [
+            "ado pipelines variables list",
+            "ado pipelines variables create",
+            "ado pipelines variables delete",
+        ]
+    );
+
+    let secure_files = pipelines["subcommands"]
+        .as_array()
+        .expect("the subcommand array")
+        .iter()
+        .find(|sub| sub["name"] == json!("ado pipelines secure_files"))
+        .expect("the secure_files node");
+    let secure_files_names = subcommands(secure_files)
+        .iter()
+        .map(|sub| sub["name"].as_str().expect("a subcommand name"))
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        secure_files_names,
+        [
+            "ado pipelines secure_files list",
+            "ado pipelines secure_files show",
+            "ado pipelines secure_files upload",
+            "ado pipelines secure_files delete",
+        ]
+    );
+
+    for node in nodes(secure_files) {
+        let name = node["name"].as_str().expect("a node name");
+        assert!(
+            name.starts_with("ado pipelines secure_files"),
+            "the schema reports the parseable spelling argv accepts (R3): {name}"
+        );
+        assert!(
+            !name.contains("secure-files"),
+            "the Elixir's display name is not runnable: {name}"
+        );
+    }
+
+    let upload = secure_files_names
+        .iter()
+        .position(|name| *name == "ado pipelines secure_files upload")
+        .map(|index| &secure_files["subcommands"][index])
+        .expect("the upload node");
+    assert_eq!(
+        option_names(upload),
+        [
+            "allow_exists",
+            "file",
+            "json",
+            "org",
+            "pat",
+            "server",
+            "verbose",
+        ],
+        "the oracle's two local options plus the globals"
+    );
+    assert_eq!(option(upload, "file")["required"], json!(true));
+    assert_eq!(option(upload, "file")["type"], json!("string"));
+    assert_eq!(option(upload, "allow_exists")["type"], json!("boolean"));
+    assert_eq!(argument(upload, "name")["required"], json!(true));
+
+    let delete = secure_files["subcommands"]
+        .as_array()
+        .expect("the subcommand array")
+        .iter()
+        .find(|sub| sub["name"] == json!("ado pipelines secure_files delete"))
+        .expect("the secure_files delete node");
+    assert_eq!(
+        option_names(delete),
+        ["force", "json", "org", "pat", "server", "verbose"],
+        "--force is the one local option"
     );
 }
 

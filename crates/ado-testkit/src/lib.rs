@@ -79,11 +79,7 @@ impl MockResponse {
     /// `application/octet-stream` — [`from_fixture`](MockResponse::from_fixture)'s
     /// sibling for downloads, where the body is bytes and not JSON.
     pub fn from_bytes_fixture(name: &str) -> MockResponse {
-        let path = fixture_path(name);
-        let body = fs::read(&path)
-            .unwrap_or_else(|error| panic!("cannot read fixture {}: {error}", path.display()));
-
-        MockResponse::bytes(200, body)
+        MockResponse::bytes(200, fixture_bytes(name))
     }
 
     /// The same response with a different status.
@@ -238,6 +234,15 @@ fn fixture_path(name: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("fixtures")
         .join(name)
+}
+
+/// The raw bytes of a `fixtures/<name>` capture — the same bytes
+/// [`MockResponse::from_bytes_fixture`] serves, for a test that must write or
+/// compare them itself (a request body that is a file's bytes, say).
+pub fn fixture_bytes(name: &str) -> Vec<u8> {
+    let path = fixture_path(name);
+    fs::read(&path)
+        .unwrap_or_else(|error| panic!("cannot read fixture {}: {error}", path.display()))
 }
 
 /// The `.json` fixture guard: the capture must read as UTF-8 text and parse as

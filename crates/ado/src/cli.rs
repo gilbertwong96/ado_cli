@@ -848,6 +848,205 @@ pub fn command() -> Command {
                                 ),
                         ),
                 )
+                .subcommand(
+                    Command::new("variables")
+                        .about(
+                            "Manage per-pipeline variables (user-defined variables stored on a single pipeline definition, not shared). Prefer variable groups for shared config — these are scoped to one pipeline.",
+                        )
+                        .subcommand(
+                            Command::new("list")
+                                .about(
+                                    "List all variables defined directly on a pipeline (not those in referenced variable groups). Output is a table (Key, Value, Secret).",
+                                )
+                                .arg(
+                                    Arg::new("project")
+                                        .value_name("PROJECT")
+                                        .required(true)
+                                        .help("Project name or ID"),
+                                )
+                                .arg(
+                                    Arg::new("pipeline_id")
+                                        .value_name("PIPELINE_ID")
+                                        .required(true)
+                                        .value_parser(clap::value_parser!(i64))
+                                        .help("Numeric pipeline ID"),
+                                ),
+                        )
+                        .subcommand(
+                            Command::new("create")
+                                .about(
+                                    "Add a single variable to a pipeline. For multiple variables, prefer `ado pipelines vars create` (variable groups) which can be shared across pipelines.",
+                                )
+                                .arg(
+                                    Arg::new("project")
+                                        .value_name("PROJECT")
+                                        .required(true)
+                                        .help("Project name or ID"),
+                                )
+                                .arg(
+                                    Arg::new("pipeline_id")
+                                        .value_name("PIPELINE_ID")
+                                        .required(true)
+                                        .value_parser(clap::value_parser!(i64))
+                                        .help("Numeric pipeline ID"),
+                                )
+                                .arg(
+                                    Arg::new("key")
+                                        .long("key")
+                                        .value_name("KEY")
+                                        .required(true)
+                                        .help("Variable name (env-var friendly: uppercase, no spaces)"),
+                                )
+                                .arg(
+                                    Arg::new("value")
+                                        .long("value")
+                                        .value_name("VALUE")
+                                        .required(true)
+                                        .help(
+                                            "Variable value. Marked secret if --secret is passed (value is then stored encrypted and cannot be retrieved later).",
+                                        ),
+                                )
+                                .arg(
+                                    Arg::new("secret")
+                                        .long("secret")
+                                        .action(ArgAction::SetTrue)
+                                        .help(
+                                            "Mark the variable as secret. Once set, the value cannot be retrieved via the API — only overwritten with a new value.",
+                                        ),
+                                ),
+                        )
+                        .subcommand(
+                            Command::new("delete")
+                                .about(
+                                    "Remove a variable from a pipeline. Pipelines referencing this variable will fail; update the pipeline YAML or use a default value.",
+                                )
+                                .arg(
+                                    Arg::new("project")
+                                        .value_name("PROJECT")
+                                        .required(true)
+                                        .help("Project name or ID"),
+                                )
+                                .arg(
+                                    Arg::new("pipeline_id")
+                                        .value_name("PIPELINE_ID")
+                                        .required(true)
+                                        .value_parser(clap::value_parser!(i64))
+                                        .help("Numeric pipeline ID"),
+                                )
+                                .arg(
+                                    Arg::new("key")
+                                        .long("key")
+                                        .value_name("KEY")
+                                        .required(true)
+                                        .help("Variable name to remove (must match exactly, case-sensitive)"),
+                                ),
+                        ),
+                )
+                .subcommand(
+                    Command::new("secure_files")
+                        .about(
+                            "Manage Secure Files in the Pipeline Library. Secure files are binary blobs (certificates, kubeconfigs, signing keys) referenced by pipelines via the DownloadSecureFile@1 task. (The 'download' subcommand is intentionally absent — see CHANGELOG for the Azure DevOps platform gap that prevents ticket issuance for personal Microsoft accounts.)",
+                        )
+                        .subcommand(
+                            Command::new("list")
+                                .about(
+                                    "List all Secure Files in a project. Output is a table (ID, Name, Size, Modified). Use --top to limit. Pass --json for raw data.",
+                                )
+                                .arg(
+                                    Arg::new("project")
+                                        .value_name("PROJECT")
+                                        .required(true)
+                                        .help("Project name or ID"),
+                                )
+                                .arg(
+                                    Arg::new("top")
+                                        .long("top")
+                                        .value_name("N")
+                                        .value_parser(clap::value_parser!(i64))
+                                        .allow_negative_numbers(true)
+                                        .help("Maximum number to return. Default 50."),
+                                ),
+                        )
+                        .subcommand(
+                            Command::new("show")
+                                .about(
+                                    "Show details of a single Secure File: ID, name, size, created/modified by and on. The ID is a GUID string (from `list`).",
+                                )
+                                .arg(
+                                    Arg::new("project")
+                                        .value_name("PROJECT")
+                                        .required(true)
+                                        .help("Project name or ID"),
+                                )
+                                .arg(
+                                    Arg::new("secure_file_id")
+                                        .value_name("SECURE_FILE_ID")
+                                        .required(true)
+                                        .help("Secure File ID (GUID string, from `list`)"),
+                                ),
+                        )
+                        .subcommand(
+                            Command::new("upload")
+                                .about(
+                                    "Upload a local file as a Secure File to the Library. The file content is sent as raw bytes (application/octet-stream). If a Secure File with the same name already exists and --allow-exists is passed, the existing one is deleted first; otherwise the command fails with a 409 error.",
+                                )
+                                .arg(
+                                    Arg::new("project")
+                                        .value_name("PROJECT")
+                                        .required(true)
+                                        .help("Project name or ID"),
+                                )
+                                .arg(
+                                    Arg::new("name")
+                                        .value_name("NAME")
+                                        .required(true)
+                                        .help(
+                                            "Name for the Secure File (e.g. 'prod-cert.pem'). Must be unique within the project.",
+                                        ),
+                                )
+                                .arg(
+                                    Arg::new("file")
+                                        .long("file")
+                                        .value_name("PATH")
+                                        .required(true)
+                                        .help("Path to the local file to upload"),
+                                )
+                                .arg(
+                                    Arg::new("allow_exists")
+                                        .long("allow-exists")
+                                        .action(ArgAction::SetTrue)
+                                        .help(
+                                            "If a Secure File with this name already exists, delete it first before uploading. Without this flag, the command fails on name conflict.",
+                                        ),
+                                ),
+                        )
+                        .subcommand(
+                            Command::new("delete")
+                                .about(
+                                    "Permanently delete a Secure File. Pipelines referencing it will fail until updated.",
+                                )
+                                .arg(
+                                    Arg::new("project")
+                                        .value_name("PROJECT")
+                                        .required(true)
+                                        .help("Project name or ID"),
+                                )
+                                .arg(
+                                    Arg::new("secure_file_id")
+                                        .value_name("SECURE_FILE_ID")
+                                        .required(true)
+                                        .help("Secure File ID (GUID string, from `list`)"),
+                                )
+                                .arg(
+                                    Arg::new("force")
+                                        .long("force")
+                                        .action(ArgAction::SetTrue)
+                                        .help(
+                                            "Proceed with the delete. Without it the command refuses, writes the guard to stderr and sends nothing.",
+                                        ),
+                                ),
+                        ),
+                )
         )
         .subcommand(
             Command::new("pipelines-builds")

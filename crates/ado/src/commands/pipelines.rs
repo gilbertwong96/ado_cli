@@ -1,13 +1,17 @@
-//! `ado pipelines list|show|run|create|update|delete` and the `vars` variable
-//! groups — the read and write paths of `lib/ado_cli/cli/pipelines.ex`: the same
-//! REST surface, the same bodies, and the same human layouts.
+//! `ado pipelines list|show|run|create|update|delete`, the `vars` variable
+//! groups, the per-pipeline `variables` and the `secure_files` library — the read
+//! and write paths of `lib/ado_cli/cli/pipelines.ex`: the same REST surface, the
+//! same bodies, and the same human layouts.
 //!
-//! `pipelines variables` and `pipelines secure-files` are still absent (Tasks 5
-//! and 6). None of this module's deletes prompts: the captures show
-//! `pipelines delete` and `pipelines vars delete` proceeding on `n` and on EOF,
-//! and neither command has a `--force` (R5, R1).
+//! Three deletes were re-verified against the mock with `n` on stdin (R5):
+//! `pipelines delete` and `pipelines vars delete` proceed without a question and
+//! have no `--force`; `pipelines secure_files delete` asks no question either,
+//! but without `--force` it refuses — the oracle prints its guard and exits 0
+//! having sent nothing, this build exits 1 with the same message on stderr
+//! (R6, D32).
 
 use std::collections::HashSet;
+use std::fs;
 
 use ado_core::client::encode_path_segment;
 use ado_core::envelope::{ok_message, ok_value};
@@ -21,6 +25,12 @@ use crate::output::Report;
 /// The org-scoped project collection `vars delete` resolves its `projectIds`
 /// against.
 const PROJECTS_PATH: &str = "/_apis/projects";
+
+/// `secure_files delete`'s guard without `--force`: a message that replaces a
+/// question (R6). The oracle prints it and exits 0 having sent nothing; this
+/// build refuses with exit 1 (D32) and the same wording.
+const SECURE_FILE_GUARD: &str =
+    "This will permanently delete the Secure File. Pass --force to confirm.";
 
 /// `Map.get(parsed.options, :branch, "main")`: the branch a run uses when
 /// `--branch` is absent.
@@ -53,10 +63,7 @@ pub fn list(
 /// `show_pipeline/1`: `GET /{project}/_apis/pipelines/{pipeline_id}`, with no params
 /// beyond the version. The module answers a 404 with its own message.
 pub fn show(context: &mut Context, project: &str, pipeline_id: i64) -> Result<Report, AdoError> {
-    let path = format!(
-        "/{}/_apis/pipelines/{pipeline_id}",
-        encode_path_segment(project)
-    );
+    let path = pipeline_path(project, pipeline_id);
     let response = context.client()?.get(&path, &[]);
 
     match response {
@@ -208,10 +215,7 @@ pub fn update(
         body.insert("configuration".to_owned(), json!({"path": path}));
     }
 
-    let request_path = format!(
-        "/{}/_apis/pipelines/{pipeline_id}",
-        encode_path_segment(project)
-    );
+    let request_path = pipeline_path(project, pipeline_id);
 
     match context
         .client()?
@@ -233,10 +237,7 @@ pub fn update(
 /// on EOF, R5); its success line is this build's message envelope (D33), and a
 /// 404 carries the pipeline's id alone.
 pub fn delete(context: &mut Context, project: &str, pipeline_id: i64) -> Result<Report, AdoError> {
-    let path = format!(
-        "/{}/_apis/pipelines/{pipeline_id}",
-        encode_path_segment(project)
-    );
+    let path = pipeline_path(project, pipeline_id);
 
     match context.client()?.delete(&path, &[]) {
         Ok(()) => {
@@ -492,6 +493,441 @@ pub fn vars_delete(
     }
 }
 
+/// `list_pipeline_vars/1`: `GET /{project}/_apis/pipelines/{pipeline_id}`, then the
+/// pipeline's `configuration.variables` as one record per variable
+/// (`key`, `value`, `isSecret`). A pipeline without a variables map reads as
+/// none; the module's 404 message carries the pipeline's id alone.
+///
+/// The records are key-sorted because both sides enumerate a small map in term
+/// order (serde's `BTreeMap` here, Erlang's flatmap there); a pipeline with more
+/// than 32 variables is the recorded carry.
+pub fn variables_list(
+    context: &mut Context,
+    project: &str,
+    pipeline_id: i64,
+) -> Result<Report, AdoError> {
+    let path = pipeline_path(project, pipeline_id);
+
+    match context.client()?.get(&path, &[]) {
+        Ok(pipeline) => {
+            let variables = pipeline_variables(&pipeline);
+
+            Ok(
+                context.json_or_report(ok_value(Value::Array(variables.clone())), || {
+                    variables_table(&variables)
+                }),
+            )
+        }
+        Err(error) if error.code == ErrorCode::NotFound => Err(AdoError {
+            message: format!("Pipeline #{pipeline_id} not found"),
+            ..error
+        }),
+        Err(error) => Err(error),
+    }
+}
+
+/// `create_pipeline_var/1`: fetch the pipeline, put the new variable into
+/// `configuration.variables`, and `PATCH` the whole pipeline back. The module's
+/// success line is this build's message envelope (D33).
+pub fn variables_create(
+    context: &mut Context,
+    project: &str,
+    pipeline_id: i64,
+    key: &str,
+    value: &str,
+    secret: bool,
+) -> Result<Report, AdoError> {
+    let path = pipeline_path(project, pipeline_id);
+    let response = context.client()?.get(&path, &[]);
+
+    match response {
+        Ok(pipeline) => {
+            let mut variables = pipeline_variables_map(&pipeline);
+            variables.insert(key.to_owned(), json!({"value": value, "isSecret": secret}));
+
+            let body = pipeline_with_variables(&pipeline, variables);
+
+            match context.client()?.patch(&path, &body, &[]) {
+                Ok(_) => {
+                    let message = format!("Variable '{key}' added.");
+
+                    Ok(context.json_or_report(ok_message(&message), || Report::Text(message)))
+                }
+                Err(error) => Err(error),
+            }
+        }
+        Err(error) if error.code == ErrorCode::NotFound => Err(AdoError {
+            message: format!("Pipeline #{pipeline_id} not found"),
+            ..error
+        }),
+        Err(error) => Err(error),
+    }
+}
+
+/// `delete_pipeline_var/1`: fetch the pipeline, drop the named variable from
+/// `configuration.variables`, and `PATCH` the whole pipeline back — the key is
+/// removed, the map stays (captured: an emptied map is still sent as `{}`).
+/// No prompt stands in front of either request; the captured `n` run sends both
+/// (R5). The module's success line is this build's message envelope (D33).
+pub fn variables_delete(
+    context: &mut Context,
+    project: &str,
+    pipeline_id: i64,
+    key: &str,
+) -> Result<Report, AdoError> {
+    let path = pipeline_path(project, pipeline_id);
+    let response = context.client()?.get(&path, &[]);
+
+    match response {
+        Ok(pipeline) => {
+            let mut variables = pipeline_variables_map(&pipeline);
+            variables.remove(key);
+
+            let body = pipeline_with_variables(&pipeline, variables);
+
+            match context.client()?.patch(&path, &body, &[]) {
+                Ok(_) => {
+                    let message = format!("Variable '{key}' removed.");
+
+                    Ok(context.json_or_report(ok_message(&message), || Report::Text(message)))
+                }
+                Err(error) => Err(error),
+            }
+        }
+        Err(error) if error.code == ErrorCode::NotFound => Err(AdoError {
+            message: format!("Pipeline #{pipeline_id} not found"),
+            ..error
+        }),
+        Err(error) => Err(error),
+    }
+}
+
+/// `secure_files_list/1`: `GET /{project}/_apis/distributedtask/securefiles`
+/// with the module's `$top`. Under `--json` the body is the value envelope — a
+/// bare array under `result` (W1-R12).
+pub fn secure_files_list(
+    context: &mut Context,
+    project: &str,
+    top: Option<i64>,
+) -> Result<Report, AdoError> {
+    let params = top
+        .map(|top| vec![("$top".to_owned(), top.to_string())])
+        .unwrap_or_default();
+    let files = items(
+        context
+            .client()?
+            .list(&secure_files_path(project), &params)?,
+    );
+
+    Ok(
+        context.json_or_report(ok_value(Value::Array(files.clone())), || {
+            secure_files_table(&files)
+        }),
+    )
+}
+
+/// `secure_files_show/1`: `GET …/securefiles/{id}`. The module answers a 404 with
+/// its own message.
+pub fn secure_files_show(
+    context: &mut Context,
+    project: &str,
+    secure_file_id: &str,
+) -> Result<Report, AdoError> {
+    let path = secure_file_path(project, secure_file_id);
+
+    match context.client()?.get(&path, &[]) {
+        Ok(file) => {
+            Ok(context.json_or_report(ok_value(file.clone()), || secure_file_detail(&file)))
+        }
+        Err(error) if error.code == ErrorCode::NotFound => Err(AdoError {
+            message: format!("Secure file {secure_file_id} not found in project '{project}'"),
+            ..error
+        }),
+        Err(error) => Err(error),
+    }
+}
+
+/// `secure_files_upload/1`: read the local file, optionally replace a file of the
+/// same name, then `POST` the bytes. The body is **not JSON** — the frozen
+/// `Client.post_binary/3` sends the raw bytes with `application/octet-stream`
+/// and the name as a query parameter (captured, headers included). A failed
+/// replace reports and sends no upload; a 409 becomes the module's
+/// replace-or-rename message. The success line is this build's message envelope
+/// (D33), carrying the replace line first when one happened.
+pub fn secure_files_upload(
+    context: &mut Context,
+    project: &str,
+    name: &str,
+    file: &str,
+    allow_exists: bool,
+) -> Result<Report, AdoError> {
+    let bytes =
+        fs::read(file).map_err(|_| AdoError::validation(format!("File not found: {file}")))?;
+    let mut replaced = None;
+
+    if allow_exists && let Some(existing_id) = find_secure_file_id_by_name(context, project, name) {
+        context
+            .client()?
+            .delete(&secure_file_path(project, &existing_id), &[])?;
+
+        replaced = Some(existing_id);
+    }
+
+    let params = vec![("name".to_owned(), name.to_owned())];
+
+    match context
+        .client()?
+        .post_binary(&secure_files_path(project), &bytes, &params)
+    {
+        Ok(response) => {
+            let uploaded = format!(
+                "Secure file '{}' uploaded (ID: {}, {} bytes).",
+                field(&response, "name"),
+                field(&response, "id"),
+                bytes.len(),
+            );
+            let message = match replaced {
+                Some(existing_id) => {
+                    format!("Deleted existing '{name}' (id: {existing_id}).\n{uploaded}")
+                }
+                None => uploaded,
+            };
+
+            Ok(context.json_or_report(ok_message(&message), || Report::Text(message)))
+        }
+        Err(error) if error.code == ErrorCode::Conflict => Err(AdoError {
+            message: upload_conflict_message(name, &error),
+            ..error
+        }),
+        Err(error) => Err(error),
+    }
+}
+
+/// `secure_files_delete/1`: `DELETE …/securefiles/{id}` once `--force` is given.
+/// The guard is a message, not a question (R6): the oracle prints it and exits 0
+/// having sent nothing, while this build refuses with exit 1 — D32's rule that a
+/// refusal is never a success — and the same wording on stderr.
+pub fn secure_files_delete(
+    context: &mut Context,
+    project: &str,
+    secure_file_id: &str,
+    force: bool,
+) -> Result<Report, AdoError> {
+    if !force {
+        return Err(AdoError::cancelled(SECURE_FILE_GUARD));
+    }
+
+    match context
+        .client()?
+        .delete(&secure_file_path(project, secure_file_id), &[])
+    {
+        Ok(()) => {
+            let message = format!("Secure file {secure_file_id} deleted.");
+
+            Ok(context.json_or_report(ok_message(&message), || Report::Text(message)))
+        }
+        Err(error) if error.code == ErrorCode::NotFound => Err(AdoError {
+            message: format!("Secure file {secure_file_id} not found in project '{project}'"),
+            ..error
+        }),
+        Err(error) => Err(error),
+    }
+}
+
+/// `find_secure_file_id_by_name/2`: look the name up through the server-side
+/// `namePattern` filter and take the first exact match's `id`. A failed lookup
+/// and a match without a usable id both read as not found (captured: the oracle
+/// proceeds to the upload when the lookup fails; a match it cannot read an id
+/// from makes it exit 0 silently).
+fn find_secure_file_id_by_name(context: &mut Context, project: &str, name: &str) -> Option<String> {
+    let params = vec![("namePattern".to_owned(), name.to_owned())];
+    let listing = context
+        .client()
+        .ok()?
+        .list(&secure_files_path(project), &params)
+        .ok()?;
+
+    items(listing)
+        .iter()
+        .find(|file| file.get("name").and_then(Value::as_str) == Some(name))
+        .and_then(|file| file.get("id"))
+        .and_then(Value::as_str)
+        .map(str::to_owned)
+}
+
+/// The module's `list_pipeline_vars/1` mapping: each entry of
+/// `configuration.variables` as `{"key", "value", "isSecret"}`, where an absent
+/// value or `isSecret` is `null` — the module reads `v["value"]`/`v["isSecret"]`,
+/// which is `nil` for a nil variable.
+fn pipeline_variables(pipeline: &Value) -> Vec<Value> {
+    pipeline_variables_map(pipeline)
+        .into_iter()
+        .map(|(key, variable)| {
+            json!({
+                "key": key,
+                "value": variable.get("value").cloned().unwrap_or(Value::Null),
+                "isSecret": variable.get("isSecret").cloned().unwrap_or(Value::Null),
+            })
+        })
+        .collect()
+}
+
+/// `get_in(pipeline, ["configuration", "variables"]) || %{}`, read as a map: a
+/// missing `configuration`, a missing `variables`, and a shape that is not an
+/// object all read as none.
+fn pipeline_variables_map(pipeline: &Value) -> Map<String, Value> {
+    pipeline
+        .pointer("/configuration/variables")
+        .and_then(Value::as_object)
+        .cloned()
+        .unwrap_or_default()
+}
+
+/// `put_in(pipeline, ["configuration", "variables"], variables)`: the whole
+/// pipeline object with exactly that nested key set. The module's `put_in`
+/// creates the `configuration` map when the pipeline has none; this build does
+/// the same (the oracle exits 1 silently there — the captured carry).
+fn pipeline_with_variables(pipeline: &Value, variables: Map<String, Value>) -> Value {
+    let mut body = match pipeline {
+        Value::Object(fields) => fields.clone(),
+        _ => Map::new(),
+    };
+    let mut configuration = body
+        .get("configuration")
+        .and_then(Value::as_object)
+        .cloned()
+        .unwrap_or_default();
+
+    configuration.insert("variables".to_owned(), Value::Object(variables));
+    body.insert("configuration".to_owned(), Value::Object(configuration));
+
+    Value::Object(body)
+}
+
+/// The `Helpers.extract_error_message/1` half of the upload's 409 message: the
+/// API body's `message`, or the module's `"name conflict"` fallback.
+fn upload_conflict_message(name: &str, error: &AdoError) -> String {
+    let body_message = error
+        .details
+        .as_ref()
+        .and_then(|details| details.get("body"))
+        .and_then(Value::as_str)
+        .and_then(|body| serde_json::from_str::<Value>(body).ok())
+        .and_then(|body| {
+            body.get("message")
+                .and_then(Value::as_str)
+                .map(str::to_owned)
+        })
+        .unwrap_or_else(|| "name conflict".to_owned());
+
+    format!(
+        "A secure file named '{name}' already exists. Re-run with --allow-exists to replace it, \
+         or use a different name. ({body_message})"
+    )
+}
+
+/// The module's `print_pipeline_vars_table/1`: Key, Value, Secret, with its own
+/// message for an empty list. A secret shows only its label.
+fn variables_table(variables: &[Value]) -> Report {
+    if variables.is_empty() {
+        return Report::Text("No pipeline variables defined.".to_owned());
+    }
+
+    let rows = variables
+        .iter()
+        .map(|variable| {
+            vec![
+                field(variable, "key"),
+                interpolated(variable.get("value")),
+                match variable.get("isSecret") {
+                    Some(value) if truthy(value) => "yes".to_owned(),
+                    _ => "no".to_owned(),
+                },
+            ]
+        })
+        .collect();
+
+    Report::Table {
+        headers: vec!["Key".to_owned(), "Value".to_owned(), "Secret".to_owned()],
+        rows,
+    }
+}
+
+/// The module's `print_secure_files_table/1`: ID, Name, Size, Modified, with its
+/// own message for an empty list; a missing size or timestamp is `?`.
+fn secure_files_table(files: &[Value]) -> Report {
+    if files.is_empty() {
+        return Report::Text("No secure files found.".to_owned());
+    }
+
+    let rows = files
+        .iter()
+        .map(|file| {
+            vec![
+                field(file, "id"),
+                field(file, "name"),
+                match file.get("contentLength") {
+                    None | Some(Value::Null) => "?".to_owned(),
+                    Some(size) => text(size),
+                },
+                match file.get("modifiedOn") {
+                    Some(value) if truthy(value) => text(value),
+                    _ => "?".to_owned(),
+                },
+            ]
+        })
+        .collect();
+
+    Report::Table {
+        headers: vec![
+            "ID".to_owned(),
+            "Name".to_owned(),
+            "Size".to_owned(),
+            "Modified".to_owned(),
+        ],
+        rows,
+    }
+}
+
+/// The module's `print_secure_file_detail/1`, minus the colour: the labels and
+/// the `by …` fallback are the formatter's.
+fn secure_file_detail(file: &Value) -> Report {
+    let mut detail = String::from("\n");
+
+    detail.push_str("Secure File Details\n");
+    detail.push_str(&"─".repeat(60));
+    detail.push('\n');
+    detail.push_str(&format!("  ID:        {}\n", field(file, "id")));
+    detail.push_str(&format!("  Name:      {}\n", field(file, "name")));
+    detail.push_str(&format!(
+        "  Size:      {} bytes\n",
+        interpolated(file.get("contentLength"))
+    ));
+    detail.push_str(&format!(
+        "  Created:   {} by {}\n",
+        interpolated(file.get("createdOn")),
+        display_name(file, "createdBy")
+    ));
+    detail.push_str(&format!(
+        "  Modified:  {} by {}\n",
+        interpolated(file.get("modifiedOn")),
+        display_name(file, "modifiedBy")
+    ));
+    detail.push('\n');
+
+    Report::Text(detail)
+}
+
+/// `get_in(file, [key, "displayName"]) || "?"`: a missing actor, one without a
+/// display name, and a `false` display name all read as `?`.
+fn display_name(file: &Value, key: &str) -> String {
+    file.get(key)
+        .and_then(|actor| actor.get("displayName"))
+        .and_then(Value::as_str)
+        .unwrap_or("?")
+        .to_owned()
+}
+
 /// The module's `delete_var_group/1` project-id lookup: `GET /_apis/projects`,
 /// the first entry whose `name` equals the argument, and its `id` as the
 /// `projectIds` pair. A lookup that fails and a project the list does not name
@@ -514,6 +950,15 @@ fn resolved_project_ids(context: &mut Context, project: &str) -> Vec<(String, St
     }
 }
 
+/// `/{project}/_apis/pipelines/{pipeline_id}`, the per-definition path the reads,
+/// the mutations and the variables paths all share.
+fn pipeline_path(project: &str, pipeline_id: i64) -> String {
+    format!(
+        "/{}/_apis/pipelines/{pipeline_id}",
+        encode_path_segment(project)
+    )
+}
+
 /// The variable-group collection path both `vars` paths build on.
 fn vars_collection_path(project: &str) -> String {
     format!(
@@ -524,6 +969,23 @@ fn vars_collection_path(project: &str) -> String {
 
 fn vars_group_path(project: &str, group_id: i64) -> String {
     format!("{}/{group_id}", vars_collection_path(project))
+}
+
+/// `/{project}/_apis/distributedtask/securefiles`, the collection the four
+/// secure-file paths build on.
+fn secure_files_path(project: &str) -> String {
+    format!(
+        "/{}/_apis/distributedtask/securefiles",
+        encode_path_segment(project)
+    )
+}
+
+fn secure_file_path(project: &str, secure_file_id: &str) -> String {
+    format!(
+        "{}/{}",
+        secure_files_path(project),
+        encode_path_segment(secure_file_id)
+    )
 }
 
 /// The module's `list_var_groups/1` params: `$top` only when the option is
@@ -1329,5 +1791,263 @@ mod tests {
         assert_eq!(interpolated(Some(&Value::Null)), "");
         assert_eq!(interpolated(Some(&json!("main"))), "main");
         assert_eq!(interpolated(Some(&json!(99))), "99");
+    }
+
+    // ── the pipeline variables (Task 5) ──────────────────────────────────
+
+    #[test]
+    fn pipeline_path_encodes_the_project_segment() {
+        assert_eq!(pipeline_path("Alpha", 12), "/Alpha/_apis/pipelines/12");
+        assert_eq!(
+            pipeline_path("My Project", 12),
+            "/My%20Project/_apis/pipelines/12",
+            "a name cannot change the URL's structure (D22)"
+        );
+    }
+
+    /// The module's `Enum.map(vars, fn {k, v} -> %{"key" => k, "value" =>
+    /// v["value"], "isSecret" => v["isSecret"]} end)`: a nil variable and a
+    /// non-object one read as `null` fields rather than raising (the oracle
+    /// exits 0 silently on the shapes Access cannot index).
+    #[test]
+    fn pipeline_variables_maps_each_variable_with_nulls_for_missing_fields() {
+        let pipeline = json!({
+            "configuration": {
+                "variables": {
+                    "DB_HOST": {"value": "db.example.com"},
+                    "DB_PASS": {"isSecret": true},
+                    "DEBUG": {"value": "false", "isSecret": false},
+                    "NULL": null,
+                    "TEXT": "x",
+                },
+            },
+        });
+
+        assert_eq!(
+            pipeline_variables(&pipeline),
+            vec![
+                json!({"key": "DB_HOST", "value": "db.example.com", "isSecret": null}),
+                json!({"key": "DB_PASS", "value": null, "isSecret": true}),
+                json!({"key": "DEBUG", "value": "false", "isSecret": false}),
+                json!({"key": "NULL", "value": null, "isSecret": null}),
+                json!({"key": "TEXT", "value": null, "isSecret": null}),
+            ],
+            "key-sorted, one record per variable"
+        );
+    }
+
+    #[test]
+    fn pipeline_variables_reads_an_absent_or_non_object_map_as_empty() {
+        for pipeline in [
+            json!({}),
+            json!({"configuration": null}),
+            json!({"configuration": {"variables": null}}),
+            json!({"configuration": {"variables": []}}),
+            json!({"configuration": {"variables": "x"}}),
+        ] {
+            assert_eq!(
+                pipeline_variables(&pipeline),
+                Vec::<Value>::new(),
+                "{pipeline} has no variable map"
+            );
+        }
+    }
+
+    /// `put_in(pipeline, ["configuration", "variables"], …)`: the whole object
+    /// with exactly that key set. The module's own `put_in` creates a missing
+    /// `configuration`; the oracle exits 1 silently there (the captured carry),
+    /// and this build follows the `put_in` shape instead.
+    #[test]
+    fn pipeline_with_variables_sets_the_nested_key_and_creates_configuration() {
+        let pipeline = json!({"id": 7, "configuration": {"type": "yaml"}});
+
+        assert_eq!(
+            pipeline_with_variables(
+                &pipeline,
+                Map::from_iter([("A".to_owned(), json!({"value": "1"}))])
+            ),
+            json!({"id": 7, "configuration": {"type": "yaml", "variables": {"A": {"value": "1"}}}}),
+            "the existing configuration keys are kept"
+        );
+
+        assert_eq!(
+            pipeline_with_variables(
+                &json!({"id": 7}),
+                Map::from_iter([("A".to_owned(), json!({"value": "1"}))])
+            ),
+            json!({"id": 7, "configuration": {"variables": {"A": {"value": "1"}}}}),
+            "a missing configuration is created, as put_in/3 does"
+        );
+
+        assert_eq!(
+            pipeline_with_variables(&json!(["not", "a", "map"]), Map::new()),
+            json!({"configuration": {"variables": {}}}),
+            "a non-object pipeline body degrades to the object put_in would build"
+        );
+    }
+
+    #[test]
+    fn variables_table_marks_secrets_and_reads_missing_values_as_empty() {
+        let variables = vec![
+            json!({"key": "DB_HOST", "value": "db.example.com", "isSecret": null}),
+            json!({"key": "DB_PASS", "value": null, "isSecret": true}),
+            json!({"key": "COUNT", "value": 3, "isSecret": 0}),
+        ];
+
+        assert_eq!(
+            variables_table(&variables),
+            Report::Table {
+                headers: vec!["Key".to_owned(), "Value".to_owned(), "Secret".to_owned()],
+                rows: vec![
+                    vec![
+                        "DB_HOST".to_owned(),
+                        "db.example.com".to_owned(),
+                        "no".to_owned()
+                    ],
+                    vec!["DB_PASS".to_owned(), String::new(), "yes".to_owned()],
+                    vec!["COUNT".to_owned(), "3".to_owned(), "yes".to_owned()],
+                ],
+            },
+            "a secret is a label, a nil value is empty, and 0 is truthy in Elixir"
+        );
+        assert_eq!(
+            variables_table(&[]),
+            Report::Text("No pipeline variables defined.".to_owned())
+        );
+    }
+
+    // ── the secure files (Task 5) ────────────────────────────────────────
+
+    #[test]
+    fn secure_files_table_reads_missing_fields_as_question_marks() {
+        let files = vec![
+            json!({"id": "f47ac10b", "name": "prod-cert.pem", "contentLength": 2048, "modifiedOn": "2026-09-20T12:00:00.000Z"}),
+            json!({"name": "legacy.pem"}),
+        ];
+
+        assert_eq!(
+            secure_files_table(&files),
+            Report::Table {
+                headers: vec![
+                    "ID".to_owned(),
+                    "Name".to_owned(),
+                    "Size".to_owned(),
+                    "Modified".to_owned(),
+                ],
+                rows: vec![
+                    vec![
+                        "f47ac10b".to_owned(),
+                        "prod-cert.pem".to_owned(),
+                        "2048".to_owned(),
+                        "2026-09-20T12:00:00.000Z".to_owned(),
+                    ],
+                    vec![
+                        String::new(),
+                        "legacy.pem".to_owned(),
+                        "?".to_owned(),
+                        "?".to_owned(),
+                    ],
+                ],
+            },
+            "captured: a missing id is empty, a missing size and timestamp are ?"
+        );
+        assert_eq!(
+            secure_files_table(&[]),
+            Report::Text("No secure files found.".to_owned())
+        );
+    }
+
+    #[test]
+    fn secure_file_detail_formats_the_block_with_the_actor_fallback() {
+        let Report::Text(detail) = secure_file_detail(&json!({
+            "id": "f47ac10b",
+            "name": "prod-cert.pem",
+            "contentLength": 2048,
+            "createdOn": "2026-09-01T09:00:00.000Z",
+            "modifiedOn": "2026-09-20T12:00:00.000Z",
+            "createdBy": {"displayName": "Ada Lovelace"},
+            "modifiedBy": {},
+        })) else {
+            panic!("the detail is a text report");
+        };
+
+        assert!(
+            detail.starts_with("\nSecure File Details\n"),
+            "detail: {detail}"
+        );
+        assert!(
+            detail.contains(&format!("{}\n", "─".repeat(60))),
+            "detail: {detail}"
+        );
+        assert!(
+            detail.contains("  ID:        f47ac10b\n"),
+            "detail: {detail}"
+        );
+        assert!(
+            detail.contains("  Name:      prod-cert.pem\n"),
+            "detail: {detail}"
+        );
+        assert!(
+            detail.contains("  Size:      2048 bytes\n"),
+            "detail: {detail}"
+        );
+        assert!(
+            detail.contains("  Created:   2026-09-01T09:00:00.000Z by Ada Lovelace\n"),
+            "detail: {detail}"
+        );
+        assert!(
+            detail.contains("  Modified:  2026-09-20T12:00:00.000Z by ?\n"),
+            "an actor without a display name falls back: {detail}"
+        );
+        assert!(detail.ends_with("\n\n"), "detail: {detail:?}");
+    }
+
+    #[test]
+    fn upload_conflict_message_uses_the_api_message_or_falls_back() {
+        let api_message = "A secure file with name 'cert.pem' already exists.";
+        let conflict = AdoError {
+            status: Some(409),
+            details: Some(
+                json!({"status": 409, "body": format!("{{\"message\":\"{api_message}\"}}")}),
+            ),
+            ..AdoError::from_status(409, "")
+        };
+
+        assert_eq!(
+            upload_conflict_message("cert.pem", &conflict),
+            format!(
+                "A secure file named 'cert.pem' already exists. Re-run with --allow-exists to \
+                 replace it, or use a different name. ({api_message})"
+            )
+        );
+
+        for body in ["not json", "{\"message\": 42}", "{}"] {
+            let unreadable = AdoError {
+                details: Some(json!({"status": 409, "body": body})),
+                ..AdoError::from_status(409, "")
+            };
+
+            assert!(
+                upload_conflict_message("cert.pem", &unreadable).ends_with("(name conflict)"),
+                "the module's fallback for {body:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn secure_file_paths_encode_the_segments() {
+        assert_eq!(
+            secure_files_path("Alpha"),
+            "/Alpha/_apis/distributedtask/securefiles"
+        );
+        assert_eq!(
+            secure_file_path("Alpha", "f47ac10b-58cc-4372-a567-0e02b2c3d479"),
+            "/Alpha/_apis/distributedtask/securefiles/f47ac10b-58cc-4372-a567-0e02b2c3d479"
+        );
+        assert_eq!(
+            secure_file_path("My Project", "a/b"),
+            "/My%20Project/_apis/distributedtask/securefiles/a%2Fb",
+            "D22: the id cannot change the URL's structure either"
+        );
     }
 }

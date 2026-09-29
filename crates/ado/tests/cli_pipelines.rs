@@ -15,7 +15,8 @@
 use std::process::{Command, Output, Stdio};
 
 use ado_testkit::{
-    MockResponse, MockServer, RecordedRequest, TempHome, ado_cmd, stderr_of, stdout_of,
+    MockResponse, MockServer, RecordedRequest, TempHome, ado_cmd, fixture_bytes, stderr_of,
+    stdout_of,
 };
 use serde_json::{Value, json};
 
@@ -2176,5 +2177,1234 @@ fn vars_delete_has_no_force_option() {
     assert!(
         server.received().is_empty(),
         "a usage error sends no request"
+    );
+}
+
+// ── Task 5: `pipelines variables` and `pipelines secure_files` ──────────
+//
+// Every path, query, body and human layout below is the frozen escript's,
+// captured against the standalone mock before the port
+// (`.superpowers/sdd/2026-09-27-wave-2-mutations/captures/task5/`): the two
+// deletes were re-run with `n` on stdin against a mock that answers the GETs, and
+// neither prompts (R5). `variables delete` proceeds; `secure_files delete`
+// without `--force` is the ruled refusal — exit 1 here where the oracle exits 0,
+// the same message on stderr, and nothing sent (D32).
+
+use std::fs;
+
+const VARIABLES_MISSING_PATH: &str = "/myorg/Alpha/_apis/pipelines/999";
+const NO_VARIABLES_PIPELINE_PATH: &str = "/myorg/Alpha/_apis/pipelines/7";
+const SECURE_FILES_PATH: &str = "/myorg/Alpha/_apis/distributedtask/securefiles";
+const SECURE_FILE_ID: &str = "f47ac10b-58cc-4372-a567-0e02b2c3d479";
+const SECURE_FILE_MISSING_ID: &str = "00000000-0000-4000-8000-000000000999";
+
+/// The frozen escript's literal `ado pipelines variables list Alpha 12 --json`
+/// line for the captured pipeline: one record per variable, key-sorted, with a
+/// missing value or `isSecret` as `null`.
+const ORACLE_VARIABLES_JSON: &str = r#"{"ok":true,"result":[{"isSecret":null,"key":"DB_HOST","value":"db.example.com"},{"isSecret":true,"key":"DB_PASS","value":null},{"isSecret":null,"key":"DEBUG","value":"false"}]}"#;
+
+/// The captured `GET .../pipelines/12` answer.
+fn pipeline_with_variables() -> Value {
+    json!({
+        "id": 12,
+        "name": "Alpha CI",
+        "folder": "\\",
+        "revision": 4,
+        "configuration": {
+            "type": "yaml",
+            "path": "pipelines/ci.yml",
+            "variables": {
+                "DB_HOST": {"value": "db.example.com"},
+                "DB_PASS": {"isSecret": true},
+                "DEBUG": {"value": "false"},
+            },
+        },
+        "url": "https://dev.azure.com/ado-harness/Alpha/_apis/pipelines/12?revision=4",
+    })
+}
+
+/// The captured `GET .../pipelines/7` answer: a `configuration` with no
+/// `variables` map.
+fn pipeline_without_variables() -> Value {
+    json!({
+        "id": 7,
+        "name": "Alpha Nightly",
+        "folder": "\\",
+        "revision": 1,
+        "configuration": {"type": "yaml", "path": "azure-pipelines.yml"},
+        "url": "https://dev.azure.com/ado-harness/Alpha/_apis/pipelines/7?revision=1",
+    })
+}
+
+/// The captured `GET .../securefiles` answer's two files.
+fn secure_files_list() -> Value {
+    json!({
+        "count": 2,
+        "value": [
+            secure_file(),
+            {
+                "id": "9f1b7e0e-0001-4000-8000-000000000002",
+                "name": "kubeconfig",
+                "contentLength": 512,
+                "createdOn": "2026-09-10T08:30:00.000Z",
+                "modifiedOn": "2026-09-10T08:30:00.000Z",
+                "createdBy": {"displayName": "Ada Lovelace"},
+                "modifiedBy": {"displayName": "Ada Lovelace"},
+            },
+        ],
+    })
+}
+
+/// The captured `GET .../securefiles/<guid>` and list entry.
+fn secure_file() -> Value {
+    json!({
+        "id": SECURE_FILE_ID,
+        "name": "prod-cert.pem",
+        "contentLength": 2048,
+        "createdOn": "2026-09-01T09:00:00.000Z",
+        "modifiedOn": "2026-09-20T12:00:00.000Z",
+        "createdBy": {"displayName": "Ada Lovelace", "id": "aaaaaaaa-0000-4000-8000-000000000001"},
+        "modifiedBy": {"displayName": "Grace Hopper", "id": "aaaaaaaa-0000-4000-8000-000000000002"},
+    })
+}
+
+/// The captured `POST .../securefiles` answer.
+fn uploaded_secure_file() -> Value {
+    json!({
+        "id": "b7e2c9a0-1111-4222-8333-444455556666",
+        "name": "cert.pem",
+        "contentLength": 83,
+        "createdOn": "2026-09-27T10:00:00.000Z",
+        "modifiedOn": "2026-09-27T10:00:00.000Z",
+        "createdBy": {"displayName": "Ada Lovelace"},
+        "modifiedBy": {"displayName": "Ada Lovelace"},
+    })
+}
+
+/// The UTF-8 upload fixture the harness scenario pins, written where the test can
+/// name it: one file, so the harness's `request_body` pin and the test's byte
+/// assertions cannot drift apart.
+fn write_upload_fixture(home: &TempHome) -> (std::path::PathBuf, String) {
+    let bytes = fixture_bytes("secure_file_upload.pem");
+    let body = String::from_utf8(bytes).expect("the upload fixture is UTF-8");
+    let path = home.path().join("cert.pem");
+
+    fs::write(&path, &body).expect("write the upload fixture");
+
+    (path, body)
+}
+
+fn expect_pipeline_show(server: &MockServer, path: &str, pipeline: Value) {
+    server.expect("GET", path, MockResponse::json(200, pipeline));
+}
+
+#[test]
+fn variables_list_sends_the_pipeline_path_and_emits_the_oracle_envelope() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    expect_pipeline_show(&server, SHOW_PATH, pipeline_with_variables());
+
+    let output = run(
+        &home,
+        &server,
+        &["pipelines", "variables", "list", "Alpha", "12", "--json"],
+    );
+
+    assert_success(&output);
+    assert_eq!(
+        stdout_of(&output),
+        format!("{ORACLE_VARIABLES_JSON}\n"),
+        "the oracle's exact bytes"
+    );
+
+    let received = server.received();
+    assert_eq!(received.len(), 1);
+    assert_eq!(received[0].method, "GET");
+    assert_eq!(received[0].path, SHOW_PATH);
+    assert_eq!(received[0].query_pairs(), vec![api_version()]);
+}
+
+#[test]
+fn variables_list_human_output_is_the_key_value_secret_table() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    expect_pipeline_show(&server, SHOW_PATH, pipeline_with_variables());
+
+    let output = run(
+        &home,
+        &server,
+        &["pipelines", "variables", "list", "Alpha", "12"],
+    );
+
+    assert_success(&output);
+    let stdout = stdout_of(&output);
+
+    assert!(stdout.contains("Key"), "stdout: {stdout}");
+    assert!(stdout.contains("Value"), "stdout: {stdout}");
+    assert!(stdout.contains("Secret"), "stdout: {stdout}");
+    assert!(stdout.contains("DB_HOST"), "stdout: {stdout}");
+    assert!(stdout.contains("db.example.com"), "stdout: {stdout}");
+    assert!(stdout.contains("DB_PASS"), "stdout: {stdout}");
+    assert!(stdout.contains("DEBUG"), "stdout: {stdout}");
+    assert!(stdout.contains("yes"), "a secret reads yes: {stdout}");
+    assert_no_table_bytes(&stdout);
+}
+
+#[test]
+fn variables_list_without_a_variables_map_is_empty() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    expect_pipeline_show(
+        &server,
+        NO_VARIABLES_PIPELINE_PATH,
+        pipeline_without_variables(),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &["pipelines", "variables", "list", "Alpha", "7", "--json"],
+    );
+
+    assert_success(&output);
+    assert_eq!(stdout_of(&output), "{\"ok\":true,\"result\":[]}\n");
+}
+
+#[test]
+fn variables_list_without_a_variables_map_is_the_module_message() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    expect_pipeline_show(
+        &server,
+        NO_VARIABLES_PIPELINE_PATH,
+        pipeline_without_variables(),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &["pipelines", "variables", "list", "Alpha", "7"],
+    );
+
+    assert_success(&output);
+    assert_eq!(
+        stdout_of(&output),
+        "No pipeline variables defined.\n",
+        "the module's own empty-list message"
+    );
+}
+
+#[test]
+fn variables_list_404_reports_the_pipeline_not_found_message() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "GET",
+        VARIABLES_MISSING_PATH,
+        MockResponse::from_fixture("error_404").with_status(404),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &["pipelines", "variables", "list", "Alpha", "999", "--json"],
+    );
+
+    assert_not_found_envelope(&output, "Pipeline #999 not found");
+}
+
+#[test]
+fn variables_create_patches_the_existing_pipeline_with_the_new_variable() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    expect_pipeline_show(&server, SHOW_PATH, pipeline_with_variables());
+    server.expect(
+        "PATCH",
+        SHOW_PATH,
+        MockResponse::json(200, json!({"id": 12, "revision": 5})),
+    );
+
+    let output = run_with_stdin(
+        &home,
+        &server,
+        &[
+            "pipelines",
+            "variables",
+            "create",
+            "Alpha",
+            "12",
+            "--key",
+            "ENV",
+            "--value",
+            "staging",
+            "--json",
+        ],
+        &[],
+    );
+
+    assert_eq!(
+        mutation_envelope(&output),
+        json!({"ok": true, "message": "Variable 'ENV' added."}),
+        "the write's message envelope (D33)"
+    );
+
+    let received = server.received();
+    assert_eq!(received.len(), 2, "the GET then the PATCH");
+    assert_eq!(received[0].method, "GET");
+    assert_eq!(received[1].method, "PATCH");
+    assert_eq!(received[1].path, SHOW_PATH);
+    assert_eq!(
+        sent_body(&received[1]),
+        json!({
+            "id": 12,
+            "name": "Alpha CI",
+            "folder": "\\",
+            "revision": 4,
+            "configuration": {
+                "type": "yaml",
+                "path": "pipelines/ci.yml",
+                "variables": {
+                    "DB_HOST": {"value": "db.example.com"},
+                    "DB_PASS": {"isSecret": true},
+                    "DEBUG": {"value": "false"},
+                    "ENV": {"value": "staging", "isSecret": false},
+                },
+            },
+            "url": "https://dev.azure.com/ado-harness/Alpha/_apis/pipelines/12?revision=4",
+        }),
+        "captured: the whole pipeline, with the new variable merged into configuration.variables"
+    );
+}
+
+#[test]
+fn variables_create_secret_marks_only_the_new_variable() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    expect_pipeline_show(&server, SHOW_PATH, pipeline_with_variables());
+    server.expect(
+        "PATCH",
+        SHOW_PATH,
+        MockResponse::json(200, json!({"id": 12})),
+    );
+
+    let output = run_with_stdin(
+        &home,
+        &server,
+        &[
+            "pipelines",
+            "variables",
+            "create",
+            "Alpha",
+            "12",
+            "--key",
+            "API_KEY",
+            "--value",
+            "s3cret",
+            "--secret",
+            "--json",
+        ],
+        &[],
+    );
+
+    assert_success(&output);
+    assert_eq!(
+        sent_body(&server.received()[1])["configuration"]["variables"]["API_KEY"],
+        json!({"value": "s3cret", "isSecret": true}),
+        "the boolean --secret marks this variable"
+    );
+}
+
+#[test]
+fn variables_create_without_required_options_is_a_usage_error() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+
+    for (args, expected) in [
+        (
+            vec!["pipelines", "variables", "create", "Alpha", "12", "--json"],
+            "--key",
+        ),
+        (
+            vec![
+                "pipelines",
+                "variables",
+                "create",
+                "Alpha",
+                "12",
+                "--key",
+                "ENV",
+                "--json",
+            ],
+            "--value",
+        ),
+    ] {
+        let output = run_with_stdin(&home, &server, &args, &[]);
+
+        assert_eq!(output.status.code(), Some(1), "args: {args:?}");
+        assert!(
+            stdout_of(&output).is_empty(),
+            "no envelope for a usage error (R4/D34): {args:?}"
+        );
+        assert!(
+            stderr_of(&output).contains(expected),
+            "the usage error names the missing option {expected}: {}",
+            stderr_of(&output)
+        );
+    }
+
+    assert!(
+        server.received().is_empty(),
+        "a usage error sends no request (R4/D34)"
+    );
+}
+
+#[test]
+fn variables_delete_patches_the_existing_pipeline_without_the_key() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    expect_pipeline_show(&server, SHOW_PATH, pipeline_with_variables());
+    server.expect(
+        "PATCH",
+        SHOW_PATH,
+        MockResponse::json(200, json!({"id": 12})),
+    );
+
+    let output = run_with_stdin(
+        &home,
+        &server,
+        &[
+            "pipelines",
+            "variables",
+            "delete",
+            "Alpha",
+            "12",
+            "--key",
+            "DEBUG",
+            "--json",
+        ],
+        b"n\n",
+    );
+
+    assert_eq!(
+        mutation_envelope(&output),
+        json!({"ok": true, "message": "Variable 'DEBUG' removed."}),
+        "the delete's message envelope (D33)"
+    );
+
+    let received = server.received();
+    assert_eq!(
+        received.len(),
+        2,
+        "stdin 'n' still sends both requests: this command does not prompt (R5)"
+    );
+    assert_eq!(
+        sent_body(&received[1])["configuration"]["variables"],
+        json!({
+            "DB_HOST": {"value": "db.example.com"},
+            "DB_PASS": {"isSecret": true},
+        }),
+        "captured: the existing map minus the named key"
+    );
+}
+
+#[test]
+fn variables_delete_without_a_key_is_a_usage_error() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+
+    let output = run_with_stdin(
+        &home,
+        &server,
+        &["pipelines", "variables", "delete", "Alpha", "12", "--json"],
+        &[],
+    );
+
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "captured: the oracle exits 0 silently (R4/D34)"
+    );
+    assert!(
+        stdout_of(&output).is_empty(),
+        "no envelope for a usage error"
+    );
+    assert!(
+        stderr_of(&output).contains("--key"),
+        "the usage error names the missing option: {}",
+        stderr_of(&output)
+    );
+    assert!(
+        server.received().is_empty(),
+        "a usage error sends no request"
+    );
+}
+
+#[test]
+fn variables_delete_has_no_force_option() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+
+    let output = run_with_stdin(
+        &home,
+        &server,
+        &[
+            "pipelines",
+            "variables",
+            "delete",
+            "Alpha",
+            "12",
+            "--key",
+            "DEBUG",
+            "--force",
+        ],
+        &[],
+    );
+
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "captured: no --force on this command"
+    );
+    assert!(
+        stderr_of(&output).contains("--force"),
+        "the usage error names the unknown flag: {}",
+        stderr_of(&output)
+    );
+    assert!(
+        server.received().is_empty(),
+        "a usage error sends no request"
+    );
+}
+
+#[test]
+fn variables_delete_404_sends_no_patch() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "GET",
+        VARIABLES_MISSING_PATH,
+        MockResponse::from_fixture("error_404").with_status(404),
+    );
+
+    let output = run_with_stdin(
+        &home,
+        &server,
+        &[
+            "pipelines",
+            "variables",
+            "delete",
+            "Alpha",
+            "999",
+            "--key",
+            "DEBUG",
+            "--json",
+        ],
+        &[],
+    );
+
+    assert_not_found_envelope(&output, "Pipeline #999 not found");
+    assert_eq!(server.received().len(), 1, "the 404 stops before the PATCH");
+}
+
+#[test]
+fn secure_files_list_sends_the_top_param_and_emits_the_oracle_envelope() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "GET",
+        SECURE_FILES_PATH,
+        MockResponse::json(200, secure_files_list()),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "pipelines",
+            "secure_files",
+            "list",
+            "Alpha",
+            "--top",
+            "10",
+            "--json",
+        ],
+    );
+
+    assert_success(&output);
+    assert_eq!(
+        stdout_of(&output),
+        format!(
+            "{}\n",
+            json!({"ok": true, "result": secure_files_list()["value"].clone()})
+        ),
+        "the value envelope carries the API's file objects"
+    );
+
+    let received = server.received();
+    assert_eq!(received.len(), 1);
+    assert_eq!(received[0].path, SECURE_FILES_PATH);
+    assert_eq!(
+        received[0].query_pairs(),
+        vec![api_version(), pair("%24top", "10")],
+        "the module's $top, present means sent"
+    );
+}
+
+#[test]
+fn secure_files_list_without_top_sends_no_top_param() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "GET",
+        SECURE_FILES_PATH,
+        MockResponse::json(200, secure_files_list()),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &["pipelines", "secure_files", "list", "Alpha", "--json"],
+    );
+
+    assert_success(&output);
+    assert_eq!(server.received()[0].query_pairs(), vec![api_version()]);
+}
+
+#[test]
+fn secure_files_list_human_output_is_the_id_name_size_modified_table() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "GET",
+        SECURE_FILES_PATH,
+        MockResponse::json(200, secure_files_list()),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &["pipelines", "secure_files", "list", "Alpha"],
+    );
+
+    assert_success(&output);
+    let stdout = stdout_of(&output);
+
+    for header in ["ID", "Name", "Size", "Modified"] {
+        assert!(stdout.contains(header), "the {header} column: {stdout}");
+    }
+    assert!(stdout.contains(SECURE_FILE_ID), "stdout: {stdout}");
+    assert!(stdout.contains("prod-cert.pem"), "stdout: {stdout}");
+    assert!(stdout.contains("2048"), "stdout: {stdout}");
+    assert!(stdout.contains("kubeconfig"), "stdout: {stdout}");
+    assert_no_table_bytes(&stdout);
+}
+
+#[test]
+fn secure_files_list_empty_is_the_module_message() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "GET",
+        SECURE_FILES_PATH,
+        MockResponse::json(200, json!({"count": 0, "value": []})),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &["pipelines", "secure_files", "list", "Alpha", "--json"],
+    );
+
+    assert_success(&output);
+    assert_eq!(stdout_of(&output), "{\"ok\":true,\"result\":[]}\n");
+}
+
+#[test]
+fn secure_files_show_sends_the_guid_path_and_emits_the_oracle_envelope() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "GET",
+        &format!("{SECURE_FILES_PATH}/{SECURE_FILE_ID}"),
+        MockResponse::json(200, secure_file()),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "pipelines",
+            "secure_files",
+            "show",
+            "Alpha",
+            SECURE_FILE_ID,
+            "--json",
+        ],
+    );
+
+    assert_success(&output);
+    assert_eq!(
+        stdout_of(&output),
+        format!("{}\n", json!({"ok": true, "result": secure_file()})),
+        "the value envelope carries the file object"
+    );
+
+    let received = server.received();
+    assert_eq!(
+        received[0].path,
+        format!("{SECURE_FILES_PATH}/{SECURE_FILE_ID}")
+    );
+    assert_eq!(received[0].query_pairs(), vec![api_version()]);
+}
+
+#[test]
+fn secure_files_show_human_output_is_the_detail_block() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "GET",
+        &format!("{SECURE_FILES_PATH}/{SECURE_FILE_ID}"),
+        MockResponse::json(200, secure_file()),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &["pipelines", "secure_files", "show", "Alpha", SECURE_FILE_ID],
+    );
+
+    assert_success(&output);
+    let stdout = stdout_of(&output);
+
+    assert!(stdout.contains("Secure File Details"), "stdout: {stdout}");
+    assert!(
+        stdout.contains(&format!("\n{}\n", "─".repeat(60))),
+        "the module's 60-character rule: {stdout}"
+    );
+    assert!(
+        stdout.contains(&format!("  ID:        {SECURE_FILE_ID}\n")),
+        "stdout: {stdout}"
+    );
+    assert!(
+        stdout.contains("  Name:      prod-cert.pem\n"),
+        "stdout: {stdout}"
+    );
+    assert!(
+        stdout.contains("  Size:      2048 bytes\n"),
+        "stdout: {stdout}"
+    );
+    assert!(
+        stdout.contains("  Created:   2026-09-01T09:00:00.000Z by Ada Lovelace\n"),
+        "stdout: {stdout}"
+    );
+    assert!(
+        stdout.contains("  Modified:  2026-09-20T12:00:00.000Z by Grace Hopper\n"),
+        "stdout: {stdout}"
+    );
+    assert!(
+        !stdout.contains('\u{1b}'),
+        "ANSI in piped output: {stdout:?}"
+    );
+}
+
+#[test]
+fn secure_files_show_404_reports_the_file_not_found_message() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "GET",
+        &format!("{SECURE_FILES_PATH}/{SECURE_FILE_MISSING_ID}"),
+        MockResponse::from_fixture("error_404").with_status(404),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "pipelines",
+            "secure_files",
+            "show",
+            "Alpha",
+            SECURE_FILE_MISSING_ID,
+            "--json",
+        ],
+    );
+
+    assert_not_found_envelope(
+        &output,
+        &format!("Secure file {SECURE_FILE_MISSING_ID} not found in project 'Alpha'"),
+    );
+}
+
+#[test]
+fn secure_files_upload_posts_the_raw_bytes_with_the_name_query() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "POST",
+        SECURE_FILES_PATH,
+        MockResponse::json(200, uploaded_secure_file()),
+    );
+    let (path, bytes) = write_upload_fixture(&home);
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "pipelines",
+            "secure_files",
+            "upload",
+            "Alpha",
+            "cert.pem",
+            "--file",
+            path.to_str().expect("a UTF-8 path"),
+            "--json",
+        ],
+    );
+
+    assert_eq!(
+        mutation_envelope(&output),
+        json!({"ok": true, "message": "Secure file 'cert.pem' uploaded (ID: b7e2c9a0-1111-4222-8333-444455556666, 83 bytes)."}),
+        "the upload's message envelope (D33)"
+    );
+
+    let received = server.received();
+    assert_eq!(
+        received.len(),
+        1,
+        "an upload with no --allow-exists is one request"
+    );
+    assert_eq!(received[0].method, "POST");
+    assert_eq!(received[0].path, SECURE_FILES_PATH);
+    assert_eq!(
+        received[0].query_pairs(),
+        vec![api_version(), pair("name", "cert.pem")],
+        "captured: the name is a query parameter"
+    );
+    assert_eq!(
+        received[0].header("content-type"),
+        Some("application/octet-stream"),
+        "captured: the body is not JSON"
+    );
+    assert_eq!(
+        received[0].body.as_deref(),
+        Some(bytes.as_str()),
+        "the bytes are the fixture's, not a JSON encoding of them"
+    );
+    assert_eq!(bytes.len(), 83, "the byte count the success line reports");
+}
+
+#[test]
+fn secure_files_upload_without_file_is_a_usage_error() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "pipelines",
+            "secure_files",
+            "upload",
+            "Alpha",
+            "cert.pem",
+            "--json",
+        ],
+    );
+
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "captured: the oracle exits 0 silently (R4/D34)"
+    );
+    assert!(
+        stdout_of(&output).is_empty(),
+        "no envelope for a usage error"
+    );
+    assert!(
+        stderr_of(&output).contains("--file"),
+        "the usage error names the missing option: {}",
+        stderr_of(&output)
+    );
+    assert!(
+        server.received().is_empty(),
+        "a usage error sends no request"
+    );
+}
+
+#[test]
+fn secure_files_upload_of_a_missing_file_is_the_file_not_found_error() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    let path = home.path().join("absent.pem");
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "pipelines",
+            "secure_files",
+            "upload",
+            "Alpha",
+            "cert.pem",
+            "--file",
+            path.to_str().expect("a UTF-8 path"),
+            "--json",
+        ],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    let envelope = mutation_envelope_failure(&output);
+    assert_eq!(envelope["error"]["code"], json!("validation_error"));
+    assert_eq!(
+        envelope["error"]["message"],
+        json!(format!("File not found: {}", path.display())),
+        "the module's message names the path as given"
+    );
+    assert!(server.received().is_empty(), "no request without a file");
+}
+
+#[test]
+fn secure_files_upload_allow_exists_deletes_the_named_file_first() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "GET",
+        SECURE_FILES_PATH,
+        MockResponse::json(200, secure_files_list()),
+    );
+    server.expect(
+        "DELETE",
+        &format!("{SECURE_FILES_PATH}/{SECURE_FILE_ID}"),
+        MockResponse::json(200, json!({"id": SECURE_FILE_ID})),
+    );
+    server.expect(
+        "POST",
+        SECURE_FILES_PATH,
+        MockResponse::json(200, uploaded_secure_file()),
+    );
+    let (path, _) = write_upload_fixture(&home);
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "pipelines",
+            "secure_files",
+            "upload",
+            "Alpha",
+            "prod-cert.pem",
+            "--file",
+            path.to_str().expect("a UTF-8 path"),
+            "--allow-exists",
+            "--json",
+        ],
+    );
+
+    assert_eq!(
+        mutation_envelope(&output),
+        json!({"ok": true, "message": "Deleted existing 'prod-cert.pem' (id: f47ac10b-58cc-4372-a567-0e02b2c3d479).\nSecure file 'cert.pem' uploaded (ID: b7e2c9a0-1111-4222-8333-444455556666, 83 bytes)."}),
+        "the replace path carries both captured lines (D33)"
+    );
+
+    let received = server.received();
+    assert_eq!(received.len(), 3, "lookup, delete, upload");
+    assert_eq!(received[0].method, "GET");
+    assert_eq!(
+        received[0].query_pairs(),
+        vec![api_version(), pair("namePattern", "prod-cert.pem")],
+        "captured: the lookup filters by namePattern"
+    );
+    assert_eq!(received[1].method, "DELETE");
+    assert_eq!(
+        received[1].path,
+        format!("{SECURE_FILES_PATH}/{SECURE_FILE_ID}")
+    );
+    assert_eq!(received[2].method, "POST");
+}
+
+#[test]
+fn secure_files_upload_allow_exists_proceeds_when_the_lookup_finds_nothing() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "GET",
+        SECURE_FILES_PATH,
+        MockResponse::json(200, json!({"count": 1, "value": [secure_file()]})),
+    );
+    server.expect(
+        "POST",
+        SECURE_FILES_PATH,
+        MockResponse::json(200, uploaded_secure_file()),
+    );
+    let (path, _) = write_upload_fixture(&home);
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "pipelines",
+            "secure_files",
+            "upload",
+            "Alpha",
+            "new-cert.pem",
+            "--file",
+            path.to_str().expect("a UTF-8 path"),
+            "--allow-exists",
+            "--json",
+        ],
+    );
+
+    assert_eq!(
+        mutation_envelope(&output),
+        json!({"ok": true, "message": "Secure file 'cert.pem' uploaded (ID: b7e2c9a0-1111-4222-8333-444455556666, 83 bytes)."}),
+        "no replace line when nothing matched"
+    );
+
+    let received = server.received();
+    assert_eq!(received.len(), 2, "the lookup and the upload only");
+    assert_eq!(received[0].method, "GET");
+    assert_eq!(received[1].method, "POST");
+}
+
+#[test]
+fn secure_files_upload_allow_exists_proceeds_when_the_lookup_fails() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "GET",
+        SECURE_FILES_PATH,
+        MockResponse::json(
+            500,
+            json!({"message": "TF400813: The user is not authorized."}),
+        ),
+    );
+    server.expect(
+        "POST",
+        SECURE_FILES_PATH,
+        MockResponse::json(200, uploaded_secure_file()),
+    );
+    let (path, _) = write_upload_fixture(&home);
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "pipelines",
+            "secure_files",
+            "upload",
+            "Alpha",
+            "cert.pem",
+            "--file",
+            path.to_str().expect("a UTF-8 path"),
+            "--allow-exists",
+            "--json",
+        ],
+    );
+
+    assert_success(&output);
+    assert_eq!(
+        server.received().len(),
+        2,
+        "captured: the module's failed-lookup fallback uploads anyway"
+    );
+}
+
+#[test]
+fn secure_files_upload_conflict_reports_the_replace_hint() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "POST",
+        SECURE_FILES_PATH,
+        MockResponse::json(
+            409,
+            json!({"message": "A secure file with name 'cert.pem' already exists."}),
+        ),
+    );
+    let (path, _) = write_upload_fixture(&home);
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "pipelines",
+            "secure_files",
+            "upload",
+            "Alpha",
+            "cert.pem",
+            "--file",
+            path.to_str().expect("a UTF-8 path"),
+            "--json",
+        ],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    let envelope = mutation_envelope_failure(&output);
+    assert_eq!(envelope["error"]["code"], json!("conflict"));
+    assert_eq!(envelope["error"]["status"], json!(409));
+    assert_eq!(
+        envelope["error"]["message"],
+        json!(
+            "A secure file named 'cert.pem' already exists. Re-run with --allow-exists to replace it, or use a different name. (A secure file with name 'cert.pem' already exists.)"
+        ),
+        "the captured 409 wording, with the API's message in parentheses"
+    );
+}
+
+#[test]
+fn secure_files_upload_allow_exists_delete_failure_stops_before_the_upload() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "GET",
+        SECURE_FILES_PATH,
+        MockResponse::json(200, secure_files_list()),
+    );
+    server.expect(
+        "DELETE",
+        &format!("{SECURE_FILES_PATH}/{SECURE_FILE_ID}"),
+        MockResponse::json(
+            500,
+            json!({"message": "TF400813: The user is not authorized."}),
+        ),
+    );
+    let (path, _) = write_upload_fixture(&home);
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "pipelines",
+            "secure_files",
+            "upload",
+            "Alpha",
+            "prod-cert.pem",
+            "--file",
+            path.to_str().expect("a UTF-8 path"),
+            "--allow-exists",
+            "--json",
+        ],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    let envelope = mutation_envelope_failure(&output);
+    assert_eq!(envelope["error"]["code"], json!("api_error"));
+    assert_eq!(
+        server.received().len(),
+        2,
+        "captured: a failed replace reports and sends no upload"
+    );
+}
+
+#[test]
+fn secure_files_delete_without_force_refuses_and_sends_nothing() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+
+    for json in [false, true] {
+        let mut args = vec![
+            "pipelines",
+            "secure_files",
+            "delete",
+            "Alpha",
+            SECURE_FILE_ID,
+        ];
+        if json {
+            args.push("--json");
+        }
+
+        let output = run_with_stdin(&home, &server, &args, b"n\n");
+
+        assert_eq!(
+            output.status.code(),
+            Some(1),
+            "captured: the oracle prints the guard and exits 0; a refusal is never a success (D32), json={json}"
+        );
+        assert!(
+            stdout_of(&output).is_empty(),
+            "nothing on stdout, so a --json run cannot read a result (json={json})"
+        );
+        assert!(
+            stderr_of(&output).contains("Pass --force to confirm."),
+            "the oracle's own guard wording is the refusal (json={json}): {}",
+            stderr_of(&output)
+        );
+    }
+
+    assert!(
+        server.received().is_empty(),
+        "captured: the oracle sends nothing from the guard path"
+    );
+}
+
+#[test]
+fn secure_files_delete_force_sends_the_delete_and_emits_the_message_envelope() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "DELETE",
+        &format!("{SECURE_FILES_PATH}/{SECURE_FILE_ID}"),
+        MockResponse::json(200, json!({"id": SECURE_FILE_ID})),
+    );
+
+    let output = run_with_stdin(
+        &home,
+        &server,
+        &[
+            "pipelines",
+            "secure_files",
+            "delete",
+            "Alpha",
+            SECURE_FILE_ID,
+            "--force",
+            "--json",
+        ],
+        b"n\n",
+    );
+
+    assert_eq!(
+        mutation_envelope(&output),
+        json!({"ok": true, "message": format!("Secure file {SECURE_FILE_ID} deleted.")}),
+        "the delete's message envelope (D33), and stdin 'n' does not stop it (R5)"
+    );
+
+    let received = server.received();
+    assert_eq!(received.len(), 1);
+    assert_eq!(received[0].method, "DELETE");
+    assert_eq!(
+        received[0].path,
+        format!("{SECURE_FILES_PATH}/{SECURE_FILE_ID}")
+    );
+    assert_eq!(received[0].query_pairs(), vec![api_version()]);
+}
+
+#[test]
+fn secure_files_delete_force_404_reports_the_file_not_found_message() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "DELETE",
+        &format!("{SECURE_FILES_PATH}/{SECURE_FILE_MISSING_ID}"),
+        MockResponse::from_fixture("error_404").with_status(404),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "pipelines",
+            "secure_files",
+            "delete",
+            "Alpha",
+            SECURE_FILE_MISSING_ID,
+            "--force",
+            "--json",
+        ],
+    );
+
+    assert_not_found_envelope(
+        &output,
+        &format!("Secure file {SECURE_FILE_MISSING_ID} not found in project 'Alpha'"),
     );
 }

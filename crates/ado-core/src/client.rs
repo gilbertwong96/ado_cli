@@ -189,12 +189,49 @@ impl Client {
         self.send("DELETE", path, params, None)?.accepted()
     }
 
+    /// `POST` with a raw binary body and `application/octet-stream`, the frozen
+    /// `Client.post_binary/3` the secure-file upload uses: the payload is the
+    /// file's bytes, not a JSON encoding, and the response is decoded as JSON
+    /// like every other write path.
+    pub fn post_binary(
+        &self,
+        path: &str,
+        body: &[u8],
+        params: &[(String, String)],
+    ) -> Result<Value, AdoError> {
+        self.dispatch(
+            "POST",
+            path,
+            params,
+            Some(("application/octet-stream", body.to_vec())),
+        )?
+        .json()
+    }
+
     fn send(
         &self,
         method: &str,
         path: &str,
         params: &[(String, String)],
         body: Option<&Value>,
+    ) -> Result<Reply, AdoError> {
+        match body {
+            Some(value) => {
+                let payload = serde_json::to_vec(value).map_err(|error| encode_failed(&error))?;
+
+                self.dispatch(method, path, params, Some(("application/json", payload)))
+            }
+            None => self.dispatch(method, path, params, None),
+        }
+    }
+
+    /// One request and its response, before the status is classified.
+    fn dispatch(
+        &self,
+        method: &str,
+        path: &str,
+        params: &[(String, String)],
+        body: Option<(&str, Vec<u8>)>,
     ) -> Result<Reply, AdoError> {
         let url = self.url_for(path, params);
         let builder = http::Request::builder()
@@ -203,10 +240,9 @@ impl Client {
             .header(self.auth.0.as_str(), self.auth.1.as_str());
 
         let mut response = match body {
-            Some(value) => {
-                let payload = serde_json::to_vec(value).map_err(|error| encode_failed(&error))?;
+            Some((content_type, payload)) => {
                 let request = builder
-                    .header("content-type", "application/json")
+                    .header("content-type", content_type)
                     .body(payload)
                     .map_err(|error| build_failed(&error))?;
 
