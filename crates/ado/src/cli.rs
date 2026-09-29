@@ -119,6 +119,96 @@ pub fn command() -> Command {
                                     "Include the project's capability map (whether version control, boards, pipelines, test plans are enabled). Adds ~30 lines of output.",
                                 ),
                         ),
+                )
+                .subcommand(
+                    Command::new("create")
+                        .about(
+                            "Create a new project. The project becomes 'wellFormed' within 30-60 seconds; the CLI does not wait. Use the resulting name with other commands.",
+                        )
+                        .arg(
+                            Arg::new("name")
+                                .value_name("NAME")
+                                .required(true)
+                                .help(
+                                    "Project name. Must be unique within the org, 3-64 chars, alphanumeric with hyphens (no spaces). Cannot be changed without deleting and recreating.",
+                                ),
+                        )
+                        .arg(
+                            Arg::new("description")
+                                .long("description")
+                                .value_name("DESC")
+                                .help(
+                                    "Project description shown in the project picker. Multi-word values do not need quoting.",
+                                ),
+                        )
+                        .arg(
+                            Arg::new("visibility")
+                                .long("visibility")
+                                .value_name("VISIBILITY")
+                                .help(
+                                    "Who can see the project. Valid: private (default — only invited members), public (anyone on the internet can view, including non-Azure-DevOps users). Note: public projects require AAD and org-level enabling.",
+                                ),
+                        )
+                        .arg(
+                            Arg::new("process")
+                                .long("process")
+                                .value_name("PROCESS")
+                                .help(
+                                    "Process template that defines work item types and states. Common values: 'Agile', 'Scrum', 'CMMI', 'Basic'. Default depends on the org.",
+                                ),
+                        )
+                        .arg(
+                            Arg::new("source_control")
+                                .long("source-control")
+                                .value_name("TYPE")
+                                .help(
+                                    "Initial source control type. Valid: 'Git' (default — modern, distributed), 'Tfvc' (legacy Team Foundation Version Control). Cannot be changed after creation.",
+                                ),
+                        ),
+                )
+                .subcommand(
+                    Command::new("update")
+                        .about(
+                            "Update a project's name or description. The name change propagates to all URLs (old URLs redirect for a grace period).",
+                        )
+                        .arg(
+                            Arg::new("project_id")
+                                .value_name("PROJECT_ID")
+                                .required(true)
+                                .help("Project name or GUID"),
+                        )
+                        .arg(
+                            Arg::new("name")
+                                .long("name")
+                                .value_name("NAME")
+                                .help("New project name (must be unique, same constraints as create)"),
+                        )
+                        .arg(
+                            Arg::new("description")
+                                .long("description")
+                                .value_name("DESC")
+                                .help("New project description"),
+                        ),
+                )
+                .subcommand(
+                    Command::new("delete")
+                        .about(
+                            "Permanently delete a project. This is IRREVERSIBLE: all repos, work items, pipelines, and history are erased. Use --force to skip the interactive confirmation (the CLI will still ask via the API). Plan for a 30-90 day soft-delete window if you change your mind.",
+                        )
+                        .arg(
+                            Arg::new("project_id")
+                                .value_name("PROJECT_ID")
+                                .required(true)
+                                .help("Project name or GUID"),
+                        )
+                        .arg(
+                            Arg::new("force")
+                                .long("force")
+                                .action(ArgAction::SetTrue)
+                                .help(
+                                    "Skip the interactive confirmation prompt (useful in scripts). The Azure DevOps API itself does not require a separate confirmation.",
+                                ),
+                        ),
                 ),
         )
         .subcommand(
@@ -164,6 +254,58 @@ pub fn command() -> Command {
                                 .help(
                                     "Repository name (preferred) or GUID. Names are case-sensitive in the URL.",
                                 ),
+                        ),
+                )
+                .subcommand(
+                    Command::new("create")
+                        .about(
+                            "Create a new empty Git repository. The repo is uninitialized (no commits) until you push to it. The default branch is created on first push.",
+                        )
+                        .arg(
+                            Arg::new("project")
+                                .value_name("PROJECT")
+                                .required(true)
+                                .help("Project name or ID"),
+                        )
+                        .arg(
+                            Arg::new("name")
+                                .value_name("NAME")
+                                .required(true)
+                                .help(
+                                    "Repository name. Must be unique within the project, 1-64 chars. Allowed: alphanumerics, hyphens, underscores, periods; no spaces.",
+                                ),
+                        )
+                        .arg(
+                            Arg::new("default_branch")
+                                .long("default-branch")
+                                .value_name("BRANCH")
+                                .help(
+                                    "Default branch NAME (short form, e.g. 'main' or 'master'). The 'refs/heads/' prefix is added automatically. Default: 'main'. The branch is NOT created until the first push — the setting is applied when the first commit lands on it.",
+                                ),
+                        ),
+                )
+                .subcommand(
+                    Command::new("delete")
+                        .about(
+                            "Permanently delete a repository. IRREVERSIBLE: all commits, branches, tags, PRs, and policies are erased. Use --force in scripts to skip the interactive confirmation prompt.",
+                        )
+                        .arg(
+                            Arg::new("project")
+                                .value_name("PROJECT")
+                                .required(true)
+                                .help("Project name or ID"),
+                        )
+                        .arg(
+                            Arg::new("repo_id")
+                                .value_name("REPO_ID")
+                                .required(true)
+                                .help("Repository name or GUID"),
+                        )
+                        .arg(
+                            Arg::new("force")
+                                .long("force")
+                                .action(ArgAction::SetTrue)
+                                .help("Skip the interactive confirmation prompt (use in scripts/CI)."),
                         ),
                 )
                 .subcommand(

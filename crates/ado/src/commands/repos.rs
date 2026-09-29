@@ -1,13 +1,22 @@
-//! `ado repos list|show|branches` — the read paths of `lib/ado_cli/cli/repos.ex`:
-//! the same REST surface, the same filter, and the same human layouts.
+//! `ado repos list|show|create|delete|branches` — the read and write paths of
+//! `lib/ado_cli/cli/repos.ex`: the same REST surface, the same filter, and the
+//! same human layouts. `create` resolves the project name to an id first;
+//! `delete` asks the wave's second confirmation (spec §4.1).
 
 use ado_core::client::encode_path_segment;
-use ado_core::envelope::ok_value;
+use ado_core::envelope::{ok_message, ok_value};
 use ado_core::error::{AdoError, ErrorCode};
-use serde_json::Value;
+use serde_json::{Value, json};
 
 use crate::context::Context;
 use crate::output::Report;
+
+/// The org-scoped project collection `create` resolves its project name against.
+const PROJECTS_PATH: &str = "/_apis/projects";
+
+/// The helper's refusal wording (`Helpers.confirm_delete/2`'s
+/// `halt_error("Aborted.")`); it is this build's §8 wording, printed on stderr.
+const ABORTED: &str = "Aborted.";
 
 /// `ado repos list`: `GET /{project}/_apis/git/repositories`, with `includeLinks`
 /// when `--include-links` is set. Under `--json` the body is the value envelope —
@@ -67,6 +76,101 @@ pub fn branches(
             branches_table(&refs)
         }),
     )
+}
+
+/// `ado repos create`: resolve the project name to an id, then
+/// `POST /{project}/_apis/git/repositories` with the module's body. Under
+/// `--json` the created repository is the value envelope where the frozen CLI
+/// prints its success lines even under `--json` (D33).
+pub fn create(
+    context: &mut Context,
+    project: &str,
+    name: &str,
+    default_branch: Option<String>,
+) -> Result<Report, AdoError> {
+    let project_id = resolve_project_id(context, project)?;
+    let mut body = json!({"name": name, "project": {"id": project_id}});
+
+    if let Some(branch) = default_branch {
+        body.as_object_mut().expect("the body is an object").insert(
+            "defaultBranch".to_owned(),
+            json!(format!("refs/heads/{branch}")),
+        );
+    }
+
+    let path = format!("/{}/_apis/git/repositories", encode_path_segment(project));
+    let repo = context.client()?.post(&path, &body, &[])?;
+
+    Ok(context.json_or_report(ok_value(repo.clone()), || {
+        Report::Text(format!(
+            "Repository '{}' created.\n  ID:             {}\n  Default Branch: {}\n  SSH URL:        {}\n  Web URL:        {}",
+            field(&repo, "name"),
+            field(&repo, "id"),
+            repo.get("defaultBranch")
+                .and_then(Value::as_str)
+                .unwrap_or("refs/heads/main"),
+            field(&repo, "sshUrl"),
+            field(&repo, "webUrl"),
+        ))
+    }))
+}
+
+/// The module's project-name resolution: `GET /_apis/projects`, then an exact
+/// `name` match's `id`; a project the list does not hold, a list that is not an
+/// array, and a lookup that failed all fall back to the argument itself (the
+/// module's `_ -> project` clause; captured with a 500 on the list, the create
+/// still sent).
+fn resolve_project_id(context: &mut Context, project: &str) -> Result<String, AdoError> {
+    let resolved = match context.client()?.list(PROJECTS_PATH, &[]) {
+        Ok(Value::Array(projects)) => projects
+            .iter()
+            .find(|candidate| candidate.get("name").and_then(Value::as_str) == Some(project))
+            .and_then(|candidate| candidate.get("id").and_then(Value::as_str))
+            .map(str::to_owned),
+        _ => None,
+    };
+
+    Ok(resolved.unwrap_or_else(|| project.to_owned()))
+}
+
+/// `ado repos delete`: the confirmation first — asked before any credential is
+/// resolved or request is built — then
+/// `DELETE /{project}/_apis/git/repositories/{repo_id}`. `--force` skips the
+/// question; a "no" or EOF returns the refusal, exit 1, no request (D30/D32).
+pub fn delete(
+    context: &mut Context,
+    project: &str,
+    repo_id: &str,
+    force: bool,
+) -> Result<Report, AdoError> {
+    if !force && !context.confirm(&delete_question(project, repo_id)) {
+        return Err(AdoError::cancelled(ABORTED));
+    }
+
+    let path = format!(
+        "/{}/_apis/git/repositories/{}",
+        encode_path_segment(project),
+        encode_path_segment(repo_id)
+    );
+
+    match context.client()?.delete(&path, &[]) {
+        Ok(()) => {
+            let message = format!("Repository '{repo_id}' deleted from '{project}'.");
+
+            Ok(context.json_or_report(ok_message(&message), || Report::Text(message)))
+        }
+        Err(error) if error.code == ErrorCode::NotFound => Err(AdoError {
+            message: format!("Repository '{repo_id}' not found in project '{project}'"),
+            ..error
+        }),
+        Err(error) => Err(error),
+    }
+}
+
+/// `Helpers.confirm_delete("repository", "{project}/{repo_id}")`'s question,
+/// verbatim: the command owns it, so the seam hard-codes no single question.
+fn delete_question(project: &str, repo_id: &str) -> String {
+    format!("Delete repository '{project}/{repo_id}'? This cannot be undone. [y/N] ")
 }
 
 fn list_params(include_links: bool) -> Vec<(String, String)> {
@@ -254,6 +358,15 @@ mod tests {
             branches_params(Some(String::new())),
             vec![("filter".to_owned(), String::new())],
             "an explicit empty --filter is not the absent option"
+        );
+    }
+
+    #[test]
+    fn delete_question_is_the_module_wording() {
+        assert_eq!(
+            delete_question("Alpha", "Alpha.Core"),
+            "Delete repository 'Alpha/Alpha.Core'? This cannot be undone. [y/N] ",
+            "the command owns its question; the seam adds nothing"
         );
     }
 

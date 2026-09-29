@@ -52,6 +52,27 @@
     },
     {"method": "GET", "path": "/ado-harness/blob/drop2.zip", "fixture": "artifacts_download.zip"},
     {"method": "GET", "path": "/blob/drop.zip", "fixture": "artifacts_download.zip"},
-    {"method": "GET", "path": "/ado-harness/{base}/blob/drop.zip", "fixture": "artifacts_download.zip"}
+    {"method": "GET", "path": "/ado-harness/{base}/blob/drop.zip", "fixture": "artifacts_download.zip"},
+
+    {
+      "method": "POST",
+      "path": "/ado-harness/_apis/projects",
+      "request_body": {"name": "Created", "capabilities": {"versioncontrol": {"sourceControlType": "Tfvc"}, "processTemplate": {"templateTypeId": "adcc42ab-9882-485e-a3ed-7678f01f66bc"}}, "description": "The created project", "visibility": "public"},
+      "json": {"id": "11111111-2222-3333-4444-555555555555", "name": "Created", "status": "notStarted", "url": "https://dev.azure.com/ado-harness/_apis/projects/11111111-2222-3333-4444-555555555555"}
+    },
+    {
+      "method": "PATCH",
+      "path": "/ado-harness/_apis/projects/Alpha",
+      "request_body": {"name": "Renamed", "description": "Renamed project"},
+      "json": {"id": "6a1f8f6e-2b8d-4b9e-9d2a-1c3f5e7a9b0c", "name": "Renamed", "status": "wellFormed"}
+    },
+    {"method": "DELETE", "path": "/ado-harness/_apis/projects/Alpha", "json": {"id": "6a1f8f6e-2b8d-4b9e-9d2a-1c3f5e7a9b0c"}},
+    {
+      "method": "POST",
+      "path": "/ado-harness/Alpha/_apis/git/repositories",
+      "request_body": {"name": "NewRepo", "project": {"id": "6a1f8f6e-2b8d-4b9e-9d2a-1c3f5e7a9b0c"}, "defaultBranch": "refs/heads/trunk"},
+      "json": {"id": "r1", "name": "NewRepo", "defaultBranch": "refs/heads/trunk", "sshUrl": "git@example.test:NewRepo", "webUrl": "https://example.test/NewRepo"}
+    },
+    {"method": "DELETE", "path": "/ado-harness/Alpha/_apis/git/repositories/Alpha.Core", "json": {"id": "r1"}}
   ]
 }

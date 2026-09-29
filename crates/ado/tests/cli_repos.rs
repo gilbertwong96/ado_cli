@@ -8,9 +8,12 @@
 //! server behind `ADO_SERVER`, and explicit `ADO_ORG`/`ADO_PAT` credentials so no
 //! credential resolution reaches the developer's keychain.
 
+use std::io::Write as _;
 use std::process::{Command, Output, Stdio};
 
-use ado_testkit::{MockResponse, MockServer, TempHome, ado_cmd, stderr_of, stdout_of};
+use ado_testkit::{
+    MockResponse, MockServer, RecordedRequest, TempHome, ado_cmd, stderr_of, stdout_of,
+};
 use serde_json::{Value, json};
 
 const ORG: &str = "myorg";
@@ -797,4 +800,430 @@ fn a_closed_stdout_is_a_silent_success() {
         stderr_of(&output)
     );
     assert!(output.stderr.is_empty(), "stderr: {}", stderr_of(&output));
+}
+
+// ── write paths ──────────────────────────────────────────────────────────
+//
+// The mutations' REST surface — method, path, query and body, including the
+// project-name lookup `repos create` performs first — is captured from the frozen
+// escript against the mock (spec §4.2); their `--json` success output is this
+// build's value/message envelope where the frozen CLI prints its human success
+// line (D33). Every run scripts stdin explicitly, so a test can never read the
+// developer's terminal (spec §4.1).
+
+/// Runs the binary with `stdin` written to a pipe (never a terminal); an empty
+/// slice is EOF, which is what the prompt's unanswered case means (D30).
+fn run_with_stdin(home: &TempHome, server: &MockServer, args: &[&str], stdin: &[u8]) -> Output {
+    let mut child = command(home, server, args)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn ado");
+    child
+        .stdin
+        .take()
+        .expect("a piped stdin")
+        .write_all(stdin)
+        .expect("write the scripted stdin");
+    child.wait_with_output().expect("wait for ado")
+}
+
+fn sent_body(request: &RecordedRequest) -> Value {
+    serde_json::from_str(request.body.as_deref().expect("a request body"))
+        .expect("the request body is JSON")
+}
+
+/// The captured `POST …/repositories` answer the create tests serve.
+fn created_repository() -> Value {
+    json!({
+        "id": "r1",
+        "name": "NewRepo",
+        "defaultBranch": "refs/heads/trunk",
+        "sshUrl": "git@example.test:NewRepo",
+        "webUrl": "https://example.test/NewRepo",
+    })
+}
+
+fn assert_mutation_envelope(output: &Output, expected: &Value) {
+    assert_success(output);
+    let envelope: Value =
+        serde_json::from_str(&stdout_of(output)).expect("stdout is exactly one JSON document");
+    assert_eq!(&envelope, expected);
+}
+
+#[test]
+fn create_resolves_the_project_id_from_the_list_and_sends_the_captured_body() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "GET",
+        "/myorg/_apis/projects",
+        MockResponse::from_fixture("projects_list"),
+    );
+    server.expect(
+        "POST",
+        "/myorg/Alpha/_apis/git/repositories",
+        MockResponse::json(200, created_repository()),
+    );
+
+    let output = run_with_stdin(
+        &home,
+        &server,
+        &[
+            "repos",
+            "create",
+            "Alpha",
+            "NewRepo",
+            "--default-branch",
+            "trunk",
+            "--json",
+        ],
+        &[],
+    );
+
+    assert_mutation_envelope(
+        &output,
+        &json!({"ok": true, "result": created_repository()}),
+    );
+
+    let received = server.received();
+    assert_eq!(
+        received.len(),
+        2,
+        "the module resolves the project name before it creates"
+    );
+    assert_eq!(received[0].method, "GET");
+    assert_eq!(received[0].path, "/myorg/_apis/projects");
+    assert_eq!(received[1].method, "POST");
+    assert_eq!(received[1].path, "/myorg/Alpha/_apis/git/repositories");
+    assert_eq!(received[1].query_pairs(), vec![pair("api-version", "7.1")]);
+    assert_eq!(
+        sent_body(&received[1]),
+        json!({
+            "name": "NewRepo",
+            "project": {"id": "6a1f8f6e-2b8d-4b9e-9d2a-1c3f5e7a9b0c"},
+            "defaultBranch": "refs/heads/trunk",
+        }),
+        "the captured body: the project name is resolved to the list's id, and the branch is a full ref"
+    );
+}
+
+#[test]
+fn create_without_the_default_branch_omits_it() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "GET",
+        "/myorg/_apis/projects",
+        MockResponse::from_fixture("projects_list"),
+    );
+    server.expect(
+        "POST",
+        "/myorg/Alpha/_apis/git/repositories",
+        MockResponse::json(200, created_repository()),
+    );
+
+    let output = run_with_stdin(
+        &home,
+        &server,
+        &["repos", "create", "Alpha", "Another", "--json"],
+        &[],
+    );
+
+    assert_mutation_envelope(
+        &output,
+        &json!({"ok": true, "result": created_repository()}),
+    );
+    assert_eq!(
+        sent_body(&server.received()[1]),
+        json!({
+            "name": "Another",
+            "project": {"id": "6a1f8f6e-2b8d-4b9e-9d2a-1c3f5e7a9b0c"},
+        }),
+        "the captured body without --default-branch"
+    );
+}
+
+/// The frozen `Enum.find(projects, &(&1["name"] == project)` miss falls back to
+/// the argument itself as the project id (captured with a project the list does
+/// not hold).
+#[test]
+fn create_falls_back_to_the_argument_when_the_project_is_not_listed() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "GET",
+        "/myorg/_apis/projects",
+        MockResponse::from_fixture("projects_list"),
+    );
+    server.expect(
+        "POST",
+        "/myorg/Bravo/_apis/git/repositories",
+        MockResponse::json(200, created_repository()),
+    );
+
+    let output = run_with_stdin(
+        &home,
+        &server,
+        &["repos", "create", "Bravo", "Another", "--json"],
+        &[],
+    );
+
+    assert_mutation_envelope(
+        &output,
+        &json!({"ok": true, "result": created_repository()}),
+    );
+    assert_eq!(
+        sent_body(&server.received()[1])["project"]["id"],
+        json!("Bravo"),
+        "a project the list does not hold is used as the id"
+    );
+}
+
+/// The frozen `case Client.list("/_apis/projects") do {:ok, …} -> … ; _ -> project`
+/// swallows a failed lookup and proceeds with the argument — captured with a
+/// 500 on the list, the create still sent.
+#[test]
+fn create_falls_back_to_the_argument_when_the_project_list_fails() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "GET",
+        "/myorg/_apis/projects",
+        MockResponse::from_fixture("error_404").with_status(500),
+    );
+    server.expect(
+        "POST",
+        "/myorg/Bravo/_apis/git/repositories",
+        MockResponse::json(200, created_repository()),
+    );
+
+    let output = run_with_stdin(
+        &home,
+        &server,
+        &["repos", "create", "Bravo", "Another", "--json"],
+        &[],
+    );
+
+    assert_mutation_envelope(
+        &output,
+        &json!({"ok": true, "result": created_repository()}),
+    );
+    assert_eq!(
+        server.received().len(),
+        2,
+        "the lookup failure is not fatal"
+    );
+    assert_eq!(
+        sent_body(&server.received()[1])["project"]["id"],
+        json!("Bravo")
+    );
+}
+
+#[test]
+fn delete_with_force_sends_the_delete_and_does_not_prompt() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "DELETE",
+        REPOSITORY,
+        MockResponse::json(200, json!({"id": "a1"})),
+    );
+
+    let output = run_with_stdin(
+        &home,
+        &server,
+        &[
+            "repos",
+            "delete",
+            "Alpha",
+            "Alpha.Core",
+            "--force",
+            "--json",
+        ],
+        &[],
+    );
+
+    assert_mutation_envelope(
+        &output,
+        &json!({"ok": true, "message": "Repository 'Alpha.Core' deleted from 'Alpha'."}),
+    );
+    assert!(
+        stderr_of(&output).is_empty(),
+        "--force skips the prompt entirely: {}",
+        stderr_of(&output)
+    );
+    let received = server.received();
+    assert_eq!(received.len(), 1);
+    assert_eq!(received[0].method, "DELETE");
+    assert_eq!(received[0].path, REPOSITORY);
+    assert_eq!(received[0].query_pairs(), vec![pair("api-version", "7.1")]);
+    assert!(received[0].body.is_none(), "the delete carries no body");
+}
+
+#[test]
+fn delete_answered_yes_prompts_on_stderr_and_deletes() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "DELETE",
+        REPOSITORY,
+        MockResponse::json(200, json!({"id": "a1"})),
+    );
+
+    let output = run_with_stdin(
+        &home,
+        &server,
+        &["repos", "delete", "Alpha", "Alpha.Core", "--json"],
+        b"y\n",
+    );
+
+    assert_mutation_envelope(
+        &output,
+        &json!({"ok": true, "message": "Repository 'Alpha.Core' deleted from 'Alpha'."}),
+    );
+    let stderr = stderr_of(&output);
+    assert!(
+        stderr.contains("Delete repository 'Alpha/Alpha.Core'? This cannot be undone. [y/N] "),
+        "the question is on stderr (D31): {stderr}"
+    );
+    assert!(
+        !stdout_of(&output).contains("[y/N]"),
+        "no prompt may reach stdout: {}",
+        stdout_of(&output)
+    );
+    assert_eq!(server.received().len(), 1, "the confirmed delete was sent");
+}
+
+#[test]
+fn delete_answered_no_refuses_and_sends_nothing() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+
+    let output = run_with_stdin(
+        &home,
+        &server,
+        &["repos", "delete", "Alpha", "Alpha.Core"],
+        b"n\n",
+    );
+
+    assert_eq!(output.status.code(), Some(1), "a refusal exits 1 (D32)");
+    assert!(
+        stdout_of(&output).is_empty(),
+        "a refusal writes no document: {}",
+        stdout_of(&output)
+    );
+    let stderr = stderr_of(&output);
+    assert!(
+        stderr.contains("Delete repository 'Alpha/Alpha.Core'? This cannot be undone. [y/N] "),
+        "the question is on stderr: {stderr}"
+    );
+    assert!(
+        stderr.contains("Aborted."),
+        "this build's refusal is on stderr: {stderr}"
+    );
+    assert!(server.received().is_empty(), "a refusal sends nothing");
+}
+
+#[test]
+fn delete_at_eof_refuses_and_sends_nothing() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+
+    let output = run_with_stdin(
+        &home,
+        &server,
+        &["repos", "delete", "Alpha", "Alpha.Core"],
+        &[],
+    );
+
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "an unanswered question is a refusal, not the frozen CLI's silent exit 0 (D30)"
+    );
+    assert!(stdout_of(&output).is_empty());
+    let stderr = stderr_of(&output);
+    assert!(
+        stderr.contains("Delete repository 'Alpha/Alpha.Core'? This cannot be undone. [y/N] ")
+            && stderr.contains("Aborted."),
+        "EOF behaves exactly like an answered no: {stderr}"
+    );
+    assert!(server.received().is_empty(), "a refusal sends nothing");
+}
+
+#[test]
+fn delete_refusal_under_json_emits_no_envelope() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+
+    let output = run_with_stdin(
+        &home,
+        &server,
+        &["repos", "delete", "Alpha", "Alpha.Core", "--json"],
+        b"n\n",
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        stdout_of(&output).is_empty(),
+        "a refusal is not an API failure and has no envelope; stdout stays empty: {}",
+        stdout_of(&output)
+    );
+    assert!(
+        stderr_of(&output).contains("Aborted."),
+        "stderr: {}",
+        stderr_of(&output)
+    );
+    assert!(server.received().is_empty());
+}
+
+#[test]
+fn delete_404_reports_the_repository_not_found_message() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "DELETE",
+        "/myorg/Alpha/_apis/git/repositories/Missing",
+        MockResponse::from_fixture("error_404").with_status(404),
+    );
+
+    let output = run_with_stdin(
+        &home,
+        &server,
+        &["repos", "delete", "Alpha", "Missing", "--force", "--json"],
+        &[],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    let envelope: Value =
+        serde_json::from_str(&stdout_of(&output)).expect("stdout is one JSON document");
+    assert_eq!(envelope["error"]["code"], json!("not_found"));
+    assert_eq!(
+        envelope["error"]["message"],
+        json!("Repository 'Missing' not found in project 'Alpha'")
+    );
+}
+
+#[test]
+fn delete_without_the_repository_id_is_a_usage_error() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+
+    let output = run_with_stdin(
+        &home,
+        &server,
+        &["repos", "delete", "Alpha", "--force", "--json"],
+        &[],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(stdout_of(&output).is_empty());
+    assert!(
+        stderr_of(&output).contains("REPO_ID"),
+        "stderr: {}",
+        stderr_of(&output)
+    );
+    assert!(server.received().is_empty());
 }

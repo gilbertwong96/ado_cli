@@ -1,16 +1,166 @@
-//! `ado projects list|show` — the read paths of `lib/ado_cli/cli/projects.ex`:
-//! the same REST surface, the same filters, and the same human layout.
+//! `ado projects list|show|create|update|delete` — the read and write paths of
+//! `lib/ado_cli/cli/projects.ex`: the same REST surface, the same filters, and
+//! the same human layout. `delete` asks the first confirmation of the wave
+//! (spec §4.1).
 
 use ado_core::client::encode_path_segment;
-use ado_core::envelope::ok_value;
+use ado_core::envelope::{ok_message, ok_value};
 use ado_core::error::{AdoError, ErrorCode};
-use serde_json::Value;
+use serde_json::{Value, json};
 
 use crate::context::Context;
 use crate::output::Report;
 
-/// The collection both subcommands build on; the module's `"/_apis/projects"`.
+/// The collection every path here builds on; the module's `"/_apis/projects"`.
 const PROJECTS_PATH: &str = "/_apis/projects";
+
+/// The `sourceControlType` the module sends when `--source-control` is absent.
+const DEFAULT_SOURCE_CONTROL: &str = "Git";
+
+/// The helper's refusal wording (`Helpers.confirm_delete/2`'s
+/// `halt_error("Aborted.")`); it is this build's §8 wording, printed on stderr.
+const ABORTED: &str = "Aborted.";
+
+/// `ado projects create`: `POST /_apis/projects` with the module's body — the
+/// two capability maps always, `description`/`visibility` only when given — and
+/// the module's success line. Under `--json` the created project is the value
+/// envelope where the frozen CLI prints that line even under `--json` (D33).
+pub fn create(
+    context: &mut Context,
+    name: &str,
+    description: Option<String>,
+    visibility: Option<String>,
+    process: Option<String>,
+    source_control: Option<String>,
+) -> Result<Report, AdoError> {
+    let body = create_body(name, description, visibility, process, source_control);
+    let project = context.client()?.post(PROJECTS_PATH, &body, &[])?;
+
+    Ok(context.json_or_report(ok_value(project.clone()), || {
+        Report::Text(format!(
+            "Project '{}' created (ID: {}).\n  Status: {}\n  URL:    {}",
+            field(&project, "name"),
+            field(&project, "id"),
+            field(&project, "status"),
+            field(&project, "url"),
+        ))
+    }))
+}
+
+/// The module's `create_project/1` body, captured: the capability maps always
+/// carry a value (`Git`, and the process template id), and an absent
+/// `--description`/`--visibility` is an absent key.
+fn create_body(
+    name: &str,
+    description: Option<String>,
+    visibility: Option<String>,
+    process: Option<String>,
+    source_control: Option<String>,
+) -> Value {
+    let mut body = json!({
+        "name": name,
+        "capabilities": {
+            "versioncontrol": {
+                "sourceControlType": source_control.unwrap_or_else(|| DEFAULT_SOURCE_CONTROL.to_owned()),
+            },
+            "processTemplate": {"templateTypeId": process_template_id(process.as_deref())},
+        }
+    });
+    let fields = body.as_object_mut().expect("the body is an object");
+
+    if let Some(description) = description {
+        fields.insert("description".to_owned(), json!(description));
+    }
+    if let Some(visibility) = visibility {
+        fields.insert("visibility".to_owned(), json!(visibility));
+    }
+
+    body
+}
+
+/// The frozen `process_template_id/1`: `nil` and `scrum` are the same id, the
+/// three other lowercase spellings are mapped, and anything else — including
+/// the capitalised names the option's own help text suggests — is sent as the
+/// template id verbatim, which is the captured behaviour (`--process Agile`
+/// sends `"Agile"`).
+fn process_template_id(process: Option<&str>) -> String {
+    match process {
+        None | Some("scrum") => "6b724908-ef14-45cf-84f8-768b5384da45".to_owned(),
+        Some("agile") => "adcc42ab-9882-485e-a3ed-7678f01f66bc".to_owned(),
+        Some("basic") => "b8a3a935-7e91-48b8-a94c-606d37c3e9f2".to_owned(),
+        Some("cmmi") => "27450541-8e31-4150-9947-dc59f998fc01".to_owned(),
+        Some(unknown) => unknown.to_owned(),
+    }
+}
+
+/// `ado projects update`: `PATCH /_apis/projects/{id}` with only the options
+/// given, after the module's own guard — no `--name` and no `--description` is a
+/// `validation_error` with no request (captured).
+pub fn update(
+    context: &mut Context,
+    project_id: &str,
+    name: Option<String>,
+    description: Option<String>,
+) -> Result<Report, AdoError> {
+    if name.is_none() && description.is_none() {
+        return Err(AdoError::validation(
+            "At least one of --name or --description is required.",
+        ));
+    }
+
+    let mut body = serde_json::Map::new();
+
+    if let Some(name) = name {
+        body.insert("name".to_owned(), json!(name));
+    }
+    if let Some(description) = description {
+        body.insert("description".to_owned(), json!(description));
+    }
+
+    let path = format!("{PROJECTS_PATH}/{}", encode_path_segment(project_id));
+
+    match context.client()?.patch(&path, &Value::Object(body), &[]) {
+        Ok(project) => Ok(context.json_or_report(ok_value(project.clone()), || {
+            Report::Text(format!("Project updated: {}", field(&project, "name")))
+        })),
+        Err(error) if error.code == ErrorCode::NotFound => Err(AdoError {
+            message: format!("Project '{project_id}' not found"),
+            ..error
+        }),
+        Err(error) => Err(error),
+    }
+}
+
+/// `ado projects delete`: the wave's first confirmation — asked before any
+/// credential is resolved or request is built — then
+/// `DELETE /_apis/projects/{id}`. `--force` skips the question; a "no" or EOF
+/// returns the refusal, which exits 1 and sends nothing (D30/D32).
+pub fn delete(context: &mut Context, project_id: &str, force: bool) -> Result<Report, AdoError> {
+    if !force && !context.confirm(&delete_question(project_id)) {
+        return Err(AdoError::cancelled(ABORTED));
+    }
+
+    let path = format!("{PROJECTS_PATH}/{}", encode_path_segment(project_id));
+
+    match context.client()?.delete(&path, &[]) {
+        Ok(()) => {
+            let message = format!("Project '{project_id}' queued for deletion.");
+
+            Ok(context.json_or_report(ok_message(&message), || Report::Text(message)))
+        }
+        Err(error) if error.code == ErrorCode::NotFound => Err(AdoError {
+            message: format!("Project '{project_id}' not found"),
+            ..error
+        }),
+        Err(error) => Err(error),
+    }
+}
+
+/// `Helpers.confirm_delete("project", id)`'s question, verbatim: the command
+/// owns it, so the seam hard-codes no single question.
+fn delete_question(project_id: &str) -> String {
+    format!("Delete project '{project_id}'? This cannot be undone. [y/N] ")
+}
 
 /// `ado projects list`: `GET /_apis/projects` with `stateFilter`, `$top` and
 /// `$skip`, exactly as `list_projects/1` builds them. Under `--json` the body is
@@ -284,6 +434,77 @@ mod tests {
         assert!(
             detail.contains("  Description: (none)\n"),
             "detail: {detail}"
+        );
+    }
+
+    #[test]
+    fn process_template_id_maps_the_lowercase_spellings_and_passes_others_through() {
+        assert_eq!(
+            process_template_id(None),
+            "6b724908-ef14-45cf-84f8-768b5384da45"
+        );
+        assert_eq!(
+            process_template_id(Some("scrum")),
+            "6b724908-ef14-45cf-84f8-768b5384da45",
+            "nil and scrum are the same id"
+        );
+        assert_eq!(
+            process_template_id(Some("agile")),
+            "adcc42ab-9882-485e-a3ed-7678f01f66bc"
+        );
+        assert_eq!(
+            process_template_id(Some("basic")),
+            "b8a3a935-7e91-48b8-a94c-606d37c3e9f2"
+        );
+        assert_eq!(
+            process_template_id(Some("cmmi")),
+            "27450541-8e31-4150-9947-dc59f998fc01"
+        );
+        assert_eq!(
+            process_template_id(Some("Agile")),
+            "Agile",
+            "the frozen mapping is lowercase-only; the captured capitalised spelling passes through"
+        );
+    }
+
+    #[test]
+    fn create_body_defaults_the_capabilities_and_only_includes_present_options() {
+        assert_eq!(
+            create_body("Minimal", None, None, None, None),
+            json!({
+                "name": "Minimal",
+                "capabilities": {
+                    "versioncontrol": {"sourceControlType": "Git"},
+                    "processTemplate": {"templateTypeId": "6b724908-ef14-45cf-84f8-768b5384da45"},
+                },
+            })
+        );
+        assert_eq!(
+            create_body(
+                "Created",
+                Some("The created project".to_owned()),
+                Some("public".to_owned()),
+                Some("agile".to_owned()),
+                Some("Tfvc".to_owned()),
+            ),
+            json!({
+                "name": "Created",
+                "capabilities": {
+                    "versioncontrol": {"sourceControlType": "Tfvc"},
+                    "processTemplate": {"templateTypeId": "adcc42ab-9882-485e-a3ed-7678f01f66bc"},
+                },
+                "description": "The created project",
+                "visibility": "public",
+            })
+        );
+    }
+
+    #[test]
+    fn delete_question_is_the_module_wording() {
+        assert_eq!(
+            delete_question("Alpha"),
+            "Delete project 'Alpha'? This cannot be undone. [y/N] ",
+            "the command owns its question; the seam adds nothing"
         );
     }
 }

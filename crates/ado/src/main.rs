@@ -76,6 +76,34 @@ fn main() -> ExitCode {
                         .as_str(),
                     show.get_flag("capabilities"),
                 ),
+                Some(("create", create)) => commands::projects::create(
+                    &mut context,
+                    create
+                        .get_one::<String>("name")
+                        .expect("the positional is required")
+                        .as_str(),
+                    create.get_one::<String>("description").cloned(),
+                    create.get_one::<String>("visibility").cloned(),
+                    create.get_one::<String>("process").cloned(),
+                    create.get_one::<String>("source_control").cloned(),
+                ),
+                Some(("update", update)) => commands::projects::update(
+                    &mut context,
+                    update
+                        .get_one::<String>("project_id")
+                        .expect("the positional is required")
+                        .as_str(),
+                    update.get_one::<String>("name").cloned(),
+                    update.get_one::<String>("description").cloned(),
+                ),
+                Some(("delete", delete)) => commands::projects::delete(
+                    &mut context,
+                    delete
+                        .get_one::<String>("project_id")
+                        .expect("the positional is required")
+                        .as_str(),
+                    delete.get_flag("force"),
+                ),
                 _ => Err(AdoError::validation(MISSING_SUBCOMMAND)),
             }
         }
@@ -110,6 +138,30 @@ fn main() -> ExitCode {
                         .expect("the positional is required")
                         .as_str(),
                     branches.get_one::<String>("filter").cloned(),
+                ),
+                Some(("create", create)) => commands::repos::create(
+                    &mut context,
+                    create
+                        .get_one::<String>("project")
+                        .expect("the positional is required")
+                        .as_str(),
+                    create
+                        .get_one::<String>("name")
+                        .expect("the positional is required")
+                        .as_str(),
+                    create.get_one::<String>("default_branch").cloned(),
+                ),
+                Some(("delete", delete)) => commands::repos::delete(
+                    &mut context,
+                    delete
+                        .get_one::<String>("project")
+                        .expect("the positional is required")
+                        .as_str(),
+                    delete
+                        .get_one::<String>("repo_id")
+                        .expect("the positional is required")
+                        .as_str(),
+                    delete.get_flag("force"),
                 ),
                 _ => Err(AdoError::validation(MISSING_SUBCOMMAND)),
             }

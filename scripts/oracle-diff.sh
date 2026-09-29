@@ -761,15 +761,71 @@ run_mock_cases() {
     envelope_rule='D27c: the message says what was removed instead of the legacy ~/.ado_cli/config.json path'
     mock_case logout-org "logout --org" logout --org "$mock_org" --json
 
-    # ── Wave 2 mutations ──
+    # ── Wave 2 mutations: projects and repos (Tasks 2–3) ──
     #
-    # The mutation cases land with the commands that answer them (Task 3 onward):
-    # each sets `case_stdin` for its input, its route carries the `request_body` pin
-    # in scripts/oracle-mock-scenario.json, and a prompt path picks
-    # `stdout_mode=prompt-json` (the oracle's prompt followed by the envelope) or
-    # `prompt-text` (a refusal), with a `status_rule` on the case that captures
-    # D30's EOF refusal. The three prompting commands, their question text and the
-    # captured cases are recorded in docs/rust-rewrite/contract-inventory.md §5.
+    # The five mutations' REST surface is compared field by field — method, path,
+    # query and body — and each success route carries the `request_body` pin, so a
+    # body that drifts on either side fails the case by name even when the two
+    # sides send the same wrong bytes. Under `--json` the frozen write paths print
+    # their human success line where this build emits the §6.1 value/message
+    # envelope (D33), so every success case carries that envelope rule. The prompt
+    # cases use the prompt modes: the frozen CLI's question is on stdout (D31) and
+    # is stripped before the comparison, the confirmed path compares this build's
+    # single-document stdout, the refusal path is empty stdout with exit 1 on both
+    # sides (D32), and the EOF case carries D30's `status_rule` where the frozen
+    # CLI exits 0.
+
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the value envelope'
+    mock_case projects-create "projects create" projects create Created \
+        --description "The created project" --visibility public --process agile \
+        --source-control Tfvc --json
+
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the value envelope'
+    mock_case projects-update "projects update" projects update Alpha \
+        --name Renamed --description "Renamed project" --json
+
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the message envelope'
+    mock_case projects-delete-force "projects delete --force" projects delete Alpha --force --json
+
+    case_stdin=$'y\n'
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the message envelope'
+    stdout_mode=prompt-json
+    mock_case projects-delete-confirmed "projects delete (confirmed)" projects delete Alpha --json
+
+    case_stdin=$'n\n'
+    stdout_mode=prompt-text
+    mock_case projects-delete-refused "projects delete (refused)" projects delete Alpha
+
+    case_stdin=$'n\n'
+    stdout_mode=prompt-text
+    mock_case projects-delete-refused-json "projects delete (refused, --json)" projects delete Alpha --json
+
+    status_rule='D30: the frozen CLI exits 0 on an unanswered prompt; this build refuses with exit 1'
+    stdout_mode=prompt-text
+    mock_case projects-delete-eof "projects delete (EOF)" projects delete Alpha
+
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the value envelope'
+    mock_case repos-create "repos create" repos create Alpha NewRepo --default-branch trunk --json
+
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the message envelope'
+    mock_case repos-delete-force "repos delete --force" repos delete Alpha Alpha.Core --force --json
+
+    case_stdin=$'y\n'
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the message envelope'
+    stdout_mode=prompt-json
+    mock_case repos-delete-confirmed "repos delete (confirmed)" repos delete Alpha Alpha.Core --json
+
+    case_stdin=$'n\n'
+    stdout_mode=prompt-text
+    mock_case repos-delete-refused "repos delete (refused)" repos delete Alpha Alpha.Core
+
+    case_stdin=$'n\n'
+    stdout_mode=prompt-text
+    mock_case repos-delete-refused-json "repos delete (refused, --json)" repos delete Alpha Alpha.Core --json
+
+    status_rule='D30: the frozen CLI exits 0 on an unanswered prompt; this build refuses with exit 1'
+    stdout_mode=prompt-text
+    mock_case repos-delete-eof "repos delete (EOF)" repos delete Alpha Alpha.Core
 
     mock_scenario_check
 }
