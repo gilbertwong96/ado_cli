@@ -399,6 +399,65 @@
       }
     },
     {"method": "DELETE", "path": "/ado-harness/Alpha/_apis/distributedtask/securefiles/f47ac10b-58cc-4372-a567-0e02b2c3d479", "json": {"id": "f47ac10b-58cc-4372-a567-0e02b2c3d479"}},
-    {"method": "DELETE", "path": "/ado-harness/Alpha/_apis/distributedtask/securefiles/00000000-0000-4000-8000-000000000999", "status": 404, "json": {"message": "Secure file not found."}}
+    {"method": "DELETE", "path": "/ado-harness/Alpha/_apis/distributedtask/securefiles/00000000-0000-4000-8000-000000000999", "status": 404, "json": {"message": "Secure file not found."}},
+
+    {
+      "method": "GET",
+      "path": "/ado-harness/Folders/_apis/pipelines",
+      "json": {
+        "count": 4,
+        "value": [
+          {"id": 12, "name": "Alpha CI", "folder": "\\", "revision": 4},
+          {"id": 15, "name": "New CI", "folder": "MyTeam/Frontend", "revision": 1},
+          {"id": 16, "name": "API CI", "folder": "MyTeam/Frontend", "revision": 2},
+          {"id": 17, "name": "Rootless", "revision": 3}
+        ]
+      }
+    },
+    {"method": "GET", "path": "/ado-harness/FoldersEmpty/_apis/pipelines", "json": {"count": 0, "value": []}},
+    {
+      "method": "POST",
+      "path": "/ado-harness/Folders/_apis/pipelines/folders",
+      "request_body": {"path": "MyTeam/Frontend"},
+      "json": {"path": "MyTeam/Frontend", "id": 7, "_links": {"self": {"href": "https://dev.azure.com/ado-harness/Folders/_apis/pipelines/folders/MyTeam%2FFrontend"}}}
+    },
+    {"method": "POST", "path": "/ado-harness/FoldersBroken/_apis/pipelines/folders", "status": 409, "json": {"message": "A folder with the path 'MyTeam/Frontend' already exists."}},
+    {"method": "DELETE", "path": "/ado-harness/Folders/_apis/pipelines/folders/MyTeam/Frontend", "json": {"path": "MyTeam/Frontend"}},
+    {"method": "DELETE", "path": "/ado-harness/FoldersSpaced/_apis/pipelines/folders/My%20Team/Front%20end", "json": {"path": "My Team/Front end"}},
+    {"method": "DELETE", "path": "/ado-harness/FoldersMissing/_apis/pipelines/folders/MyTeam/Frontend", "status": 404, "json": {"message": "Folder 'MyTeam/Frontend' does not exist."}},
+
+    {
+      "method": "POST",
+      "path": "/ado-harness/Builds/_apis/build/builds",
+      "request_body": {"definition": {"id": 5}, "sourceBranch": "refs/heads/main"},
+      "json": {
+        "id": 200,
+        "buildNumber": "20260927.1",
+        "status": "notStarted",
+        "queueTime": "2026-09-27T10:00:00.000Z",
+        "_links": {"web": {"href": "https://dev.azure.com/ado-harness/Builds/_build/results?buildId=200"}}
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/ado-harness/BuildsBranch/_apis/build/builds",
+      "request_body": {"definition": {"id": 7}, "sourceBranch": "refs/heads/feature/foo"},
+      "json": {
+        "id": 201,
+        "status": "notStarted",
+        "_links": {"web": {"href": "https://dev.azure.com/ado-harness/BuildsBranch/_build/results?buildId=201"}}
+      }
+    },
+    {"method": "POST", "path": "/ado-harness/BuildsBroken/_apis/build/builds", "status": 400, "json": {"message": "The definition 5 does not exist."}},
+    {
+      "method": "POST",
+      "path": "/ado-harness/BuildsNoLinks/_apis/build/builds",
+      "request_body": {"definition": {"id": 5}, "sourceBranch": "refs/heads/main"},
+      "json": {"id": 202, "status": "notStarted"}
+    },
+    {"method": "PATCH", "path": "/ado-harness/Builds/_apis/build/builds/128", "request_body": {"status": "cancelling"}, "json": {"id": 128, "status": "cancelling", "result": null}},
+    {"method": "PATCH", "path": "/ado-harness/BuildsMissing/_apis/build/builds/128", "status": 404, "json": {"message": "Build 128 does not exist."}},
+    {"method": "PUT", "path": "/ado-harness/Builds/_apis/build/builds/128/tags", "request_body": ["release", "prod", "v1.2.3"], "json": {"count": 3, "value": ["release", "prod", "v1.2.3"]}},
+    {"method": "PUT", "path": "/ado-harness/BuildsTrim/_apis/build/builds/128/tags", "request_body": ["trimmed", "spaced"], "json": {"count": 2, "value": ["trimmed", "spaced"]}}
   ]
 }

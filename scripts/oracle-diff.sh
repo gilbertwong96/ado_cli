@@ -1018,6 +1018,103 @@ run_mock_cases() {
     mock_case pipelines-secure-files-delete-404 "pipelines secure_files delete (404)" \
         pipelines secure_files delete Alpha 00000000-0000-4000-8000-000000000999 --force --json
 
+    # ── Wave 2: pipeline folders and the builds gaps (Task 6) ──
+    #
+    # R5: `pipelines-folders delete` was re-run against the mock with `n` on
+    # stdin and on EOF and sent the DELETE both times — no prompt (the capture
+    # review's blind spots are why every destructive command repeats the probe).
+    # The oracle prints its human table or line under `--json` on every folder
+    # command and on `queue`, `cancel` and `tags add`; this build emits the
+    # value/message envelope (D21's class for the read, D33 for the writes). A
+    # folder path's `/` separators stay separators here exactly as through the
+    # oracle's `URI.encode/1`, so the spaced-path case's request bytes match —
+    # only bytes like `?` are tightened (D22, captured). `--path`, `--definition`
+    # and `--tags` are R4/D34's silent exit 0 there and a usage error here, and
+    # none of the three has a `--force`.
+
+    envelope_rule='D21: the frozen CLI prints its human table even under --json on this read; this build emits the value envelope'
+    mock_case pipelines-folders-list "pipelines-folders list" \
+        pipelines-folders list Folders --json
+
+    envelope_rule='D21: the frozen CLI prints its human table even under --json on this read; this build emits the value envelope'
+    mock_case pipelines-folders-list-path "pipelines-folders list --path" \
+        pipelines-folders list Folders --path MyTeam/Frontend --json
+
+    envelope_rule='D21: the frozen CLI prints "No folders found." even under --json; this build emits the empty value envelope'
+    mock_case pipelines-folders-list-empty "pipelines-folders list (empty)" \
+        pipelines-folders list FoldersEmpty --json
+
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the value envelope'
+    mock_case pipelines-folders-create "pipelines-folders create" \
+        pipelines-folders create Folders --path MyTeam/Frontend --json
+
+    envelope_rule='D24: the error body stays the upstream bytes here, where the oracle re-renders the decoded map with inspect/2'
+    mock_case pipelines-folders-create-conflict "pipelines-folders create (409)" \
+        pipelines-folders create FoldersBroken --path MyTeam/Frontend --json
+
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the message envelope'
+    mock_case pipelines-folders-delete "pipelines-folders delete" \
+        pipelines-folders delete Folders --path MyTeam/Frontend --json
+
+    case_stdin=$'n\n'
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the message envelope'
+    mock_case pipelines-folders-delete-stdin-n "pipelines-folders delete (stdin n — no prompt)" \
+        pipelines-folders delete Folders --path MyTeam/Frontend --json
+
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the message envelope'
+    mock_case pipelines-folders-delete-spaced "pipelines-folders delete (spaced path)" \
+        pipelines-folders delete FoldersSpaced --path 'My Team/Front end' --json
+
+    mock_case pipelines-folders-delete-404 "pipelines-folders delete (404)" \
+        pipelines-folders delete FoldersMissing --path MyTeam/Frontend --json
+
+    status_rule='D5/D23 (R4): a required option the oracle never validates is a silent exit 0 there; this build makes it a loud usage error'
+    stdout_mode=text
+    mock_case pipelines-folders-delete-no-path "pipelines-folders delete (no --path)" \
+        pipelines-folders delete Folders --json
+
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the value envelope'
+    mock_case pipelines-builds-queue "pipelines-builds queue" \
+        pipelines-builds queue Builds --definition 5 --json
+
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the value envelope'
+    mock_case pipelines-builds-queue-branch "pipelines-builds queue --branch" \
+        pipelines-builds queue BuildsBranch --definition 7 --branch feature/foo --json
+
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the value envelope'
+    mock_case pipelines-builds-queue-nolinks "pipelines-builds queue (no _links)" \
+        pipelines-builds queue BuildsNoLinks --definition 5 --json
+
+    envelope_rule='D24: the error body stays the upstream bytes here, where the oracle re-renders the decoded map with inspect/2'
+    mock_case pipelines-builds-queue-400 "pipelines-builds queue (400)" \
+        pipelines-builds queue BuildsBroken --definition 5 --json
+
+    status_rule='D5/D23 (R4): a required option the oracle never validates is a silent exit 0 there; this build makes it a loud usage error'
+    stdout_mode=text
+    mock_case pipelines-builds-queue-no-definition "pipelines-builds queue (no --definition)" \
+        pipelines-builds queue Builds --json
+
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the value envelope'
+    mock_case pipelines-builds-cancel "pipelines-builds cancel" \
+        pipelines-builds cancel Builds 128 --json
+
+    envelope_rule='D24: the error body stays the upstream bytes here, where the oracle re-renders the decoded map with inspect/2'
+    mock_case pipelines-builds-cancel-404 "pipelines-builds cancel (404)" \
+        pipelines-builds cancel BuildsMissing 128 --json
+
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the value envelope'
+    mock_case pipelines-builds-tags-add "pipelines-builds tags add" \
+        pipelines-builds tags add Builds 128 --tags 'release,prod,v1.2.3' --json
+
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the value envelope'
+    mock_case pipelines-builds-tags-add-trim "pipelines-builds tags add (trim)" \
+        pipelines-builds tags add BuildsTrim 128 --tags 'trimmed, spaced ' --json
+
+    status_rule='D5/D23 (R4): a required option the oracle never validates is a silent exit 0 there; this build makes it a loud usage error'
+    stdout_mode=text
+    mock_case pipelines-builds-tags-add-no-tags "pipelines-builds tags add (no --tags)" \
+        pipelines-builds tags add Builds 128 --json
+
     mock_scenario_check
 }
 
@@ -1138,7 +1235,8 @@ if exits_ok schema-json &&
     #   * D18/R3: the group nodes this build reports in the spelling argv accepts
     #     differ from the oracle's display names — `pipelines builds` and `pipelines
     #     artifacts` gain a hyphen, `pipelines secure-files` loses the hyphen for the
-    #     underscore — at the root and in every descendant's name;
+    #     underscore, and `pipelines folders` gains the hyphen — at the root and in
+    #     every descendant's name;
     #   * doc values are §8 regenerated surface, and the nodes this wave wrote or
     #     rewrote carry this build's wording. Their option and argument docs are
     #     blanked here; their node docs are reported by the doc check further down.
@@ -1148,6 +1246,7 @@ if exits_ok schema-json &&
         then .name |= gsub(\" pipelines builds\"; \" pipelines-builds\")
                    | .name |= gsub(\" pipelines artifacts\"; \" pipelines-artifacts\")
                    | .name |= gsub(\" pipelines secure_files\"; \" pipelines secure-files\")
+                   | .name |= gsub(\" pipelines folders\"; \" pipelines-folders\")
         else . end)
       | (.schema.subcommands[] | select(.name as \$node | $s8_nodes | index(\$node))
          | .options[]? | select(.name as \$o | $globals_names | index(\$o) | not) | .doc) |= \"\"
@@ -1162,7 +1261,7 @@ if exits_ok schema-json &&
     # D18/R3's premise: the oracle spells these group nodes differently from the
     # spelling argv accepts. If that changed, this is not the frozen oracle and the
     # normalisation above is stale.
-    d18_renamed=$(jq -r '[.schema | recurse(.subcommands[]?) | .name | select(test(" pipelines (builds|artifacts|secure-files)"))] | length' "$work/schema-json.elixir")
+    d18_renamed=$(jq -r '[.schema | recurse(.subcommands[]?) | .name | select(test(" pipelines (builds|artifacts|secure-files|folders)"))] | length' "$work/schema-json.elixir")
 
     if (( d18_renamed > 0 )); then
         note "D18/R3: $d18_renamed oracle node names differ from the runnable spelling this build reports"
