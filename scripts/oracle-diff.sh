@@ -1552,6 +1552,97 @@ run_mock_cases() {
     stdout_mode=text
     mock_case prs-vote-non-integer "prs vote (--vote abc)" prs vote Alpha Alpha.Core 137 --vote abc
 
+    # ── Wave 2: the pull request diff (Task 10) ──
+    #
+    # The captured chain: `--iteration N` is used as given (no list GET), the
+    # default is the iteration list's last entry, `GET …/iterations/{n}/changes`
+    # is the second request, and only the two content modes re-read the list and
+    # fetch the revisions from `…/items` (the mock ignores the query, so both
+    # sides read the same body — an edit renders header-only, while the
+    # `/diffs/commits` add/delete entries render real hunks). The four `--json`
+    # documents are the frozen `render_file_list`/`emit_diff_or_json`/
+    # `render_unified` shapes and MATCH, as do the human diff bytes (the listener
+    # capture's). Ruled here: the default view's human table is this build's own
+    # (D37), the refusals and guards that reach `halt_error` are D4, the 404 body
+    # is D24, the iteration rows are D34/D5, and the frozen `Helpers.bail`
+    # `network_error` class for a local guard is D36.
+
+    mock_case prs-diff "prs diff" prs diff Alpha Alpha.Core 137 --json
+
+    envelope_rule='D37: the frozen default view hand-rolls a 50/10 table under a `PR diff (iteration N)` header and a `N file(s) changed, +X -Y` footer; this build renders its own table (spec §8) and keeps the iteration and totals in the envelope'
+    stdout_mode=text
+    mock_case prs-diff-human "prs diff (human)" prs diff Alpha Alpha.Core 137
+
+    mock_case prs-diff-file "prs diff --file /src/app.ex" prs diff Alpha Alpha.Core 137 --file /src/app.ex --json
+
+    stdout_mode=text
+    mock_case prs-diff-file-bare "prs diff --file src/app.ex (no leading slash)" \
+        prs diff Alpha Alpha.Core 137 --file src/app.ex
+
+    envelope_rule='D4: the frozen CLI writes the guard to stderr with no envelope under --json where this build emits the error envelope'
+    mock_case prs-diff-file-rename "prs diff --file (a rename's old path)" \
+        prs diff Alpha Alpha.Core 137 --file /renamed/old.ex --json
+
+    envelope_rule='D4: the frozen CLI writes the guard to stderr with no envelope under --json where this build emits the error envelope'
+    mock_case prs-diff-file-missing "prs diff --file (no match)" \
+        prs diff Alpha Alpha.Core 137 --file src/nope.ex --json
+
+    mock_case prs-diff-unified "prs diff --unified" prs diff Alpha Alpha.Core 137 --unified --json
+
+    stdout_mode=text
+    mock_case prs-diff-unified-human "prs diff --unified (human)" \
+        prs diff Alpha Alpha.Core 137 --unified
+
+    mock_case prs-diff-iteration-1 "prs diff --iteration 1" \
+        prs diff Alpha Alpha.Core 137 --iteration 1 --json
+
+    mock_case prs-diff-iteration-2 "prs diff --iteration 2" \
+        prs diff Alpha Alpha.Core 137 --iteration 2 --json
+
+    mock_case prs-diff-iteration-1-file "prs diff --iteration 1 --file /src/first.ex" \
+        prs diff Alpha Alpha.Core 137 --iteration 1 --file /src/first.ex --json
+
+    envelope_rule='D24: the error body stays the upstream bytes here, where the oracle re-renders the decoded map with inspect/2'
+    mock_case prs-diff-iteration-99 "prs diff --iteration 99" \
+        prs diff Alpha Alpha.Core 137 --iteration 99 --json
+
+    status_rule='D34: an iteration below 1 has no resolve_iteration/2 clause and the oracle exits 0 silently; this build is a loud usage error'
+    stdout_mode=text
+    mock_case prs-diff-iteration-0 "prs diff --iteration 0" \
+        prs diff Alpha Alpha.Core 137 --iteration 0 --json
+
+    envelope_rule='D5: the oracle prints the command help on stdout before its usage error; this build writes clap’s message to stderr alone'
+    stdout_mode=text
+    mock_case prs-diff-iteration-abc "prs diff --iteration abc" \
+        prs diff Alpha Alpha.Core 137 --iteration abc
+
+    envelope_rule='D5: the oracle prints the command help on stdout before its usage error; this build writes clap’s message to stderr alone'
+    stdout_mode=text
+    mock_case prs-diff-no-id "prs diff (no pr_id)" prs diff Alpha Alpha.Core
+
+    envelope_rule='D4: the frozen CLI writes the guard to stderr with no envelope under --json where this build emits the error envelope'
+    mock_case prs-diff-both "prs diff --file --unified" \
+        prs diff Alpha Alpha.Core 137 --file /src/app.ex --unified --json
+
+    envelope_rule='D4: the frozen CLI writes the guard to stderr with no envelope under --json where this build emits the error envelope'
+    mock_case prs-diff-no-iterations "prs diff (no iterations)" \
+        prs diff Alpha Alpha.Core 138 --json
+
+    mock_case prs-diff-empty "prs diff (empty change list)" \
+        prs diff Alpha Alpha.Core 141 --json
+
+    envelope_rule='D37: the frozen default view hand-rolls a 50/10 table under a `PR diff (iteration N)` header and a `N file(s) changed, +X -Y` footer; this build renders its own table (spec §8) and keeps the iteration and totals in the envelope'
+    stdout_mode=text
+    mock_case prs-diff-empty-human "prs diff (empty change list, human)" \
+        prs diff Alpha Alpha.Core 141
+
+    envelope_rule='D24: the error body stays the upstream bytes here, where the oracle re-renders the decoded map with inspect/2'
+    mock_case prs-diff-404 "prs diff (404)" prs diff Alpha Alpha.Core 140 --json
+
+    envelope_rule='D36: the frozen Helpers.bail/2 catch-all classifies a local guard as network_error (`Request failed: "…"`); this build classifies by meaning — api_error for a malformed iteration, not_found for a file absent in a commit'
+    mock_case prs-diff-missing-commit "prs diff (iteration without a source commit)" \
+        prs diff Alpha Alpha.Core 139 --file /src/app.ex --json
+
     mock_scenario_check
 }
 

@@ -728,6 +728,68 @@
       "request_body": {"vote": 10},
       "status": 400,
       "json": {"message": "You cannot record a vote for someone else."}
+    },
+    {
+      "method": "GET",
+      "path": "/ado-harness/Alpha/_apis/git/repositories/Alpha.Core/pullRequests/137/iterations",
+      "json": {"count": 2, "value": [{"id": 1, "targetRefCommit": {"commitId": "aaaa1111"}, "sourceRefCommit": {"commitId": "bbbb2222"}}, {"id": 2, "targetRefCommit": {"commitId": "aaaa1111"}, "sourceRefCommit": {"commitId": "cccc3333"}}]}
+    },
+    {
+      "method": "GET",
+      "path": "/ado-harness/Alpha/_apis/git/repositories/Alpha.Core/pullRequests/137/iterations/2/changes",
+      "json": {"changeEntries": [{"changeTrackingId": 1, "changeId": 1, "changeType": 2, "item": {"path": "/src/app.ex", "additions": 3, "deletions": 1}}, {"changeTrackingId": 2, "changeId": 2, "changeType": 1, "item": {"path": "/docs/readme.md", "additions": 5, "deletions": 0}}, {"changeTrackingId": 3, "changeId": 3, "changeType": 4, "item": {"path": "/old/file.txt", "additions": 0, "deletions": 9}}, {"changeTrackingId": 4, "changeId": 4, "changeType": "rename", "item": {"path": "/renamed/new.ex", "additions": 1, "deletions": 1}}]}
+    },
+    {
+      "method": "GET",
+      "path": "/ado-harness/Alpha/_apis/git/repositories/Alpha.Core/pullRequests/137/iterations/1/changes",
+      "json": {"changeEntries": [{"changeTrackingId": 1, "changeId": 11, "changeType": "add", "item": {"path": "/src/first.ex", "additions": 7, "deletions": 0}}, {"changeTrackingId": 2, "changeId": 12, "changeType": 2, "item": {"path": "/src/app.ex", "additions": 1, "deletions": 1}}]}
+    },
+    {
+      "method": "GET",
+      "path": "/ado-harness/Alpha/_apis/git/repositories/Alpha.Core/pullRequests/137/iterations/99/changes",
+      "status": 404,
+      "json": {"message": "TF401180: The iteration 99 does not exist."}
+    },
+    {
+      "method": "GET",
+      "path": "/ado-harness/Alpha/_apis/git/repositories/Alpha.Core/items",
+      "fixture": "prs_item.txt"
+    },
+    {
+      "method": "GET",
+      "path": "/ado-harness/Alpha/_apis/git/repositories/Alpha.Core/diffs/commits",
+      "json": {"changes": [{"changeType": 2, "item": {"path": "/src/app.ex"}}, {"changeType": 1, "item": {"path": "/docs/readme.md"}}, {"changeType": 4, "item": {"path": "/old/file.txt"}}]}
+    },
+    {
+      "method": "GET",
+      "path": "/ado-harness/Alpha/_apis/git/repositories/Alpha.Core/pullRequests/138/iterations",
+      "json": {"count": 0, "value": []}
+    },
+    {
+      "method": "GET",
+      "path": "/ado-harness/Alpha/_apis/git/repositories/Alpha.Core/pullRequests/139/iterations",
+      "json": {"count": 1, "value": [{"id": 1, "targetRefCommit": {"commitId": "aaaa1111"}}]}
+    },
+    {
+      "method": "GET",
+      "path": "/ado-harness/Alpha/_apis/git/repositories/Alpha.Core/pullRequests/139/iterations/1/changes",
+      "json": {"changeEntries": [{"changeTrackingId": 1, "changeId": 1, "changeType": 2, "item": {"path": "/src/app.ex", "additions": 1, "deletions": 1}}]}
+    },
+    {
+      "method": "GET",
+      "path": "/ado-harness/Alpha/_apis/git/repositories/Alpha.Core/pullRequests/140/iterations",
+      "status": 404,
+      "json": {"message": "TF401180: The pull request 140 does not exist."}
+    },
+    {
+      "method": "GET",
+      "path": "/ado-harness/Alpha/_apis/git/repositories/Alpha.Core/pullRequests/141/iterations",
+      "json": {"count": 1, "value": [{"id": 2, "targetRefCommit": {"commitId": "aaaa1111"}, "sourceRefCommit": {"commitId": "cccc3333"}}]}
+    },
+    {
+      "method": "GET",
+      "path": "/ado-harness/Alpha/_apis/git/repositories/Alpha.Core/pullRequests/141/iterations/2/changes",
+      "json": {"changeEntries": []}
     }
   ]
 }
