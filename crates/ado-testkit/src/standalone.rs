@@ -9,6 +9,15 @@
 //! (D19) both reach the same route, and the difference is read from the request
 //! log instead. Routes repeat: a case may hit the same path as often as it likes.
 //!
+//! A route may also declare the `request_body` it expects a request to carry. That
+//! is an **assertion, not part of the match**: the route still answers, and the
+//! log line records `body_matched` (`true`/`false`, `null` when no expectation was
+//! declared) so the harness can fail the case with the mismatch named. A string
+//! expectation compares the bytes as sent; an object or array expectation parses
+//! the body and compares structurally, so key order and whitespace cannot make an
+//! otherwise-equal body fail — the body counterpart of the query's parsed-pairs
+//! comparison.
+//!
 //! [`MockServer`]: crate::MockServer
 
 use std::fs::{File, OpenOptions};
@@ -35,6 +44,11 @@ pub struct Route {
     pub method: String,
     pub path: String,
     pub response: MockResponse,
+    /// The body the request must carry, when the route declares one: a string
+    /// compares the bytes as sent, any other JSON value parses the request body
+    /// and compares structurally. Recorded in the log as `body_matched`; see the
+    /// module docs.
+    pub request_body: Option<Value>,
 }
 
 impl Route {
@@ -59,7 +73,9 @@ impl Scenario {
     /// response carries `status` (default 200) and either `fixture` (a file under
     /// `crates/ado-testkit/fixtures/`) or `json` (an inline body), plus optional
     /// `set` edits — `[{"pointer": "/value/0/resource/downloadUrl", "value": …}]` —
-    /// applied to the body before it is served.
+    /// applied to the body before it is served, and an optional `request_body`
+    /// the request must carry (a string compares as sent; an object or array
+    /// compares structurally).
     pub fn from_json(text: &str) -> Result<Scenario, String> {
         let document: Value = serde_json::from_str(text)
             .map_err(|error| format!("the scenario is not JSON: {error}"))?;
@@ -107,6 +123,7 @@ impl Scenario {
                         body: substitute_body(&route.response.body, base),
                         headers: route.response.headers.clone(),
                     },
+                    request_body: route.request_body.clone(),
                 })
                 .collect(),
         }
@@ -194,6 +211,17 @@ fn parse_route(value: &Value) -> Result<Route, String> {
         None => body,
     };
 
+    let request_body = match value.get("request_body") {
+        Some(Value::String(text)) => Some(Value::String(text.clone())),
+        Some(value @ (Value::Object(_) | Value::Array(_))) => Some(value.clone()),
+        Some(other) => {
+            return Err(format!(
+                "the {method} {path} route's `request_body` must be a string, object or array: {other}"
+            ));
+        }
+        None => None,
+    };
+
     Ok(Route {
         method,
         path,
@@ -202,7 +230,19 @@ fn parse_route(value: &Value) -> Result<Route, String> {
             body,
             headers: vec![("content-type".to_owned(), content_type.to_owned())],
         },
+        request_body,
     })
+}
+
+/// Whether a request's raw bytes satisfy a route's `request_body` expectation.
+fn body_matches(expected: &Value, body: &[u8]) -> bool {
+    match expected {
+        Value::String(text) => String::from_utf8_lossy(body) == text.as_str(),
+        _ => match serde_json::from_slice::<Value>(body) {
+            Ok(actual) => &actual == expected,
+            Err(_) => false,
+        },
+    }
 }
 
 /// A fixture served with the content type its bytes deserve: a JSON fixture as JSON,
@@ -334,7 +374,7 @@ impl StandaloneMock {
 }
 
 impl StandaloneState {
-    fn record(&self, request: &RecordedRequest, matched: bool) {
+    fn record(&self, request: &RecordedRequest, matched: bool, body_matched: Option<bool>) {
         lock(&self.requests).push(request.clone());
 
         let mut log = lock(&self.log);
@@ -345,6 +385,7 @@ impl StandaloneState {
                 "query": request.query,
                 "body": request.body,
                 "matched": matched,
+                "body_matched": body_matched,
             });
 
             writeln!(file, "{line}")
@@ -379,15 +420,21 @@ async fn handle(State(state): State<Arc<StandaloneState>>, request: Request) -> 
         body: (!bytes.is_empty()).then(|| String::from_utf8_lossy(&bytes).into_owned()),
     };
 
-    let matched = state
+    let matched_route = state
         .routes
         .iter()
-        .find(|route| route.matches(&recorded.method, &recorded.path))
-        .map(|route| route.response.clone());
+        .find(|route| route.matches(&recorded.method, &recorded.path));
 
-    state.record(&recorded, matched.is_some());
+    let body_matched = matched_route.and_then(|route| {
+        route
+            .request_body
+            .as_ref()
+            .map(|expected| body_matches(expected, &bytes))
+    });
 
-    match matched {
+    state.record(&recorded, matched_route.is_some(), body_matched);
+
+    match matched_route.map(|route| route.response.clone()) {
         Some(response) => respond(response),
         None => Response::builder()
             .status(StatusCode::NOT_FOUND)
@@ -413,8 +460,14 @@ mod tests {
 
     static COUNTER: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
-    /// A raw HTTP/1.1 GET, so the tests exercise the mock exactly as a client does.
-    fn http_get(mock: &StandaloneMock, target: &str) -> (u16, String) {
+    /// A raw HTTP/1.1 request with a body, so the tests exercise the mock exactly
+    /// as a client does.
+    fn http_request(
+        mock: &StandaloneMock,
+        method: &str,
+        target: &str,
+        body: &str,
+    ) -> (u16, String) {
         let address = mock
             .base_url()
             .strip_prefix("http://")
@@ -422,7 +475,8 @@ mod tests {
         let mut stream = TcpStream::connect(address).expect("connect to the mock");
         write!(
             stream,
-            "GET {target} HTTP/1.1\r\nhost: localhost\r\nconnection: close\r\n\r\n"
+            "{method} {target} HTTP/1.1\r\nhost: localhost\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+            body.len()
         )
         .expect("write the request");
         let mut response = String::new();
@@ -442,6 +496,11 @@ mod tests {
             .expect("a numeric status");
 
         (status, body.to_owned())
+    }
+
+    /// A bodyless GET, the shape most tests use.
+    fn http_get(mock: &StandaloneMock, target: &str) -> (u16, String) {
+        http_request(mock, "GET", target, "")
     }
 
     fn scenario(text: &str) -> Scenario {
@@ -542,6 +601,121 @@ mod tests {
     }
 
     #[test]
+    fn a_route_can_require_a_json_request_body() {
+        let path = scratch("log-body");
+        let mock = StandaloneMock::start(
+            scenario(
+                r#"{"responses": [{
+                    "method": "POST",
+                    "path": "/x",
+                    "request_body": {"query": "SELECT 1"},
+                    "json": {"ok": true}
+                }]}"#,
+            ),
+            Some(&path),
+            0,
+        );
+
+        let (status, _) = http_request(&mock, "POST", "/x", r#"{"query":"SELECT 1"}"#);
+
+        assert_eq!(status, 200);
+        assert_eq!(request_log(&path)[0]["body_matched"], json!(true));
+
+        drop(mock);
+        std::fs::remove_file(&path).expect("remove the log");
+    }
+
+    #[test]
+    fn a_body_mismatch_is_recorded_not_routed_away() {
+        let path = scratch("log-body-mismatch");
+        let mock = StandaloneMock::start(
+            scenario(
+                r#"{"responses": [{
+                    "method": "POST",
+                    "path": "/x",
+                    "request_body": {"query": "SELECT 1"},
+                    "json": {"ok": true}
+                }]}"#,
+            ),
+            Some(&path),
+            0,
+        );
+
+        let (status, _) = http_request(&mock, "POST", "/x", r#"{"query":"SELECT 2"}"#);
+
+        assert_eq!(
+            status, 200,
+            "the route still answers; the log carries the verdict"
+        );
+        assert_eq!(request_log(&path)[0]["body_matched"], json!(false));
+
+        drop(mock);
+        std::fs::remove_file(&path).expect("remove the log");
+    }
+
+    #[test]
+    fn a_json_request_body_ignores_key_order_and_whitespace() {
+        let path = scratch("log-body-order");
+        let mock = StandaloneMock::start(
+            scenario(
+                r#"{"responses": [{
+                    "method": "POST",
+                    "path": "/x",
+                    "request_body": {"b": 2, "a": 1},
+                    "json": {}
+                }]}"#,
+            ),
+            Some(&path),
+            0,
+        );
+
+        let (status, _) = http_request(&mock, "POST", "/x", "{\n  \"a\": 1,\n  \"b\": 2\n}");
+
+        assert_eq!(status, 200);
+        assert_eq!(request_log(&path)[0]["body_matched"], json!(true));
+
+        drop(mock);
+        std::fs::remove_file(&path).expect("remove the log");
+    }
+
+    #[test]
+    fn a_string_request_body_compares_the_bytes_as_sent() {
+        let path = scratch("log-body-string");
+        let mock = StandaloneMock::start(
+            scenario(
+                r#"{"responses": [{
+                    "method": "PUT",
+                    "path": "/x",
+                    "request_body": "raw-bytes",
+                    "json": {}
+                }]}"#,
+            ),
+            Some(&path),
+            0,
+        );
+
+        let _ = http_request(&mock, "PUT", "/x", "raw-bytes");
+        let _ = http_request(&mock, "PUT", "/x", "raw-byte");
+
+        let lines = request_log(&path);
+        assert_eq!(lines[0]["body_matched"], json!(true));
+        assert_eq!(lines[1]["body_matched"], json!(false));
+
+        drop(mock);
+        std::fs::remove_file(&path).expect("remove the log");
+    }
+
+    #[test]
+    fn a_request_body_that_is_not_a_string_object_or_array_is_rejected() {
+        let error = Scenario::from_json(
+            r#"{"responses": [{"method": "POST", "path": "/x", "json": {}, "request_body": 12}]}"#,
+        )
+        .expect_err("a numeric expectation is invalid");
+
+        assert!(error.contains("`request_body`"), "error: {error}");
+    }
+
+    #[test]
     fn expand_rewrites_the_placeholder_in_paths_and_bodies() {
         let parsed = scenario(
             r#"{"responses": [{
@@ -620,11 +794,11 @@ mod tests {
         assert_eq!(lines.len(), 2);
         assert_eq!(
             lines[0],
-            json!({"method": "GET", "path": "/x", "query": "a=b", "body": null, "matched": true})
+            json!({"method": "GET", "path": "/x", "query": "a=b", "body": null, "matched": true, "body_matched": null})
         );
         assert_eq!(
             lines[1],
-            json!({"method": "GET", "path": "/nope", "query": "", "body": null, "matched": false})
+            json!({"method": "GET", "path": "/nope", "query": "", "body": null, "matched": false, "body_matched": null})
         );
 
         drop(mock);

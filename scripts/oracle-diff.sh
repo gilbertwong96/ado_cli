@@ -3,9 +3,10 @@
 # release binary, for every command Wave 0 ported: `version`, `whoami`, `schema`
 # and `completion`.
 #
-# `--mock` is the Wave 1 mode: every Wave 1 command, both binaries, one instance of
-# the testkit's standalone mock with `ADO_SERVER` pointed at it. See its section
-# below.
+# `--mock` is the read-and-mutation mode: every Wave 1 command and every Wave 2
+# mutation case, both binaries, one instance of the testkit's standalone mock with
+# `ADO_SERVER` pointed at it. Its section below describes the comparison, the
+# route-level body assertions and the stdin-driven prompt cases.
 #
 # Both sides run with an isolated HOME and XDG_CONFIG_HOME and with ADO_ORG,
 # ADO_PAT and ADO_SERVER unset, so neither binary can read a developer's config
@@ -231,10 +232,10 @@ parse_check() {
     return 0
 }
 
-# ── Wave 1: both binaries against one mock ───────────────────────────────
+# ── Wave 1 reads and Wave 2 mutations: both binaries against one mock ────
 #
-# `--mock` runs every Wave 1 command twice — the frozen escript and the release
-# binary — against one instance of the testkit's standalone mock
+# `--mock` runs every case twice — the frozen escript and the release binary —
+# against one instance of the testkit's standalone mock
 # (`cargo build -p ado-testkit --bin mock`; ADO_ORACLE_MOCK overrides the path,
 # ADO_ORACLE_SCENARIO the route table). ADO_SERVER points at the mock, so neither
 # binary reaches Azure, and ADO_ORG/ADO_PAT are synthetic. Unlike the Wave 0 cases,
@@ -253,11 +254,37 @@ parse_check() {
 #
 # and prints MATCH / EXPECTED-DIFF / DIFF exactly as the Wave 0 cases do. Human
 # output is compared only where it is the whole output (`pipelines-artifacts
-# download`'s success line), with the oracle's ANSI colour stripped first (§8, D11).
+# download`'s success line, the prompt cases), with the oracle's ANSI colour
+# stripped first (§8, D11).
+#
+# A mutation case has three additions:
+#
+#   * **Bodies are contract, and a route can pin one.** A scenario route may carry
+#     `request_body` (a string compares the bytes as sent; an object or array
+#     compares structurally, so key order and whitespace cannot fail a body the
+#     two sides send identically). The mock still routes by method and path and
+#     records `body_matched` on the request line, so a body no route pins is still
+#     compared between the two sides — and a body a route pins is checked against
+#     that pin even when both sides send the same wrong bytes. Either mismatch
+#     fails the case.
+#   * **stdin is scripted, never inherited.** Every run reads `case_stdin`; unset
+#     means an empty file (EOF), so no case can block on a terminal or read the
+#     developer's stdin. A prompt case sets it to the exact bytes to feed, e.g.
+#     `case_stdin=$'y\n'`.
+#   * **Prompts have their own stdout modes.** `stdout_mode=prompt-text` and
+#     `prompt-json` strip the oracle's `[y/N]` prompt line from its stdout before
+#     the normal text/envelope comparison and assert D31's pin: the oracle prompted
+#     on stdout (the case is stale otherwise) and this build's prompt went to
+#     stderr, leaving stdout to carry exactly one document under `--json` (`jq -e`
+#     already rejects a second). Wording is not compared — the question text and
+#     `Aborted.` are §8 surface; the exit status and the recorded requests carry
+#     the refusal/proceed contract.
+#
 # A case may set `rest_rule`, `envelope_rule`, `status_rule`, `stdout_mode`,
-# `case_org`, `case_pat`, `case_extra` or `compare_files` immediately before it;
-# `mock_case` clears them afterwards, so a rule cannot leak into the next case. A
-# case that meets a difference no rule covers is a finding, not a row to invent.
+# `case_org`, `case_pat`, `case_extra`, `case_stdin` or `compare_files` immediately
+# before it; `mock_case` clears them afterwards, so a rule cannot leak into the next
+# case. A case that meets a difference no rule covers is a finding, not a row to
+# invent.
 
 mock_bin=${ADO_ORACLE_MOCK:-$root/target/debug/mock}
 mock_scenario=${ADO_ORACLE_SCENARIO:-$root/scripts/oracle-mock-scenario.json}
@@ -274,6 +301,7 @@ stdout_mode=json
 case_org=$mock_org
 case_pat=$mock_pat
 case_extra=()
+case_stdin=
 compare_files=()
 
 start_mock() {
@@ -324,12 +352,19 @@ mock_request_count() {
 }
 
 # One side of one case: a fresh home, config directory and working directory; the
-# case's environment; and the slice of the mock's log the run appended.
+# case's environment; the case's stdin; and the slice of the mock's log the run
+# appended. Without `case_stdin` the run reads an empty file, so a prompt that no
+# case scripted gets EOF rather than the terminal's input.
 mock_run() { # mock_run <name> <side> <binary> <args...>
     local name=$1 side=$2 binary=$3
     shift 3
-    local home=$work/homes/$name.$side cwd=$work/run/$name.$side before after
+    local home=$work/homes/$name.$side cwd=$work/run/$name.$side before after stdin=/dev/null
     mkdir -p "$home" "$cwd"
+
+    if [[ -n $case_stdin ]]; then
+        stdin=$work/$name.$side.stdin
+        printf '%s' "$case_stdin" >"$stdin"
+    fi
 
     local -a environment=(
         -u ADO_ORG -u ADO_PAT -u ADO_SERVER
@@ -342,7 +377,7 @@ mock_run() { # mock_run <name> <side> <binary> <args...>
     before=$(mock_request_count)
     (
         cd "$cwd" || exit 2
-        env "${environment[@]}" "$binary" "$@" >"$work/$name.$side" 2>"$work/$name.$side.err"
+        env "${environment[@]}" "$binary" "$@" >"$work/$name.$side" 2>"$work/$name.$side.err" <"$stdin"
     )
     printf '%s' "$?" >"$work/$name.$side.status"
 
@@ -370,6 +405,7 @@ mock_case() {
     case_org=$mock_org
     case_pat=$mock_pat
     case_extra=()
+    case_stdin=
     compare_files=()
 
     finish_case
@@ -405,7 +441,7 @@ requests_filter="map({
 })"
 
 mock_requests_check() {
-    local slug=$1 unmatched
+    local slug=$1 unmatched body_mismatch
 
     jq -s -c "$requests_filter" "$work/$slug.elixir.requests" >"$work/$slug.requests.elixir"
     jq -s -c "$requests_filter" "$work/$slug.rust.requests" >"$work/$slug.requests.rust"
@@ -419,6 +455,18 @@ mock_requests_check() {
     if [[ -n $unmatched ]]; then
         fail "the mock has no route for: $unmatched"
         return
+    fi
+
+    # A route that declares `request_body` pins it: the mock answered the request
+    # anyway and wrote its verdict to the log, so the failing check names the body
+    # rather than routing the case away.
+    body_mismatch=$(
+        cat "$work/$slug.elixir.requests" "$work/$slug.rust.requests" |
+            jq -r 'select(.body_matched == false) | "\(.method) \(.path) sent \(.body)"' | head -n1
+    )
+
+    if [[ -n $body_mismatch ]]; then
+        fail "a request body does not match the route's request_body: $body_mismatch"
     fi
 
     if same "$work/$slug.requests.elixir" "$work/$slug.requests.rust"; then
@@ -447,11 +495,49 @@ strip_colour() {
         awk '{ if ($0 == "") { blanks++ } else { while (blanks > 0) { print ""; blanks-- } print } }'
 }
 
-mock_stdout_check() {
+# The prompt cases' stdout: the oracle writes its prompt to stdout (D31's captured
+# half), so the prompt line sits in front of whatever the invocation printed. It is
+# removed, colour and all, before the normal comparison; the candidate's prompt is
+# on stderr, which the mode asserts separately.
+prompt_strip() { # prompt_strip <file> <out>
+    sed -E 's/\x1b\[[0-9;]*m//g' "$1" | grep -v '\[y/N\]' >"$2"
+}
+
+# A prompt case's two premises: the oracle really prompted on stdout (otherwise the
+# case is stale and its stripping is meaningless), and D31 holds — this build's
+# prompt went to stderr, so stdout carries no prompt and, under --json, exactly one
+# document (the mode's `jq -e` check is what rejects a second).
+mock_prompt_check() {
     local slug=$1
 
-    if [[ $stdout_mode == text ]]; then
-        strip_colour "$work/$slug.elixir" >"$work/$slug.stdout.elixir"
+    if ! grep -q '\[y/N\]' "$work/$slug.elixir"; then
+        fail "the oracle printed no [y/N] prompt on stdout: this prompt case is stale"
+        return 1
+    fi
+
+    if [[ ! -s $work/$slug.rust.err ]]; then
+        fail "the candidate's stderr is empty: the prompt did not go to stderr (D31)"
+        return 1
+    fi
+
+    return 0
+}
+
+mock_stdout_check() {
+    local slug=$1 elixir_out=$work/$slug.elixir
+
+    case $stdout_mode in
+        text)
+            strip_colour "$work/$slug.elixir" >"$work/$slug.stdout.elixir"
+            ;;
+        prompt-text | prompt-json)
+            mock_prompt_check "$slug" || return
+            prompt_strip "$work/$slug.elixir" "$work/$slug.stdout.elixir"
+            elixir_out=$work/$slug.stdout.elixir
+            ;;
+    esac
+
+    if [[ $stdout_mode == text || $stdout_mode == prompt-text ]]; then
         strip_colour "$work/$slug.rust" >"$work/$slug.stdout.rust"
 
         if same "$work/$slug.stdout.elixir" "$work/$slug.stdout.rust"; then
@@ -469,10 +555,10 @@ mock_stdout_check() {
         return
     fi
 
-    if ! jq -e . "$work/$slug.elixir" >/dev/null 2>&1; then
+    if ! jq -e . "$elixir_out" >/dev/null 2>&1; then
         # The oracle's halt_error paths print their error on stderr and no envelope
         # at all, even under --json (D4).
-        if [[ ! -s $work/$slug.elixir && -s $work/$slug.elixir.err ]]; then
+        if [[ ! -s $elixir_out && -s $work/$slug.elixir.err ]]; then
             if [[ -n $envelope_rule ]]; then
                 ruled "$envelope_rule"
             else
@@ -481,12 +567,12 @@ mock_stdout_check() {
         elif [[ -n $envelope_rule ]]; then
             ruled "$envelope_rule"
         else
-            fail "the oracle's stdout is not a JSON envelope: $(head -c 120 "$work/$slug.elixir" | tr '\n' ' ')"
+            fail "the oracle's stdout is not a JSON envelope: $(head -c 120 "$elixir_out" | tr '\n' ' ')"
         fi
         return
     fi
 
-    jq -S . "$work/$slug.elixir" >"$work/$slug.envelope.elixir"
+    jq -S . "$elixir_out" >"$work/$slug.envelope.elixir"
     jq -S . "$work/$slug.rust" >"$work/$slug.envelope.rust"
 
     if same "$work/$slug.envelope.elixir" "$work/$slug.envelope.rust"; then
@@ -674,6 +760,16 @@ run_mock_cases() {
 
     envelope_rule='D27c: the message says what was removed instead of the legacy ~/.ado_cli/config.json path'
     mock_case logout-org "logout --org" logout --org "$mock_org" --json
+
+    # ── Wave 2 mutations ──
+    #
+    # The mutation cases land with the commands that answer them (Task 3 onward):
+    # each sets `case_stdin` for its input, its route carries the `request_body` pin
+    # in scripts/oracle-mock-scenario.json, and a prompt path picks
+    # `stdout_mode=prompt-json` (the oracle's prompt followed by the envelope) or
+    # `prompt-text` (a refusal), with a `status_rule` on the case that captures
+    # D30's EOF refusal. The three prompting commands, their question text and the
+    # captured cases are recorded in docs/rust-rewrite/contract-inventory.md §5.
 
     mock_scenario_check
 }

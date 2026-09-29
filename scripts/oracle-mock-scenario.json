@@ -1,11 +1,16 @@
 {
   "note": [
-    "Routes for scripts/oracle-diff.sh --mock: the Wave 1 command surface, one",
-    "response per method+path, served to both binaries from one instance.",
+    "Routes for scripts/oracle-diff.sh --mock: the Wave 1 command surface and the",
+    "Wave 2 mutation cases, one response per method+path, served to both binaries",
+    "from one instance.",
     "Matching ignores the query, so the frozen CLI's state/top/skip and this",
     "build's stateFilter/$top/$skip (D19) reach the same route and the difference",
     "is read from the request log instead. `{base}` expands to the mock's own",
-    "origin, for the absolute artifact downloadUrl the CLI is asked to fetch (D25)."
+    "origin, for the absolute artifact downloadUrl the CLI is asked to fetch (D25).",
+    "A route may carry `request_body`: the body a request must send (a string",
+    "compares as sent, an object or array structurally). The mock records",
+    "`body_matched` on the request line and the harness fails the case when it is",
+    "false, whether or not both binaries sent the same wrong bytes."
   ],
   "responses": [
     {"method": "GET", "path": "/ado-harness/_apis/projects", "fixture": "projects_list.json"},
@@ -17,7 +22,7 @@
     {"method": "GET", "path": "/ado-harness/Alpha/_apis/git/repositories/Alpha.Core/refs", "fixture": "branches.json"},
 
     {"method": "POST", "path": "/ado-harness/Alpha/_apis/wit/wiql", "json": {"queryType": "flat", "queryResultType": "workItem", "asOf": "2026-09-20T12:00:00.000Z", "workItems": [{"id": 42, "url": "https://dev.azure.com/myorg/_apis/wit/workItems/42"}, {"id": 43, "url": "https://dev.azure.com/myorg/_apis/wit/workItems/43"}]}},
-    {"method": "POST", "path": "/ado-harness/Empty/_apis/wit/wiql", "json": {"queryType": "flat", "queryResultType": "workItem", "asOf": "2026-09-20T12:00:00.000Z", "workItems": []}},
+    {"method": "POST", "path": "/ado-harness/Empty/_apis/wit/wiql", "request_body": {"query": "SELECT [System.Id], [System.Title], [System.State], [System.WorkItemType], [System.AssignedTo] FROM WorkItems WHERE [System.TeamProject] = 'Empty' ORDER BY [System.Id] DESC"}, "json": {"queryType": "flat", "queryResultType": "workItem", "asOf": "2026-09-20T12:00:00.000Z", "workItems": []}},
     {"method": "GET", "path": "/ado-harness/_apis/wit/workitems", "fixture": "workitems_list.json"},
     {"method": "GET", "path": "/ado-harness/_apis/wit/workitems/42", "fixture": "workitems_show.json"},
 
