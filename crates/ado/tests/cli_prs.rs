@@ -2006,3 +2006,865 @@ fn vote_put_400_is_the_api_error_envelope() {
     assert_eq!(envelope["error"]["code"], json!("api_error"));
     assert_eq!(envelope["error"]["status"], json!(400));
 }
+
+// ── diff (Task 10) ────────────────────────────────────────────────────────
+//
+// The captured request chain and bytes: `GET …/pullRequests/{id}/iterations`,
+// `GET …/iterations/{n}/changes`, and — only for `--file`/`--unified` — the
+// iteration list again, `GET …/items` per revision, and (for `--unified`)
+// `GET …/diffs/commits`. The `--json` documents are the frozen `render_file_list`,
+// `emit_diff_or_json` and `render_unified` shapes; the human diff bytes are the
+// listener capture's.
+
+const DIFF_REPO: &str = "/myorg/Alpha/_apis/git/repositories/Alpha.Core";
+
+/// The listener capture's `--file` output: a replaced line, the trailing empty
+/// line a file ending in a newline splits into, and the extra newline `IO.puts/1`
+/// writes after the content.
+const CAPTURED_FILE_DIFF: &str = "diff --git a/src/app.ex b/src/app.ex\n--- a/src/app.ex\n+++ b/src/app.ex\n@@ -1,4 +1,5 @@\n line one\n-line two\n+line two changed\n line three\n+line four\n \n";
+
+fn diff_iterations_path(pr_id: &str) -> String {
+    format!("{DIFF_REPO}/pullRequests/{pr_id}/iterations")
+}
+
+fn diff_changes_path(pr_id: &str, iteration_id: &str) -> String {
+    format!("{DIFF_REPO}/pullRequests/{pr_id}/iterations/{iteration_id}/changes")
+}
+
+fn diff_items_path() -> String {
+    format!("{DIFF_REPO}/items")
+}
+
+fn diff_commits_path() -> String {
+    format!("{DIFF_REPO}/diffs/commits")
+}
+
+/// The captured PR 137 iteration list: ids 1 and 2, each with its commit pair.
+fn diff_iterations() -> Value {
+    json!({
+        "count": 2,
+        "value": [
+            {"id": 1, "targetRefCommit": {"commitId": "aaaa1111"}, "sourceRefCommit": {"commitId": "bbbb2222"}},
+            {"id": 2, "targetRefCommit": {"commitId": "aaaa1111"}, "sourceRefCommit": {"commitId": "cccc3333"}},
+        ],
+    })
+}
+
+/// The captured four-entry change list the default view renders.
+fn diff_changes() -> Value {
+    json!({
+        "changeEntries": [
+            {"changeTrackingId": 1, "changeId": 1, "changeType": 2, "item": {"path": "/src/app.ex", "additions": 3, "deletions": 1}},
+            {"changeTrackingId": 2, "changeId": 2, "changeType": 1, "item": {"path": "/docs/readme.md", "additions": 5, "deletions": 0}},
+            {"changeTrackingId": 3, "changeId": 3, "changeType": 4, "item": {"path": "/old/file.txt", "additions": 0, "deletions": 9}},
+            {"changeTrackingId": 4, "changeId": 4, "changeType": "rename", "item": {"path": "/renamed/new.ex", "additions": 1, "deletions": 1}},
+        ],
+    })
+}
+
+fn expect_diff_iterations(server: &MockServer, pr_id: &str, response: Value) {
+    server.expect(
+        "GET",
+        &diff_iterations_path(pr_id),
+        MockResponse::json(200, response),
+    );
+}
+
+/// The wire-encoded `path` pair value `expect_query` matches on.
+fn encoded_path(path: &str) -> String {
+    path.replace('/', "%2F")
+}
+
+/// One content revision: `GET …/items` with the three captured query pairs,
+/// matched per `version` so a test can serve two different revisions of the same
+/// path (which the committed harness scenario cannot express).
+fn expect_diff_item(server: &MockServer, path: &str, version: &str, body: &str) {
+    server.expect_query(
+        "GET",
+        &diff_items_path(),
+        &[
+            ("path", &encoded_path(path)),
+            ("versionType", "commit"),
+            ("version", version),
+        ],
+        MockResponse::bytes(200, body.as_bytes().to_vec()),
+    );
+}
+
+/// The default view under `--json` is the frozen `render_file_list/3` document —
+/// `ok`, the iteration, the totals and the per-file objects.
+#[test]
+fn diff_default_lists_the_changes_with_the_captured_envelope() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    expect_diff_iterations(&server, "137", diff_iterations());
+    server.expect(
+        "GET",
+        &diff_changes_path("137", "2"),
+        MockResponse::json(200, diff_changes()),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &["prs", "diff", "Alpha", "Alpha.Core", "137", "--json"],
+    );
+
+    assert_success(&output);
+    let envelope: Value =
+        serde_json::from_str(&stdout_of(&output)).expect("stdout is one JSON document");
+    assert_eq!(
+        envelope,
+        json!({
+            "ok": true,
+            "iteration": 2,
+            "count": 4,
+            "total_additions": 9,
+            "total_deletions": 11,
+            "changes": [
+                {"path": "/src/app.ex", "change_type": "edit", "change_id": 1, "additions": 3, "deletions": 1},
+                {"path": "/docs/readme.md", "change_type": "add", "change_id": 2, "additions": 5, "deletions": 0},
+                {"path": "/old/file.txt", "change_type": "delete", "change_id": 3, "additions": 0, "deletions": 9},
+                {"path": "/renamed/new.ex", "change_type": "rename", "change_id": 4, "additions": 1, "deletions": 1},
+            ],
+        })
+    );
+
+    let requests = server.received();
+    assert_eq!(
+        requests
+            .iter()
+            .map(|request| request.path.as_str())
+            .collect::<Vec<_>>(),
+        [
+            diff_iterations_path("137").as_str(),
+            diff_changes_path("137", "2").as_str()
+        ],
+        "the default view fetches no content"
+    );
+}
+
+/// The default view's human form: this build's table style (§8), one row per
+/// change.
+#[test]
+fn diff_default_human_prints_the_change_table() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    expect_diff_iterations(&server, "137", diff_iterations());
+    server.expect(
+        "GET",
+        &diff_changes_path("137", "2"),
+        MockResponse::json(200, diff_changes()),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &["prs", "diff", "Alpha", "Alpha.Core", "137"],
+    );
+
+    assert_success(&output);
+    let stdout = stdout_of(&output);
+    assert!(
+        stdout.contains("PATH") && stdout.contains("ADDITIONS") && stdout.contains("DELETIONS"),
+        "the frozen columns: {stdout}"
+    );
+    for cell in [
+        "/src/app.ex",
+        "edit",
+        "3",
+        "1",
+        "/docs/readme.md",
+        "add",
+        "/old/file.txt",
+        "delete",
+        "/renamed/new.ex",
+        "rename",
+    ] {
+        assert!(stdout.contains(cell), "{cell} is missing: {stdout}");
+    }
+    assert_no_table_bytes(&stdout);
+}
+
+/// `--file` under `--json` is the frozen `emit_diff_or_json/5` document, and the
+/// rendered bytes are the listener capture's.
+#[test]
+fn diff_file_renders_the_captured_diff_bytes() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    expect_diff_iterations(&server, "137", diff_iterations());
+    server.expect(
+        "GET",
+        &diff_changes_path("137", "2"),
+        MockResponse::json(200, diff_changes()),
+    );
+    expect_diff_iterations(&server, "137", diff_iterations());
+    expect_diff_item(
+        &server,
+        "/src/app.ex",
+        "aaaa1111",
+        "line one\nline two\nline three\n",
+    );
+    expect_diff_item(
+        &server,
+        "/src/app.ex",
+        "cccc3333",
+        "line one\nline two changed\nline three\nline four\n",
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "prs",
+            "diff",
+            "Alpha",
+            "Alpha.Core",
+            "137",
+            "--file",
+            "/src/app.ex",
+            "--json",
+        ],
+    );
+
+    assert_success(&output);
+    let envelope: Value =
+        serde_json::from_str(&stdout_of(&output)).expect("stdout is one JSON document");
+    assert_eq!(
+        envelope,
+        json!({
+            "ok": true,
+            "iteration": 2,
+            "path": "/src/app.ex",
+            "change_type": "edit",
+            "diff": CAPTURED_FILE_DIFF,
+        })
+    );
+
+    let requests = server.received();
+    assert_eq!(requests.len(), 5, "the captured chain: {requests:?}");
+    assert_eq!(requests[2].path, diff_iterations_path("137"));
+    assert_eq!(
+        requests[3].query_pairs(),
+        item_pairs("/src/app.ex", "aaaa1111")
+    );
+    assert_eq!(
+        requests[4].query_pairs(),
+        item_pairs("/src/app.ex", "cccc3333")
+    );
+}
+
+fn item_pairs(path: &str, version: &str) -> Vec<(String, String)> {
+    vec![
+        api_version(),
+        pair("path", &encoded_path(path)),
+        pair("versionType", "commit"),
+        pair("version", version),
+    ]
+}
+
+/// The human form of `--file` is the bare diff plus `IO.puts/1`'s newline, and a
+/// `--file` without the leading slash matches the same change.
+#[test]
+fn diff_file_human_prints_the_diff_and_accepts_the_bare_path() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    expect_diff_iterations(&server, "137", diff_iterations());
+    server.expect(
+        "GET",
+        &diff_changes_path("137", "2"),
+        MockResponse::json(200, diff_changes()),
+    );
+    expect_diff_iterations(&server, "137", diff_iterations());
+    expect_diff_item(
+        &server,
+        "/src/app.ex",
+        "aaaa1111",
+        "line one\nline two\nline three\n",
+    );
+    expect_diff_item(
+        &server,
+        "/src/app.ex",
+        "cccc3333",
+        "line one\nline two changed\nline three\nline four\n",
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "prs",
+            "diff",
+            "Alpha",
+            "Alpha.Core",
+            "137",
+            "--file",
+            "src/app.ex",
+        ],
+    );
+
+    assert_success(&output);
+    assert_eq!(stdout_of(&output), format!("{CAPTURED_FILE_DIFF}\n"));
+}
+
+/// A `--file` that matches no change is `validation_error` and sends no content
+/// request (captured: the refusal comes after the change list, before the items).
+#[test]
+fn diff_file_without_a_match_is_loud() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    expect_diff_iterations(&server, "137", diff_iterations());
+    server.expect(
+        "GET",
+        &diff_changes_path("137", "2"),
+        MockResponse::json(200, diff_changes()),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "prs",
+            "diff",
+            "Alpha",
+            "Alpha.Core",
+            "137",
+            "--file",
+            "src/nope.ex",
+            "--json",
+        ],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    let envelope: Value =
+        serde_json::from_str(&stdout_of(&output)).expect("stdout is one JSON document");
+    assert_eq!(envelope["error"]["code"], json!("validation_error"));
+    assert_eq!(
+        envelope["error"]["message"],
+        json!(
+            "No change matches --file 'src/nope.ex'. Use 'ado prs diff' (no flags) to list files."
+        )
+    );
+    assert_eq!(server.received().len(), 2, "no content request");
+}
+
+/// The two content modes together are refused before any request (captured: zero
+/// requests on either side).
+#[test]
+fn diff_file_and_unified_together_are_refused() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "prs",
+            "diff",
+            "Alpha",
+            "Alpha.Core",
+            "137",
+            "--file",
+            "/src/app.ex",
+            "--unified",
+            "--json",
+        ],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    let envelope: Value =
+        serde_json::from_str(&stdout_of(&output)).expect("stdout is one JSON document");
+    assert_eq!(envelope["error"]["code"], json!("validation_error"));
+    assert_eq!(
+        envelope["error"]["message"],
+        json!("Pass either --file or --unified, not both.")
+    );
+    assert!(
+        server.received().is_empty(),
+        "the refusal precedes every request"
+    );
+}
+
+/// `--unified` reads `/diffs/commits` and joins the per-file diffs; an `add`
+/// fetches only its new side and a `delete` only its old one, and `file_count` is
+/// the change list's length (captured: the two counts differ).
+#[test]
+fn diff_unified_reads_the_repo_diff_and_joins_the_files() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    expect_diff_iterations(&server, "137", diff_iterations());
+    server.expect(
+        "GET",
+        &diff_changes_path("137", "2"),
+        MockResponse::json(200, diff_changes()),
+    );
+    expect_diff_iterations(&server, "137", diff_iterations());
+    server.expect_query(
+        "GET",
+        &diff_commits_path(),
+        &[
+            ("baseVersionType", "commit"),
+            ("baseVersion", "aaaa1111"),
+            ("targetVersionType", "commit"),
+            ("targetVersion", "cccc3333"),
+        ],
+        MockResponse::json(
+            200,
+            json!({
+                "changes": [
+                    {"changeType": 2, "item": {"path": "/src/app.ex"}},
+                    {"changeType": 1, "item": {"path": "/docs/readme.md"}},
+                    {"changeType": 4, "item": {"path": "/old/file.txt"}},
+                ],
+            }),
+        ),
+    );
+    expect_diff_item(
+        &server,
+        "/src/app.ex",
+        "aaaa1111",
+        "line one\nline two\nline three\n",
+    );
+    expect_diff_item(
+        &server,
+        "/src/app.ex",
+        "cccc3333",
+        "line one\nline two changed\nline three\nline four\n",
+    );
+    expect_diff_item(
+        &server,
+        "/docs/readme.md",
+        "cccc3333",
+        "line one\nline two\n",
+    );
+    expect_diff_item(&server, "/old/file.txt", "aaaa1111", "line one\nline two\n");
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "prs",
+            "diff",
+            "Alpha",
+            "Alpha.Core",
+            "137",
+            "--unified",
+            "--json",
+        ],
+    );
+
+    assert_success(&output);
+    let envelope: Value =
+        serde_json::from_str(&stdout_of(&output)).expect("stdout is one JSON document");
+
+    let expected_diff = [
+        CAPTURED_FILE_DIFF,
+        "diff --git a/docs/readme.md b/docs/readme.md\n--- a/docs/readme.md\n+++ b/docs/readme.md\n@@ -0,0 +1,3 @@\n+line one\n+line two\n+\n",
+        "diff --git a/old/file.txt b/old/file.txt\n--- a/old/file.txt\n+++ b/old/file.txt\n@@ -1,3 +0,0 @@\n-line one\n-line two\n-\n",
+    ]
+    .join("\n");
+
+    assert_eq!(
+        envelope,
+        json!({
+            "ok": true,
+            "iteration": 2,
+            "mode": "unified",
+            "file_count": 4,
+            "diff": expected_diff,
+        })
+    );
+
+    let requests = server.received();
+    assert_eq!(requests.len(), 8, "the captured chain: {requests:?}");
+    assert_eq!(requests[2].path, diff_iterations_path("137"));
+    assert_eq!(requests[3].path, diff_commits_path());
+}
+
+/// `--iteration N` skips the first iteration-list GET; `--file` with it still
+/// re-reads the list (captured: changes first, then the list).
+#[test]
+fn diff_iteration_uses_the_number_and_re_reads_the_list_only_for_content() {
+    let home = TempHome::new();
+
+    // The default view with --iteration 1 is one request.
+    let server = MockServer::start();
+    server.expect(
+        "GET",
+        &diff_changes_path("137", "1"),
+        MockResponse::json(
+            200,
+            json!({"changeEntries": [
+                {"changeTrackingId": 1, "changeId": 11, "changeType": "add", "item": {"path": "/src/first.ex", "additions": 7, "deletions": 0}},
+            ]}),
+        ),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "prs",
+            "diff",
+            "Alpha",
+            "Alpha.Core",
+            "137",
+            "--iteration",
+            "1",
+            "--json",
+        ],
+    );
+
+    assert_success(&output);
+    let envelope: Value =
+        serde_json::from_str(&stdout_of(&output)).expect("stdout is one JSON document");
+    assert_eq!(envelope["iteration"], json!(1));
+    assert_eq!(envelope["changes"][0]["path"], json!("/src/first.ex"));
+    assert_eq!(
+        server
+            .received()
+            .iter()
+            .map(|request| request.path.clone())
+            .collect::<Vec<_>>(),
+        [diff_changes_path("137", "1")],
+        "no iteration list when the number is given"
+    );
+
+    // --file with --iteration 1 re-reads the list after the change list.
+    let server = MockServer::start();
+    server.expect(
+        "GET",
+        &diff_changes_path("137", "1"),
+        MockResponse::json(
+            200,
+            json!({"changeEntries": [
+                {"changeTrackingId": 1, "changeId": 11, "changeType": "add", "item": {"path": "/src/first.ex", "additions": 7, "deletions": 0}},
+            ]}),
+        ),
+    );
+    expect_diff_iterations(&server, "137", diff_iterations());
+    expect_diff_item(&server, "/src/first.ex", "aaaa1111", "");
+    expect_diff_item(&server, "/src/first.ex", "bbbb2222", "line one\n");
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "prs",
+            "diff",
+            "Alpha",
+            "Alpha.Core",
+            "137",
+            "--iteration",
+            "1",
+            "--file",
+            "/src/first.ex",
+            "--json",
+        ],
+    );
+
+    assert_success(&output);
+    let requests = server.received();
+    assert_eq!(
+        requests
+            .iter()
+            .map(|request| request.path.as_str())
+            .collect::<Vec<_>>(),
+        [
+            diff_changes_path("137", "1").as_str(),
+            diff_iterations_path("137").as_str(),
+            diff_items_path().as_str(),
+            diff_items_path().as_str(),
+        ]
+    );
+    assert_eq!(
+        requests[2].query_pairs(),
+        item_pairs("/src/first.ex", "aaaa1111")
+    );
+    assert_eq!(
+        requests[3].query_pairs(),
+        item_pairs("/src/first.ex", "bbbb2222")
+    );
+}
+
+/// D34: an iteration number below 1 has no `resolve_iteration/2` clause and the
+/// oracle exits 0 silently; this build refuses the value — `0` against the range
+/// and `-1` as an unexpected argument — and sends nothing.
+#[test]
+fn diff_iteration_below_one_is_a_usage_error() {
+    let home = TempHome::new();
+
+    for (value, expected) in [("0", "--iteration"), ("-1", "-1")] {
+        let server = MockServer::start();
+
+        let output = run(
+            &home,
+            &server,
+            &[
+                "prs",
+                "diff",
+                "Alpha",
+                "Alpha.Core",
+                "137",
+                "--iteration",
+                value,
+                "--json",
+            ],
+        );
+
+        assert_eq!(output.status.code(), Some(1), "--iteration {value}");
+        assert!(
+            stderr_of(&output).contains(expected),
+            "stderr names the offending token for --iteration {value}: {}",
+            stderr_of(&output)
+        );
+        assert!(stdout_of(&output).is_empty());
+        assert!(server.received().is_empty());
+    }
+}
+
+/// D5: a non-integer iteration value is loud on both sides; the oracle prints the
+/// command help on stdout first.
+#[test]
+fn diff_iteration_that_is_not_a_number_is_a_usage_error() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "prs",
+            "diff",
+            "Alpha",
+            "Alpha.Core",
+            "137",
+            "--iteration",
+            "abc",
+        ],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        stderr_of(&output).contains("--iteration"),
+        "stderr names the flag: {}",
+        stderr_of(&output)
+    );
+    assert!(server.received().is_empty());
+}
+
+/// A pull request with no iterations is the frozen module's message, exit 1.
+#[test]
+fn diff_without_iterations_is_loud() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    expect_diff_iterations(&server, "138", json!({"count": 0, "value": []}));
+
+    let output = run(
+        &home,
+        &server,
+        &["prs", "diff", "Alpha", "Alpha.Core", "138", "--json"],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    let envelope: Value =
+        serde_json::from_str(&stdout_of(&output)).expect("stdout is one JSON document");
+    assert_eq!(envelope["error"]["code"], json!("api_error"));
+    assert_eq!(
+        envelope["error"]["message"],
+        json!("PR #138 has no iterations (nothing to diff).")
+    );
+    assert_eq!(server.received().len(), 1);
+}
+
+/// An empty change list is still one document, `count: 0`.
+#[test]
+fn diff_empty_change_list_is_the_empty_envelope() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    expect_diff_iterations(&server, "141", diff_iterations());
+    server.expect(
+        "GET",
+        &diff_changes_path("141", "2"),
+        MockResponse::json(200, json!({"changeEntries": []})),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &["prs", "diff", "Alpha", "Alpha.Core", "141", "--json"],
+    );
+
+    assert_success(&output);
+    let envelope: Value =
+        serde_json::from_str(&stdout_of(&output)).expect("stdout is one JSON document");
+    assert_eq!(
+        envelope,
+        json!({
+            "ok": true,
+            "iteration": 2,
+            "count": 0,
+            "total_additions": 0,
+            "total_deletions": 0,
+            "changes": [],
+        })
+    );
+}
+
+/// A 404 on the iteration list is the generic `not_found` envelope with the body's
+/// status (D24's body rendering lives in the harness rule, not here).
+#[test]
+fn diff_iterations_404_is_the_generic_not_found_envelope() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect_query(
+        "GET",
+        &diff_iterations_path("140"),
+        &[],
+        MockResponse::json(
+            404,
+            json!({"message": "TF401180: The pull request 140 does not exist."}),
+        ),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &["prs", "diff", "Alpha", "Alpha.Core", "140", "--json"],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    let envelope: Value =
+        serde_json::from_str(&stdout_of(&output)).expect("stdout is one JSON document");
+    assert_eq!(envelope["error"]["code"], json!("not_found"));
+    assert_eq!(envelope["error"]["status"], json!(404));
+}
+
+/// D36: an iteration without a commit pair is this build's `api_error` where the
+/// frozen `Helpers.bail/2` catch-all calls it a network failure.
+#[test]
+fn diff_iteration_without_a_commit_pair_is_an_api_error() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    expect_diff_iterations(
+        &server,
+        "139",
+        json!({"count": 1, "value": [{"id": 1, "targetRefCommit": {"commitId": "aaaa1111"}}]}),
+    );
+    server.expect(
+        "GET",
+        &diff_changes_path("139", "1"),
+        MockResponse::json(
+            200,
+            json!({"changeEntries": [
+                {"changeTrackingId": 1, "changeId": 1, "changeType": 2, "item": {"path": "/src/app.ex", "additions": 1, "deletions": 1}},
+            ]}),
+        ),
+    );
+    expect_diff_iterations(
+        &server,
+        "139",
+        json!({"count": 1, "value": [{"id": 1, "targetRefCommit": {"commitId": "aaaa1111"}}]}),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "prs",
+            "diff",
+            "Alpha",
+            "Alpha.Core",
+            "139",
+            "--file",
+            "/src/app.ex",
+            "--json",
+        ],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    let envelope: Value =
+        serde_json::from_str(&stdout_of(&output)).expect("stdout is one JSON document");
+    assert_eq!(envelope["error"]["code"], json!("api_error"));
+    assert_eq!(
+        envelope["error"]["message"],
+        json!("Iteration is missing sourceRefCommit or targetRefCommit")
+    );
+    assert_eq!(
+        server.received().len(),
+        3,
+        "no content request for a rejected iteration"
+    );
+}
+
+/// D36: a content fetch that 404s on a file which must exist is `not_found` with
+/// the module's own message.
+#[test]
+fn diff_file_item_404_is_not_found() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    expect_diff_iterations(&server, "137", diff_iterations());
+    server.expect(
+        "GET",
+        &diff_changes_path("137", "2"),
+        MockResponse::json(200, diff_changes()),
+    );
+    expect_diff_iterations(&server, "137", diff_iterations());
+    server.expect_query(
+        "GET",
+        &diff_items_path(),
+        &[
+            ("path", &encoded_path("/src/app.ex")),
+            ("version", "aaaa1111"),
+        ],
+        MockResponse::json(404, json!({"message": "TF401180: not found"})),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "prs",
+            "diff",
+            "Alpha",
+            "Alpha.Core",
+            "137",
+            "--file",
+            "/src/app.ex",
+            "--json",
+        ],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    let envelope: Value =
+        serde_json::from_str(&stdout_of(&output)).expect("stdout is one JSON document");
+    assert_eq!(envelope["error"]["code"], json!("not_found"));
+    assert_eq!(
+        envelope["error"]["message"],
+        json!("File not found in commit aaaa1111")
+    );
+}
+
+/// The missing positional is a usage error (D5's class: the oracle prints its
+/// help on stdout first). The assertion names the positional, so an
+/// unrecognised-subcommand error cannot satisfy it for the wrong reason.
+#[test]
+fn diff_without_a_positional_is_a_usage_error() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+
+    let output = run(
+        &home,
+        &server,
+        &["prs", "diff", "Alpha", "Alpha.Core", "--json"],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(stdout_of(&output).is_empty());
+    assert!(
+        stderr_of(&output).contains("PR_ID"),
+        "stderr names the missing positional: {}",
+        stderr_of(&output)
+    );
+    assert!(server.received().is_empty());
+}

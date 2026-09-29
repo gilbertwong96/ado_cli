@@ -1760,4 +1760,196 @@ mod tests {
             "a missing link is an empty cell: {bare}"
         );
     }
+
+    /// The listener capture's exact bytes: a replaced line renders `-` then `+`,
+    /// the trailing empty line a file ending in `\n` splits into renders as a
+    /// context line, and the hunk covers the whole file from line 1.
+    #[test]
+    fn unified_diff_text_matches_the_captured_edit_bytes() {
+        assert_eq!(
+            unified_diff_text(
+                "/src/app.ex",
+                "line one\nline two\nline three\n",
+                "line one\nline two changed\nline three\nline four\n",
+            ),
+            "diff --git a/src/app.ex b/src/app.ex\n--- a/src/app.ex\n+++ b/src/app.ex\n@@ -1,4 +1,5 @@\n line one\n-line two\n+line two changed\n line three\n+line four\n \n"
+        );
+    }
+
+    /// A path without a leading slash gains one, as `format_unified_diff/5`'s
+    /// `ensure_leading_slash/1` does.
+    #[test]
+    fn unified_diff_text_prefixes_the_path_and_keeps_identical_content_hunkless() {
+        assert_eq!(
+            unified_diff_text("src/app.ex", "same\n", "same\n"),
+            "diff --git a/src/app.ex b/src/app.ex\n--- a/src/app.ex\n+++ b/src/app.ex\n"
+        );
+        assert_eq!(
+            unified_diff_text("/empty.txt", "", ""),
+            "diff --git a/empty.txt b/empty.txt\n--- a/empty.txt\n+++ b/empty.txt\n"
+        );
+    }
+
+    /// The captured new-file and deleted-file hunk headers: `@@ -0,0 +1,n @@` and
+    /// `@@ -1,n +0,0 @@`, each with its whole body prefixed.
+    #[test]
+    fn unified_diff_text_renders_new_and_deleted_files() {
+        let new_file = unified_diff_text("/docs/readme.md", "", "line one\nline two\n");
+
+        assert_eq!(
+            new_file,
+            "diff --git a/docs/readme.md b/docs/readme.md\n--- a/docs/readme.md\n+++ b/docs/readme.md\n@@ -0,0 +1,3 @@\n+line one\n+line two\n+\n"
+        );
+
+        let deleted = unified_diff_text("/old/file.txt", "line one\nline two\n", "");
+
+        assert_eq!(
+            deleted,
+            "diff --git a/old/file.txt b/old/file.txt\n--- a/old/file.txt\n+++ b/old/file.txt\n@@ -1,3 +0,0 @@\n-line one\n-line two\n-\n"
+        );
+    }
+
+    /// An insertion inside a file keeps its surrounding lines as context, and a
+    /// pure deletion inserts nothing.
+    #[test]
+    fn line_diff_keeps_context_and_prefers_deletes_on_a_tie() {
+        assert_eq!(
+            line_diff(&["a", "c"], &["a", "b", "c"]),
+            vec![Edit::Equal("a"), Edit::Insert("b"), Edit::Equal("c")]
+        );
+        assert_eq!(
+            line_diff(&["a", "b", "c"], &["a", "c"]),
+            vec![Edit::Equal("a"), Edit::Delete("b"), Edit::Equal("c")]
+        );
+        assert_eq!(
+            line_diff(&["a", "b"], &["a", "x"]),
+            vec![Edit::Equal("a"), Edit::Delete("b"), Edit::Insert("x")],
+            "a replacement deletes before it inserts (the captured order)"
+        );
+    }
+
+    /// `change_type/1`'s frozen table on both spellings and the unknown fallback.
+    #[test]
+    fn change_type_maps_names_and_integers_and_falls_back() {
+        for (raw, expected) in [
+            (json!("add"), "add"),
+            (json!("rename"), "rename"),
+            (json!(1), "add"),
+            (json!(2), "edit"),
+            (json!(4), "delete"),
+            (json!(8), "rename"),
+            (json!(16), "directory"),
+            (json!(32), "change"),
+            (json!("oddity"), "change"),
+            (json!(true), "change"),
+            (Value::Null, "change"),
+        ] {
+            assert_eq!(
+                change_type(&json!({"changeType": raw})),
+                expected,
+                "changeType {raw}"
+            );
+        }
+        assert_eq!(change_type(&json!({})), "change");
+    }
+
+    /// `change_path/1`'s fallback chain, and the `find_change_for_file/2` match
+    /// that strips one leading slash from either side.
+    #[test]
+    fn change_path_and_find_change_use_the_captured_fallbacks() {
+        assert_eq!(
+            change_path(&json!({"item": {"path": "/src/app.ex"}})),
+            "/src/app.ex"
+        );
+        assert_eq!(
+            change_path(&json!({"originalPath": "/renamed/old.ex"})),
+            "/renamed/old.ex"
+        );
+        assert_eq!(change_path(&json!({"path": "/bare.ex"})), "/bare.ex");
+        assert_eq!(change_path(&json!({})), "?");
+
+        let changes = vec![
+            json!({"item": {"path": "/src/app.ex"}}),
+            json!({"item": {"path": "/renamed/new.ex"}, "originalPath": "/renamed/old.ex"}),
+        ];
+
+        assert!(find_change(&changes, "/src/app.ex").is_some());
+        assert!(find_change(&changes, "src/app.ex").is_some());
+        assert!(
+            find_change(&changes, "/renamed/old.ex").is_none(),
+            "a rename's old path is not matched (captured)"
+        );
+        assert!(find_change(&changes, "/src/nope.ex").is_none());
+    }
+
+    /// The default view's envelope is the frozen `render_file_list/3` shape,
+    /// including the `change_id` fallback and the `|| 0` counts.
+    #[test]
+    fn file_list_envelope_carries_the_frozen_keys_and_totals() {
+        let changes = vec![
+            json!({"changeTrackingId": 1, "changeId": 1, "changeType": 2, "item": {"path": "/src/app.ex", "additions": 3, "deletions": 1}}),
+            json!({"changeTrackingId": 2, "id": 22, "changeType": "add", "item": {"path": "/docs/readme.md"}}),
+        ];
+
+        assert_eq!(
+            file_list_envelope(2, &changes),
+            json!({
+                "ok": true,
+                "iteration": 2,
+                "count": 2,
+                "total_additions": 3,
+                "total_deletions": 1,
+                "changes": [
+                    {"path": "/src/app.ex", "change_type": "edit", "change_id": 1, "additions": 3, "deletions": 1},
+                    {"path": "/docs/readme.md", "change_type": "add", "change_id": 22, "additions": 0, "deletions": 0},
+                ],
+            })
+        );
+    }
+
+    /// The empty change list's human form is this build's message; the table's
+    /// columns are the frozen ones.
+    #[test]
+    fn file_list_table_names_the_captured_columns() {
+        assert_eq!(
+            file_list_table(&[]),
+            Report::Text("No changes found.".to_owned())
+        );
+
+        let Report::Table { headers, rows } = file_list_table(&[json!({
+            "changeType": 4,
+            "item": {"path": "/old/file.txt", "additions": 0, "deletions": 9},
+        })]) else {
+            panic!("a non-empty change list is a table");
+        };
+
+        assert_eq!(headers, ["PATH", "TYPE", "ADDITIONS", "DELETIONS"]);
+        assert_eq!(rows, vec![vec!["/old/file.txt", "delete", "0", "9"]]);
+    }
+
+    /// The diff paths spell `pullRequests` with a capital R and encode both
+    /// segments, the captured spelling for this command.
+    #[test]
+    fn diff_paths_use_the_captured_spelling() {
+        assert_eq!(
+            iterations_path("Alpha", "Alpha.Core", 137),
+            "/Alpha/_apis/git/repositories/Alpha.Core/pullRequests/137/iterations"
+        );
+        assert_eq!(
+            changes_path("Alpha", "Alpha.Core", 137, 2),
+            "/Alpha/_apis/git/repositories/Alpha.Core/pullRequests/137/iterations/2/changes"
+        );
+        assert_eq!(
+            items_path("Alpha", "Alpha.Core"),
+            "/Alpha/_apis/git/repositories/Alpha.Core/items"
+        );
+        assert_eq!(
+            diffs_path("Alpha", "Alpha.Core"),
+            "/Alpha/_apis/git/repositories/Alpha.Core/diffs/commits"
+        );
+        assert_eq!(
+            iterations_path("Alpha Beta", "Core/One", 7),
+            "/Alpha%20Beta/_apis/git/repositories/Core%2FOne/pullRequests/7/iterations"
+        );
+    }
 }
