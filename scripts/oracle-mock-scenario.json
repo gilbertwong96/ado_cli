@@ -26,6 +26,61 @@
     {"method": "GET", "path": "/ado-harness/_apis/wit/workitems", "fixture": "workitems_list.json"},
     {"method": "GET", "path": "/ado-harness/_apis/wit/workitems/42", "fixture": "workitems_show.json"},
 
+    {
+      "method": "POST",
+      "path": "/ado-harness/Alpha/_apis/wit/workitems/$Bug",
+      "request_body": [{"op": "add", "path": "/fields/System.Title", "value": "Checkout fails on expired cards"}],
+      "json": {"id": 42, "rev": 1, "fields": {"System.Id": 42, "System.Title": "Checkout fails on expired cards", "System.WorkItemType": "Bug", "System.State": "New"}, "_links": {"html": {"href": "https://dev.azure.com/ado-harness/Alpha/_workitems/edit/42"}}, "url": "https://dev.azure.com/ado-harness/_apis/wit/workItems/42"}
+    },
+    {
+      "method": "POST",
+      "path": "/ado-harness/Alpha/_apis/wit/workitems/$User%20Story",
+      "request_body": [
+        {"op": "add", "path": "/fields/System.Title", "value": "Payment retries for soft declines"},
+        {"op": "add", "path": "/fields/System.Description", "value": "Description body"},
+        {"op": "add", "path": "/fields/System.AssignedTo", "value": "alice"},
+        {"op": "add", "path": "/fields/System.State", "value": "Active"},
+        {"op": "add", "path": "/fields/Microsoft.VSTS.Common.Priority", "value": 2},
+        {"op": "add", "path": "/fields/System.Tags", "value": "frontend,ui"}
+      ],
+      "json": {"id": 43, "rev": 1, "fields": {"System.Id": 43, "System.Title": "Payment retries for soft declines", "System.WorkItemType": "User Story", "System.State": "Active"}, "_links": {"html": {"href": "https://dev.azure.com/ado-harness/Alpha/_workitems/edit/43"}}, "url": "https://dev.azure.com/ado-harness/_apis/wit/workItems/43"}
+    },
+    {
+      "method": "POST",
+      "path": "/ado-harness/Broken/_apis/wit/workitems/$Bug",
+      "request_body": [{"op": "add", "path": "/fields/System.Title", "value": "T"}],
+      "status": 400,
+      "json": {"message": "TF400898: An Internal Error Occurred."}
+    },
+    {
+      "method": "PATCH",
+      "path": "/ado-harness/_apis/wit/workitems/42",
+      "request_body": [{"op": "add", "path": "/fields/System.Title", "value": "Checkout fails on expired cards (renamed)"}],
+      "json": {"id": 42, "rev": 5, "fields": {"System.Id": 42, "System.Title": "Checkout fails on expired cards (renamed)", "System.State": "Active"}}
+    },
+    {
+      "method": "PATCH",
+      "path": "/ado-harness/_apis/wit/workitems/43",
+      "request_body": [
+        {"op": "replace", "path": "/fields/System.Tags", "value": "a,b"},
+        {"op": "add", "path": "/fields/System.Title", "value": "Payment retries for soft declines (renamed)"},
+        {"op": "add", "path": "/fields/System.Description", "value": "New body"},
+        {"op": "add", "path": "/fields/System.State", "value": "Closed"},
+        {"op": "add", "path": "/fields/System.AssignedTo", "value": "bob"},
+        {"op": "add", "path": "/fields/Microsoft.VSTS.Common.Priority", "value": 1}
+      ],
+      "json": {"id": 43, "rev": 2, "fields": {"System.Id": 43, "System.Title": "Payment retries for soft declines (renamed)", "System.State": "Closed"}}
+    },
+    {
+      "method": "PATCH",
+      "path": "/ado-harness/_apis/wit/workitems/999",
+      "request_body": [{"op": "add", "path": "/fields/System.Title", "value": "T"}],
+      "status": 404,
+      "json": {"message": "TF401232: Work item 999 does not exist, or you do not have permissions to read it."}
+    },
+    {"method": "DELETE", "path": "/ado-harness/_apis/wit/workitems/42", "json": {"id": 42, "rev": 6}},
+    {"method": "DELETE", "path": "/ado-harness/_apis/wit/workitems/999", "status": 404, "json": {"message": "TF401232: Work item 999 does not exist."}},
+
     {"method": "GET", "path": "/ado-harness/Alpha/_apis/git/repositories/Alpha.Core/pullrequests", "fixture": "prs_list.json"},
     {"method": "GET", "path": "/ado-harness/Alpha/_apis/git/repositories/Alpha.Core/pullrequests/137", "fixture": "prs_show.json"},
     {"method": "GET", "path": "/ado-harness/Alpha/_apis/git/repositories/Alpha.Core/pullrequests/999", "status": 404, "fixture": "error_404.json"},

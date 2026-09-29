@@ -1143,6 +1143,83 @@ run_mock_cases() {
     mock_case pipelines-builds-tags-add-no-tags "pipelines-builds tags add (no --tags)" \
         pipelines-builds tags add Builds 128 --json
 
+    # ── Wave 2: work item mutations (Task 7) ──
+    #
+    # Both writes are JSON-patch arrays under `application/json-patch+json`, and
+    # every route pins the captured body, so a plain object, the wrong op or the
+    # wrong field order fails the case by name even when both binaries send it.
+    # `create`'s order is title, description, assigned-to, state, priority, tags;
+    # `update`'s is tags (replace, first), title, description, state,
+    # assigned-to, priority — the two orders are captured separately because they
+    # differ. R5: `workitems delete` was re-run against the mock with `n` on
+    # stdin and on EOF and sent its DELETE both times — no prompt — and the tree
+    # has no `--force` to port (the unknown-flag case pins that). The
+    # no-`--type`/`--title`/no-field guards are loud on both sides (exit 1, no
+    # request); `update`'s is a `halt_error` on the oracle where this build emits
+    # the error envelope (D4).
+
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the value envelope'
+    mock_case workitems-create "workitems create" workitems create Alpha \
+        --type Bug --title 'Checkout fails on expired cards' --json
+
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the value envelope'
+    mock_case workitems-create-full "workitems create (all options)" workitems create Alpha \
+        --type 'User Story' --title 'Payment retries for soft declines' \
+        --description 'Description body' --assigned-to alice --state Active \
+        --priority 2 --tags 'frontend,ui' --json
+
+    stdout_mode=text
+    mock_case workitems-create-no-type "workitems create (no --type)" \
+        workitems create Alpha --json
+
+    stdout_mode=text
+    mock_case workitems-create-no-title "workitems create (no --title)" \
+        workitems create Alpha --type Bug --json
+
+    envelope_rule='D24: the error body stays the upstream bytes here, where the oracle re-renders the decoded map with inspect/2'
+    mock_case workitems-create-400 "workitems create (400)" \
+        workitems create Broken --type Bug --title T --json
+
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the value envelope'
+    mock_case workitems-update "workitems update" workitems update 42 \
+        --title 'Checkout fails on expired cards (renamed)' --json
+
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the value envelope'
+    mock_case workitems-update-all "workitems update (all options)" workitems update 43 \
+        --title 'Payment retries for soft declines (renamed)' --description 'New body' \
+        --state Closed --assigned-to bob --priority 1 --tags 'a,b' --json
+
+    envelope_rule='D4: the frozen CLI writes the guard to stderr with no envelope under --json where this build emits the error envelope'
+    mock_case workitems-update-no-options "workitems update (no options)" \
+        workitems update 42 --json
+
+    envelope_rule='D4: the frozen CLI writes the 404 to stderr with no envelope under --json where this build emits the error envelope'
+    mock_case workitems-update-404 "workitems update (404)" \
+        workitems update 999 --title T --json
+
+    case_stdin=$'n\n'
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the message envelope'
+    mock_case workitems-delete-stdin-n "workitems delete (stdin n — no prompt)" \
+        workitems delete 42 --json
+
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the message envelope'
+    mock_case workitems-delete-eof "workitems delete (EOF — no prompt)" \
+        workitems delete 42 --json
+
+    envelope_rule='D4: the frozen CLI writes the 404 to stderr with no envelope under --json where this build emits the error envelope'
+    mock_case workitems-delete-404 "workitems delete (404)" \
+        workitems delete 999 --json
+
+    envelope_rule='D5: the oracle prints the command help on stdout before its usage error; this build writes clap’s message to stderr alone'
+    stdout_mode=text
+    mock_case workitems-delete-no-id "workitems delete (no id)" \
+        workitems delete --json
+
+    envelope_rule='D5: the oracle prints the command help on stdout before its usage error; this build writes clap’s message to stderr alone'
+    stdout_mode=text
+    mock_case workitems-delete-force "workitems delete --force (unknown flag)" \
+        workitems delete 42 --force
+
     mock_scenario_check
 }
 
