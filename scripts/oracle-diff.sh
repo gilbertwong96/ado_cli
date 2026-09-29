@@ -2342,6 +2342,214 @@ run_mock_cases() {
     mock_case iterations-list-no-team "iterations list (no team)" \
         iterations list Alpha --json
 
+    # ── Wave 2: the teams and the user entitlements (Task 13) ──
+    #
+    # Captured shapes: teams hang off `/{project}/_apis/teams`, with the members
+    # leaf one level deeper (`…/teams/{team_id}/members`); `users` is
+    # organization-scoped — every path is `/_apis/userentitlements`, no project
+    # segment — so its list 404/500 rows are selected by `case_org`
+    # (missing/broken): one path cannot carry two responses. Both lists and every
+    # read emit the value envelope and MATCH. The writes' `--json` output is this
+    # build's value/message envelope where the oracle prints its human line (D33);
+    # `teams show|update|delete`'s and `users show|remove`'s 404s carry the
+    # module's own wording in the envelope where the oracle writes it to stderr
+    # with no envelope (D4), as does `teams update`'s no-option guard; the four
+    # list error cases and the two 409s keep the classified envelope with this
+    # build's raw error body where the oracle re-renders the decoded map (D24 —
+    # C2's rows for both areas). `teams delete` and `users remove` never prompt
+    # (R1/R5): the `(stdin n — no prompt)` cases send their requests. A missing
+    # `--name`/`--email` is D34's silent exit 0 in the oracle. An email id is a
+    # path segment and differs by the stricter encoding (D22 — both spellings
+    # have their own route carrying the same body, so only the path differs). The
+    # module docs promise a `--search` and a `--force` the frozen parser rejects;
+    # neither is in this tree.
+
+    mock_case teams-list "teams list" \
+        teams list Alpha --json
+
+    mock_case teams-list-top "teams list --top 5" \
+        teams list Alpha --top 5 --json
+
+    stdout_mode=text
+    mock_case teams-list-empty-human "teams list (empty, human)" \
+        teams list Empty
+
+    envelope_rule='D24: the error body stays the upstream bytes here, where the oracle re-renders the decoded map with inspect/2 (C2: the list-error row)'
+    mock_case teams-list-404 "teams list (404)" \
+        teams list Missing --json
+
+    envelope_rule='D24: the error body stays the upstream bytes here, where the oracle re-renders the decoded map with inspect/2 (C2: the list-error row)'
+    mock_case teams-list-500 "teams list (500)" \
+        teams list Broken --json
+
+    envelope_rule='D5: the oracle prints the command help on stdout before its usage error; this build writes clap’s message to stderr alone'
+    stdout_mode=text
+    mock_case teams-list-no-project "teams list (no project)" \
+        teams list
+
+    mock_case teams-show "teams show" \
+        teams show Alpha team-1 --json
+
+    stdout_mode=text
+    mock_case teams-show-human "teams show (human)" \
+        teams show Alpha team-1
+
+    rest_rule='D22: the email id is a path segment here, percent-encoded more strictly than the frozen URI.encode/1 (which left the @ alone), so the request paths differ and the envelopes do not'
+    mock_case teams-show-email "teams show (email id)" \
+        teams show Alpha ada@example.com --json
+
+    envelope_rule='D4: the frozen CLI writes the guard to stderr with no envelope under --json where this build emits the error envelope'
+    mock_case teams-show-404 "teams show (404)" \
+        teams show Alpha missing-id --json
+
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the value envelope'
+    mock_case teams-create "teams create" \
+        teams create Alpha --name Team --json
+
+    stdout_mode=text
+    mock_case teams-create-human "teams create (human)" \
+        teams create Alpha --name Team
+
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the value envelope'
+    mock_case teams-create-description "teams create --description" \
+        teams create Alpha2 --name Beta --description 'A team' --json
+
+    envelope_rule='D24: the error body stays the upstream bytes here, where the oracle re-renders the decoded map with inspect/2'
+    mock_case teams-create-409 "teams create (409)" \
+        teams create Conflict --name Duplicate --json
+
+    status_rule='D34: a missing required option is a silent exit 0 in the oracle; this build is a loud usage error'
+    expect_statuses='0 1'
+    stdout_mode=text
+    mock_case teams-create-no-name "teams create (no --name)" \
+        teams create Alpha --json
+
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the value envelope'
+    mock_case teams-update "teams update" \
+        teams update Alpha team-1 --name Renamed --json
+
+    stdout_mode=text
+    mock_case teams-update-human "teams update (human)" \
+        teams update Alpha team-1 --name Renamed
+
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the value envelope'
+    mock_case teams-update-description "teams update --description" \
+        teams update Alpha team-2 --description 'New desc' --json
+
+    envelope_rule='D4: the frozen CLI writes the guard to stderr with no envelope under --json where this build emits the error envelope'
+    mock_case teams-update-no-options "teams update (no options)" \
+        teams update Alpha team-1 --json
+
+    envelope_rule='D4: the frozen CLI writes the guard to stderr with no envelope under --json where this build emits the error envelope'
+    mock_case teams-update-404 "teams update (404)" \
+        teams update Alpha missing-id --name Renamed --json
+
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the message envelope'
+    mock_case teams-delete "teams delete" \
+        teams delete Alpha team-1 --json
+
+    stdout_mode=text
+    mock_case teams-delete-human "teams delete (human)" \
+        teams delete Alpha team-1
+
+    case_stdin=$'n\n'
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the message envelope'
+    mock_case teams-delete-stdin-n "teams delete (stdin n — no prompt)" \
+        teams delete Alpha team-1 --json
+
+    envelope_rule='D4: the frozen CLI writes the guard to stderr with no envelope under --json where this build emits the error envelope'
+    mock_case teams-delete-404 "teams delete (404)" \
+        teams delete Alpha missing-id --json
+
+    mock_case teams-members-list "teams members list" \
+        teams members list Alpha team-1 --json
+
+    stdout_mode=text
+    mock_case teams-members-list-empty-human "teams members list (empty, human)" \
+        teams members list Alpha empty-team
+
+    mock_case users-list "users list" \
+        users list --json
+
+    mock_case users-list-top "users list --top 5" \
+        users list --top 5 --json
+
+    case_org=empty-org
+    stdout_mode=text
+    mock_case users-list-empty-human "users list (empty org, human)" \
+        users list
+
+    case_org=missing
+    envelope_rule='D24: the error body stays the upstream bytes here, where the oracle re-renders the decoded map with inspect/2 (C2: the list-error row)'
+    mock_case users-list-404 "users list (404)" \
+        users list --json
+
+    case_org=broken
+    envelope_rule='D24: the error body stays the upstream bytes here, where the oracle re-renders the decoded map with inspect/2 (C2: the list-error row)'
+    mock_case users-list-500 "users list (500)" \
+        users list --json
+
+    envelope_rule='D5: the oracle prints the command help on stdout before its usage error; this build writes clap’s message to stderr alone'
+    stdout_mode=text
+    mock_case users-list-extra-positional "users list (extra positional)" \
+        users list Alpha
+
+    mock_case users-show "users show" \
+        users show user-1 --json
+
+    stdout_mode=text
+    mock_case users-show-human "users show (human)" \
+        users show user-1
+
+    rest_rule='D22: the email id is a path segment here, percent-encoded more strictly than the frozen URI.encode/1 (which left the @ alone), so the request paths differ and the envelopes do not'
+    mock_case users-show-email "users show (email id)" \
+        users show ada@example.com --json
+
+    envelope_rule='D4: the frozen CLI writes the guard to stderr with no envelope under --json where this build emits the error envelope'
+    mock_case users-show-404 "users show (404)" \
+        users show missing-id --json
+
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the value envelope'
+    mock_case users-add "users add" \
+        users add --email ada@example.com --json
+
+    stdout_mode=text
+    mock_case users-add-human "users add (human)" \
+        users add --email ada@example.com
+
+    case_org=user-org
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the value envelope'
+    mock_case users-add-license "users add --license" \
+        users add --email grace@example.com --license stakeholder --json
+
+    status_rule='D34: a missing required option is a silent exit 0 in the oracle; this build is a loud usage error'
+    expect_statuses='0 1'
+    stdout_mode=text
+    mock_case users-add-no-email "users add (no --email)" \
+        users add --json
+
+    case_org=conflict-org
+    envelope_rule='D24: the error body stays the upstream bytes here, where the oracle re-renders the decoded map with inspect/2'
+    mock_case users-add-409 "users add (409)" \
+        users add --email ada@example.com --json
+
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the message envelope'
+    mock_case users-remove "users remove" \
+        users remove user-1 --json
+
+    stdout_mode=text
+    mock_case users-remove-human "users remove (human)" \
+        users remove user-1
+
+    case_stdin=$'n\n'
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the message envelope'
+    mock_case users-remove-stdin-n "users remove (stdin n — no prompt)" \
+        users remove user-1 --json
+
+    envelope_rule='D4: the frozen CLI writes the guard to stderr with no envelope under --json where this build emits the error envelope'
+    mock_case users-remove-404 "users remove (404)" \
+        users remove missing-id --json
+
     mock_scenario_check
 }
 

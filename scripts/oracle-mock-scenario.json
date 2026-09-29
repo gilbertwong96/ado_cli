@@ -883,6 +883,54 @@
     {"method": "PATCH", "path": "/ado-harness/Dated/Team/_apis/work/teamsettings/iterations/dated-id", "request_body": {"attributes": {"startDate": "2026-03-01", "finishDate": "2026-03-14"}}, "json": {"id": "dated-id", "name": "Sprint 26", "path": "Dated\\Sprint 26", "attributes": {"startDate": "2026-03-01", "finishDate": "2026-03-14"}}},
     {"method": "PATCH", "path": "/ado-harness/Alpha/Team/_apis/work/teamsettings/iterations/missing-id", "request_body": {"name": "Renamed"}, "status": 404, "json": {"message": "The iteration was not found."}},
     {"method": "DELETE", "path": "/ado-harness/Alpha/Team/_apis/work/teamsettings/iterations/bbbbbbbb-0002-0002-0002-000000000002", "json": {}},
-    {"method": "DELETE", "path": "/ado-harness/Alpha/Team/_apis/work/teamsettings/iterations/missing-id", "status": 404, "json": {"message": "The iteration was not found."}}
+    {"method": "DELETE", "path": "/ado-harness/Alpha/Team/_apis/work/teamsettings/iterations/missing-id", "status": 404, "json": {"message": "The iteration was not found."}},
+
+    {"method": "GET", "path": "/ado-harness/Alpha/_apis/teams", "json": {"count": 2, "value": [
+      {"id": "team-1", "name": "Alpha Team", "description": "The alpha team", "url": "https://dev.azure.com/ado-harness/_apis/projects/Alpha/teams/team-1", "identityUrl": "https://vssps.dev.azure.com/ado-harness/_apis/Identities/team-1", "projectName": "Alpha", "projectId": "proj-1"},
+      {"id": "team-2", "name": "Beta Team", "description": "A description longer than thirty chars", "url": "https://dev.azure.com/ado-harness/_apis/projects/Alpha/teams/team-2", "identityUrl": "https://vssps.dev.azure.com/ado-harness/_apis/Identities/team-2", "projectName": "Alpha", "projectId": "proj-1"}
+    ]}},
+    {"method": "GET", "path": "/ado-harness/Empty/_apis/teams", "json": {"count": 0, "value": []}},
+    {"method": "GET", "path": "/ado-harness/Missing/_apis/teams", "status": 404, "json": {"message": "TF400813: The user is not authorized."}},
+    {"method": "GET", "path": "/ado-harness/Broken/_apis/teams", "status": 500, "json": {"message": "TF400898: An Internal Error Occurred."}},
+    {"method": "GET", "path": "/ado-harness/Alpha/_apis/teams/team-1", "json": {"id": "team-1", "name": "Alpha Team", "description": "The alpha team", "url": "https://dev.azure.com/ado-harness/_apis/projects/Alpha/teams/team-1", "identityUrl": "https://vssps.dev.azure.com/ado-harness/_apis/Identities/team-1", "projectName": "Alpha", "projectId": "proj-1"}},
+    {"method": "GET", "path": "/ado-harness/Alpha/_apis/teams/missing-id", "status": 404, "json": {"message": "TF400813: The user is not authorized."}},
+    {"method": "GET", "path": "/ado-harness/Alpha/_apis/teams/ada@example.com", "json": {"id": "ada@example.com", "name": "Ada Team", "description": "Email-shaped id", "projectName": "Alpha"}},
+    {"method": "GET", "path": "/ado-harness/Alpha/_apis/teams/ada%40example.com", "json": {"id": "ada@example.com", "name": "Ada Team", "description": "Email-shaped id", "projectName": "Alpha"}},
+
+    {"method": "POST", "path": "/ado-harness/Alpha/_apis/teams", "request_body": {"name": "Team"}, "json": {"id": "team-9", "name": "Team", "description": null, "url": "https://dev.azure.com/ado-harness/_apis/projects/Alpha/teams/team-9", "projectName": "Alpha"}},
+    {"method": "POST", "path": "/ado-harness/Alpha2/_apis/teams", "request_body": {"name": "Beta", "description": "A team"}, "json": {"id": "team-10", "name": "Beta", "description": "A team", "url": "https://dev.azure.com/ado-harness/_apis/projects/Alpha2/teams/team-10", "projectName": "Alpha2"}},
+    {"method": "POST", "path": "/ado-harness/Conflict/_apis/teams", "request_body": {"name": "Duplicate"}, "status": 409, "json": {"message": "TF400813: A team with the name 'Duplicate' already exists."}},
+
+    {"method": "PATCH", "path": "/ado-harness/Alpha/_apis/teams/team-1", "request_body": {"name": "Renamed"}, "json": {"id": "team-1", "name": "Renamed", "description": "The alpha team", "projectName": "Alpha"}},
+    {"method": "PATCH", "path": "/ado-harness/Alpha/_apis/teams/team-2", "request_body": {"description": "New desc"}, "json": {"id": "team-2", "name": "Beta Team", "description": "New desc", "projectName": "Alpha"}},
+    {"method": "PATCH", "path": "/ado-harness/Alpha/_apis/teams/missing-id", "request_body": {"name": "Renamed"}, "status": 404, "json": {"message": "TF400813: The user is not authorized."}},
+
+    {"method": "DELETE", "path": "/ado-harness/Alpha/_apis/teams/team-1", "json": {"id": "team-1"}},
+    {"method": "DELETE", "path": "/ado-harness/Alpha/_apis/teams/missing-id", "status": 404, "json": {"message": "TF400813: The user is not authorized."}},
+
+    {"method": "GET", "path": "/ado-harness/Alpha/_apis/teams/team-1/members", "json": {"count": 2, "value": [
+      {"id": "member-1", "identity": {"displayName": "Ada Lovelace", "uniqueName": "ada@example.com", "id": "id-1"}, "isTeamAdmin": false},
+      {"id": "member-2", "identity": {"displayName": "Grace Hopper", "uniqueName": "grace@example.com", "id": "id-2"}, "isTeamAdmin": true}
+    ]}},
+    {"method": "GET", "path": "/ado-harness/Alpha/_apis/teams/empty-team/members", "json": {"count": 0, "value": []}},
+
+    {"method": "GET", "path": "/ado-harness/_apis/userentitlements", "json": {"count": 2, "value": [
+      {"id": "user-1", "user": {"descriptor": "aad.ada", "displayName": "Ada Lovelace", "principalName": "ada@example.com", "subjectKind": "user", "origin": "aad", "originId": "origin-1"}, "accessLevel": {"accountLicenseType": "express", "licensingSource": "account", "msdnLicenseType": "none", "status": "active", "assignmentSource": "unknown"}, "lastAccessedDate": "2026-09-20T10:00:00.00Z", "dateCreated": "2026-01-05T08:30:00.00Z"},
+      {"id": "user-2", "user": {"descriptor": "aad.grace", "displayName": "Grace Hopper", "principalName": "grace@example.com", "subjectKind": "user", "origin": "aad", "originId": "origin-2"}, "accessLevel": {"accountLicenseType": "stakeholder", "licensingSource": "account", "msdnLicenseType": "none", "status": "active"}, "lastAccessedDate": "2026-09-19T10:00:00.00Z", "dateCreated": "2026-02-05T08:30:00.00Z"}
+    ]}},
+    {"method": "GET", "path": "/empty-org/_apis/userentitlements", "json": {"count": 0, "value": []}},
+    {"method": "GET", "path": "/missing/_apis/userentitlements", "status": 404, "json": {"message": "TF400813: The user is not authorized."}},
+    {"method": "GET", "path": "/broken/_apis/userentitlements", "status": 500, "json": {"message": "TF400898: An Internal Error Occurred."}},
+    {"method": "GET", "path": "/ado-harness/_apis/userentitlements/user-1", "json": {"id": "user-1", "user": {"descriptor": "aad.ada", "displayName": "Ada Lovelace", "principalName": "ada@example.com", "subjectKind": "user", "origin": "aad", "originId": "origin-1"}, "accessLevel": {"accountLicenseType": "express", "licensingSource": "account", "msdnLicenseType": "none", "status": "active"}}},
+    {"method": "GET", "path": "/ado-harness/_apis/userentitlements/missing-id", "status": 404, "json": {"message": "TF400813: The user is not authorized."}},
+    {"method": "GET", "path": "/ado-harness/_apis/userentitlements/ada@example.com", "json": {"id": "user-1", "user": {"displayName": "Ada Lovelace", "principalName": "ada@example.com", "subjectKind": "user"}, "accessLevel": {"accountLicenseType": "express", "status": "active"}}},
+    {"method": "GET", "path": "/ado-harness/_apis/userentitlements/ada%40example.com", "json": {"id": "user-1", "user": {"displayName": "Ada Lovelace", "principalName": "ada@example.com", "subjectKind": "user"}, "accessLevel": {"accountLicenseType": "express", "status": "active"}}},
+
+    {"method": "POST", "path": "/ado-harness/_apis/userentitlements", "request_body": {"accessLevel": {"accountLicenseType": "express"}, "user": {"principalName": "ada@example.com", "subjectKind": "user"}}, "json": {"id": "user-9", "user": {"displayName": "Ada Lovelace", "principalName": "ada@example.com", "subjectKind": "user"}, "accessLevel": {"accountLicenseType": "express", "status": "active"}}},
+    {"method": "POST", "path": "/user-org/_apis/userentitlements", "request_body": {"accessLevel": {"accountLicenseType": "stakeholder"}, "user": {"principalName": "grace@example.com", "subjectKind": "user"}}, "json": {"id": "user-10", "user": {"displayName": "Grace Hopper", "principalName": "grace@example.com", "subjectKind": "user"}, "accessLevel": {"accountLicenseType": "stakeholder", "status": "active"}}},
+    {"method": "POST", "path": "/conflict-org/_apis/userentitlements", "request_body": {"accessLevel": {"accountLicenseType": "express"}, "user": {"principalName": "ada@example.com", "subjectKind": "user"}}, "status": 409, "json": {"message": "TF400506: The user 'ada@example.com' already exists."}},
+
+    {"method": "DELETE", "path": "/ado-harness/_apis/userentitlements/user-1", "json": {"id": "user-1"}},
+    {"method": "DELETE", "path": "/ado-harness/_apis/userentitlements/missing-id", "status": 404, "json": {"message": "TF400813: The user is not authorized."}}
   ]
 }
