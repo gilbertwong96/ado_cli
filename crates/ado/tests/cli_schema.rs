@@ -167,10 +167,11 @@ fn schema_login_node_has_the_method_option_and_the_globals() {
     );
 }
 
-/// Wave 1 ports the two read paths only: `run`, `create`, `update`, `delete`,
-/// `vars`, `variables` and `secure-files` are Wave 2.
+/// Wave 2 completes the pipelines node: the two reads, the four definition
+/// mutations and the `vars` group (Task 4). `pipelines variables` and
+/// `pipelines secure-files` are still absent (Tasks 5 and 6).
 #[test]
-fn schema_pipelines_node_has_only_the_wave_one_subcommands() {
+fn schema_pipelines_node_has_the_wave_two_subcommands() {
     let pipelines = find_node("pipelines").expect("the pipelines node");
 
     let names = subcommands(&pipelines)
@@ -178,7 +179,40 @@ fn schema_pipelines_node_has_only_the_wave_one_subcommands() {
         .map(|sub| sub["name"].as_str().expect("a subcommand name"))
         .collect::<Vec<_>>();
 
-    assert_eq!(names, ["ado pipelines list", "ado pipelines show"]);
+    assert_eq!(
+        names,
+        [
+            "ado pipelines list",
+            "ado pipelines show",
+            "ado pipelines run",
+            "ado pipelines create",
+            "ado pipelines update",
+            "ado pipelines delete",
+            "ado pipelines vars",
+        ]
+    );
+
+    let vars = pipelines["subcommands"]
+        .as_array()
+        .expect("the subcommand array")
+        .iter()
+        .find(|sub| sub["name"] == json!("ado pipelines vars"))
+        .expect("the vars node");
+    let vars_names = subcommands(vars)
+        .iter()
+        .map(|sub| sub["name"].as_str().expect("a subcommand name"))
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        vars_names,
+        [
+            "ado pipelines vars list",
+            "ado pipelines vars show",
+            "ado pipelines vars create",
+            "ado pipelines vars update",
+            "ado pipelines vars delete",
+        ]
+    );
 }
 
 /// Wave 1 ports the four read paths only: `queue`, `cancel` and `tags add` are

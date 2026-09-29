@@ -827,6 +827,88 @@ run_mock_cases() {
     stdout_mode=prompt-text
     mock_case repos-delete-eof "repos delete (EOF)" repos delete Alpha Alpha.Core
 
+    # ── Wave 2 mutations: pipelines and variable groups (Task 4) ──
+    #
+    # The nine commands' REST surface is compared method/path/query/body against the
+    # captures, and each write route carries the `request_body` pin. R5's mock-`n`
+    # re-verification is the two delete cases: both are run with `n` on stdin
+    # against the mock, which serves the GETs, and the recorded requests show the
+    # oracle proceeding anyway — these commands do not prompt. Their unknown-flag
+    # cases pin the other half: neither has a `--force`, so the flag is a usage
+    # error on both sides. The required-option case (R4) is the oracle's silent
+    # exit 0 against this build's loud usage error.
+
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the value envelope'
+    mock_case pipelines-run "pipelines run" pipelines run Alpha 12 \
+        --branch feature/foo --variables 'ENV=staging,DEBUG=true' --json
+
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the value envelope'
+    mock_case pipelines-create "pipelines create" pipelines create Alpha \
+        --name 'New CI' --repo Alpha.Core --path pipelines/new.yml \
+        --folder MyTeam/Frontend --json
+
+    status_rule='D5/D23 (R4): a required option the oracle never validates is a silent exit 0 there; this build makes it a loud usage error'
+    stdout_mode=text
+    mock_case pipelines-create-no-name "pipelines create (no --name)" \
+        pipelines create Alpha --repo Alpha.Core --path pipelines/new.yml --json
+
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the value envelope'
+    mock_case pipelines-update "pipelines update" pipelines update Alpha 12 \
+        --name 'Alpha CI (renamed)' --path pipelines/renamed.yml --json
+
+    envelope_rule='D4: the frozen CLI writes the guard to stderr with no envelope under --json where this build emits the error envelope'
+    mock_case pipelines-update-no-options "pipelines update (no options)" \
+        pipelines update Alpha 12 --json
+
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the message envelope'
+    mock_case pipelines-delete "pipelines delete" pipelines delete Alpha 12 --json
+
+    case_stdin=$'n\n'
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the message envelope'
+    mock_case pipelines-delete-stdin-n "pipelines delete (stdin n — no prompt)" \
+        pipelines delete Alpha 12 --json
+
+    envelope_rule='D5: the oracle prints the command help on stdout before its usage error; this build writes clap’s message to stderr alone'
+    stdout_mode=text
+    mock_case pipelines-delete-force "pipelines delete --force (unknown flag)" \
+        pipelines delete Alpha 12 --force
+
+    mock_case pipelines-vars-list "pipelines vars list" pipelines vars list Alpha --top 10 --json
+    mock_case pipelines-vars-show "pipelines vars show" pipelines vars show Alpha 5 --json
+
+    envelope_rule='D4: the frozen CLI writes the 404 to stderr with no envelope under --json where this build emits the error envelope'
+    mock_case pipelines-vars-show-missing "pipelines vars show (404)" \
+        pipelines vars show Alpha 999 --json
+
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the value envelope'
+    mock_case pipelines-vars-create "pipelines vars create" pipelines vars create Alpha \
+        --name new-group --description 'A new group' \
+        --variables 'DB_HOST=db.example.com,DB_PASS=hunter2' --secret DB_PASS --json
+
+    status_rule='D5/D23 (R4): a required option the oracle never validates is a silent exit 0 there; this build makes it a loud usage error'
+    stdout_mode=text
+    mock_case pipelines-vars-create-no-name "pipelines vars create (no --name)" \
+        pipelines vars create Alpha --json
+
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the value envelope'
+    mock_case pipelines-vars-update "pipelines vars update" pipelines vars update Alpha 5 \
+        --name prod-secrets-renamed --description 'Updated description' \
+        --variables 'DB_HOST=db2.example.com,API_KEY=secret-value' --secret API_KEY --json
+
+    case_stdin=$'n\n'
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the message envelope'
+    mock_case pipelines-vars-delete "pipelines vars delete (stdin n — no prompt)" \
+        pipelines vars delete Alpha 5 --json
+
+    case_stdin=$'n\n'
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the message envelope'
+    mock_case pipelines-vars-delete-lookup-miss "pipelines vars delete (project not listed)" \
+        pipelines vars delete Beta 5 --json
+
+    envelope_rule='D4: the frozen CLI writes the 404 to stderr with no envelope under --json where this build emits the error envelope'
+    mock_case pipelines-vars-delete-missing "pipelines vars delete (404)" \
+        pipelines vars delete Alpha 999 --json
+
     mock_scenario_check
 }
 

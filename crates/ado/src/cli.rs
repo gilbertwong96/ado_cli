@@ -563,7 +563,291 @@ pub fn command() -> Command {
                                     "Numeric pipeline ID (from `list`). The ID is project-scoped — the same number may refer to a different pipeline in another project.",
                                 ),
                         ),
-                ),
+                )
+                .subcommand(
+                    Command::new("run")
+                        .about(
+                            "Trigger a new run of a pipeline. Returns the run ID and a link to monitor it (use `ado ci watch` for live streaming). Variables are scoped to this run only; use variable groups for shared config.",
+                        )
+                        .arg(
+                            Arg::new("project")
+                                .value_name("PROJECT")
+                                .required(true)
+                                .help("Project name or ID"),
+                        )
+                        .arg(
+                            Arg::new("pipeline_id")
+                                .value_name("PIPELINE_ID")
+                                .required(true)
+                                .value_parser(clap::value_parser!(i64))
+                                .help("Numeric pipeline ID to run"),
+                        )
+                        .arg(
+                            Arg::new("branch")
+                                .long("branch")
+                                .value_name("BRANCH")
+                                .help(
+                                    "Branch to run on (short name, e.g. 'main' or 'feature/foo'; 'refs/heads/' is added automatically). Default: the pipeline's default branch.",
+                                ),
+                        )
+                        .arg(
+                            Arg::new("variables")
+                                .long("variables")
+                                .value_name("VARS")
+                                .help(
+                                    "Run-time variables as comma-separated KEY=VALUE pairs (e.g. 'ENV=staging,DEBUG=true'). These override pipeline-defined variables for this run only.",
+                                ),
+                        ),
+                )
+                .subcommand(
+                    Command::new("create")
+                        .about(
+                            "Create a new YAML pipeline that points to an existing azure-pipelines.yml file in a repository. The YAML file must already exist; this command registers the pipeline definition.",
+                        )
+                        .arg(
+                            Arg::new("project")
+                                .value_name("PROJECT")
+                                .required(true)
+                                .help("Project name or ID"),
+                        )
+                        .arg(
+                            Arg::new("name")
+                                .long("name")
+                                .value_name("NAME")
+                                .required(true)
+                                .help("Display name for the pipeline (e.g. 'MyApp CI')"),
+                        )
+                        .arg(
+                            Arg::new("repo")
+                                .long("repo")
+                                .value_name("REPO")
+                                .required(true)
+                                .help(
+                                    "Repository name or ID containing the YAML file (must be in the same project)",
+                                ),
+                        )
+                        .arg(
+                            Arg::new("path")
+                                .long("path")
+                                .value_name("PATH")
+                                .required(true)
+                                .help(
+                                    "Path to the YAML file in the repo, relative to the repo root (e.g. 'pipelines/ci.yml' or 'azure-pipelines.yml')",
+                                ),
+                        )
+                        .arg(
+                            Arg::new("folder")
+                                .long("folder")
+                                .value_name("FOLDER")
+                                .help(
+                                    "Folder to place the pipeline in (e.g. 'MyTeam/Frontend'). Use '/' for the root. The folder is auto-created if it doesn't exist.",
+                                ),
+                        ),
+                )
+                .subcommand(
+                    Command::new("update")
+                        .about(
+                            "Update a pipeline's name or YAML path. Cannot change the repository; delete and recreate to switch repos. Pass at least one of --name or --path.",
+                        )
+                        .arg(
+                            Arg::new("project")
+                                .value_name("PROJECT")
+                                .required(true)
+                                .help("Project name or ID"),
+                        )
+                        .arg(
+                            Arg::new("pipeline_id")
+                                .value_name("PIPELINE_ID")
+                                .required(true)
+                                .value_parser(clap::value_parser!(i64))
+                                .help("Numeric pipeline ID"),
+                        )
+                        .arg(
+                            Arg::new("name")
+                                .long("name")
+                                .value_name("NAME")
+                                .help("New display name for the pipeline"),
+                        )
+                        .arg(
+                            Arg::new("path")
+                                .long("path")
+                                .value_name("PATH")
+                                .help(
+                                    "New YAML file path in the repo. Doesn't move the file on disk; just changes what the pipeline definition points to.",
+                                ),
+                        ),
+                )
+                .subcommand(
+                    Command::new("delete")
+                        .about(
+                            "Delete a pipeline definition. This is irreversible: the run history is preserved (Azure DevOps retains it), but the pipeline can no longer be triggered and new runs cannot be created from this definition.",
+                        )
+                        .arg(
+                            Arg::new("project")
+                                .value_name("PROJECT")
+                                .required(true)
+                                .help("Project name or ID"),
+                        )
+                        .arg(
+                            Arg::new("pipeline_id")
+                                .value_name("PIPELINE_ID")
+                                .required(true)
+                                .value_parser(clap::value_parser!(i64))
+                                .help("Numeric pipeline ID"),
+                        ),
+                )
+                .subcommand(
+                    Command::new("vars")
+                        .about(
+                            "Manage variable groups (a.k.a. library variable groups). Variable groups are shared KEY=VALUE sets that multiple pipelines can reference — perfect for environment-specific config (DB URLs, API keys).",
+                        )
+                        .subcommand(
+                            Command::new("list")
+                                .about(
+                                    "List all variable groups in a project. Output is a table (ID, Name, Description, variable count). Use --top to limit.",
+                                )
+                                .arg(
+                                    Arg::new("project")
+                                        .value_name("PROJECT")
+                                        .required(true)
+                                        .help("Project name or ID"),
+                                )
+                                .arg(
+                                    Arg::new("top")
+                                        .long("top")
+                                        .value_name("N")
+                                        .value_parser(clap::value_parser!(i64))
+                                        .allow_negative_numbers(true)
+                                        .help("Maximum number to return. Default 50."),
+                                ),
+                        )
+                        .subcommand(
+                            Command::new("show")
+                                .about(
+                                    "Show details of a variable group: ID, name, description, type, and the list of variable names. SECRET VALUES ARE NEVER DISPLAYED (they show as ' [secret]'). Use --json to confirm a variable's key/value is being read correctly without exposing secrets.",
+                                )
+                                .arg(
+                                    Arg::new("project")
+                                        .value_name("PROJECT")
+                                        .required(true)
+                                        .help("Project name or ID"),
+                                )
+                                .arg(
+                                    Arg::new("group_id")
+                                        .value_name("GROUP_ID")
+                                        .required(true)
+                                        .value_parser(clap::value_parser!(i64))
+                                        .help("Numeric variable group ID (from `list`)"),
+                                ),
+                        )
+                        .subcommand(
+                            Command::new("create")
+                                .about(
+                                    "Create a new variable group. Use --secret to mark specific keys as secret (the API stores them encrypted; they cannot be retrieved later).",
+                                )
+                                .arg(
+                                    Arg::new("project")
+                                        .value_name("PROJECT")
+                                        .required(true)
+                                        .help("Project name or ID"),
+                                )
+                                .arg(
+                                    Arg::new("name")
+                                        .long("name")
+                                        .value_name("NAME")
+                                        .required(true)
+                                        .help(
+                                            "Display name for the variable group (e.g. 'prod-secrets', 'ci-shared')",
+                                        ),
+                                )
+                                .arg(
+                                    Arg::new("description")
+                                        .long("description")
+                                        .value_name("DESC")
+                                        .help("Human-readable description of the group's purpose"),
+                                )
+                                .arg(
+                                    Arg::new("variables")
+                                        .long("variables")
+                                        .value_name("VARS")
+                                        .help(
+                                            "Initial variables as comma-separated KEY=VALUE pairs (e.g. 'DB_HOST=db.example.com,DB_USER=app')",
+                                        ),
+                                )
+                                .arg(
+                                    Arg::new("secret")
+                                        .long("secret")
+                                        .value_name("KEYS")
+                                        .help(
+                                            "Comma-separated list of variable names to mark as secret (e.g. 'DB_PASS,API_KEY'). The values are stored encrypted and cannot be retrieved via the API after creation.",
+                                        ),
+                                ),
+                        )
+                        .subcommand(
+                            Command::new("update")
+                                .about(
+                                    "Update an existing variable group. Pass --variables to merge new values (existing variables not in the list are kept). Pass --secret to change which keys are secret. Note: changing a secret's value requires re-passing the value; the original encrypted value cannot be read back.",
+                                )
+                                .arg(
+                                    Arg::new("project")
+                                        .value_name("PROJECT")
+                                        .required(true)
+                                        .help("Project name or ID"),
+                                )
+                                .arg(
+                                    Arg::new("group_id")
+                                        .value_name("GROUP_ID")
+                                        .required(true)
+                                        .value_parser(clap::value_parser!(i64))
+                                        .help("Numeric variable group ID"),
+                                )
+                                .arg(
+                                    Arg::new("name")
+                                        .long("name")
+                                        .value_name("NAME")
+                                        .help("New display name"),
+                                )
+                                .arg(
+                                    Arg::new("description")
+                                        .long("description")
+                                        .value_name("DESC")
+                                        .help("New description"),
+                                )
+                                .arg(
+                                    Arg::new("variables")
+                                        .long("variables")
+                                        .value_name("VARS")
+                                        .help("Variables to merge, as comma-separated KEY=VALUE pairs"),
+                                )
+                                .arg(
+                                    Arg::new("secret")
+                                        .long("secret")
+                                        .value_name("KEYS")
+                                        .help(
+                                            "Comma-separated list of keys to mark as secret. Replaces the previous secret list.",
+                                        ),
+                                ),
+                        )
+                        .subcommand(
+                            Command::new("delete")
+                                .about(
+                                    "Delete a variable group. Pipelines that reference it will fail at runtime until their YAML is updated to remove the reference.",
+                                )
+                                .arg(
+                                    Arg::new("project")
+                                        .value_name("PROJECT")
+                                        .required(true)
+                                        .help("Project name or ID"),
+                                )
+                                .arg(
+                                    Arg::new("group_id")
+                                        .value_name("GROUP_ID")
+                                        .required(true)
+                                        .value_parser(clap::value_parser!(i64))
+                                        .help("Numeric variable group ID"),
+                                ),
+                        ),
+                )
         )
         .subcommand(
             Command::new("pipelines-builds")

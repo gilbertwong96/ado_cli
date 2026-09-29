@@ -253,6 +253,120 @@ fn main() -> ExitCode {
                         .copied()
                         .expect("the positional is required"),
                 ),
+                Some(("run", run)) => commands::pipelines::run(
+                    &mut context,
+                    run.get_one::<String>("project")
+                        .expect("the positional is required")
+                        .as_str(),
+                    run.get_one::<i64>("pipeline_id")
+                        .copied()
+                        .expect("the positional is required"),
+                    run.get_one::<String>("branch").cloned(),
+                    run.get_one::<String>("variables").cloned(),
+                ),
+                Some(("create", create)) => commands::pipelines::create(
+                    &mut context,
+                    create
+                        .get_one::<String>("project")
+                        .expect("the positional is required")
+                        .as_str(),
+                    create
+                        .get_one::<String>("name")
+                        .expect("the option is required")
+                        .as_str(),
+                    create
+                        .get_one::<String>("repo")
+                        .expect("the option is required")
+                        .as_str(),
+                    create
+                        .get_one::<String>("path")
+                        .expect("the option is required")
+                        .as_str(),
+                    create.get_one::<String>("folder").cloned(),
+                ),
+                Some(("update", update)) => commands::pipelines::update(
+                    &mut context,
+                    update
+                        .get_one::<String>("project")
+                        .expect("the positional is required")
+                        .as_str(),
+                    update
+                        .get_one::<i64>("pipeline_id")
+                        .copied()
+                        .expect("the positional is required"),
+                    update.get_one::<String>("name").cloned(),
+                    update.get_one::<String>("path").cloned(),
+                ),
+                Some(("delete", delete)) => commands::pipelines::delete(
+                    &mut context,
+                    delete
+                        .get_one::<String>("project")
+                        .expect("the positional is required")
+                        .as_str(),
+                    delete
+                        .get_one::<i64>("pipeline_id")
+                        .copied()
+                        .expect("the positional is required"),
+                ),
+                Some(("vars", vars)) => match vars.subcommand() {
+                    Some(("list", list)) => commands::pipelines::vars_list(
+                        &mut context,
+                        list.get_one::<String>("project")
+                            .expect("the positional is required")
+                            .as_str(),
+                        list.get_one::<i64>("top").copied(),
+                    ),
+                    Some(("show", show)) => commands::pipelines::vars_show(
+                        &mut context,
+                        show.get_one::<String>("project")
+                            .expect("the positional is required")
+                            .as_str(),
+                        show.get_one::<i64>("group_id")
+                            .copied()
+                            .expect("the positional is required"),
+                    ),
+                    Some(("create", create)) => commands::pipelines::vars_create(
+                        &mut context,
+                        create
+                            .get_one::<String>("project")
+                            .expect("the positional is required")
+                            .as_str(),
+                        create
+                            .get_one::<String>("name")
+                            .expect("the option is required")
+                            .as_str(),
+                        create.get_one::<String>("description").cloned(),
+                        create.get_one::<String>("variables").cloned(),
+                        create.get_one::<String>("secret").cloned(),
+                    ),
+                    Some(("update", update)) => commands::pipelines::vars_update(
+                        &mut context,
+                        update
+                            .get_one::<String>("project")
+                            .expect("the positional is required")
+                            .as_str(),
+                        update
+                            .get_one::<i64>("group_id")
+                            .copied()
+                            .expect("the positional is required"),
+                        update.get_one::<String>("name").cloned(),
+                        update.get_one::<String>("description").cloned(),
+                        update.get_one::<String>("variables").cloned(),
+                        update.get_one::<String>("secret").cloned(),
+                    ),
+                    Some(("delete", delete)) => commands::pipelines::vars_delete(
+                        &mut context,
+                        delete
+                            .get_one::<String>("project")
+                            .expect("the positional is required")
+                            .as_str(),
+                        delete
+                            .get_one::<i64>("group_id")
+                            .copied()
+                            .expect("the positional is required"),
+                    ),
+                    _ => Err(AdoError::validation(MISSING_SUBCOMMAND)),
+                },
                 _ => Err(AdoError::validation(MISSING_SUBCOMMAND)),
             }
         }
