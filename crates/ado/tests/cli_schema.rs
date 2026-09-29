@@ -117,10 +117,10 @@ fn schema_root_lists_exactly_the_shipped_subcommands() {
     );
 }
 
-/// Wave 1 ports the two read paths only: `create`, `complete`, `abandon`,
-/// `approve`, `vote`, `diff`, `comments` and `reviewers` are Wave 2.
+/// Wave 1 ported the two read paths; Task 9 adds the five lifecycle mutations.
+/// `diff`, `comments` and `reviewers` are Tasks 10 and 11.
 #[test]
-fn schema_prs_node_has_only_the_wave_one_subcommands() {
+fn schema_prs_node_lists_every_shipped_subcommand() {
     let prs = find_node("prs").expect("the prs node");
 
     let names = subcommands(&prs)
@@ -128,7 +128,18 @@ fn schema_prs_node_has_only_the_wave_one_subcommands() {
         .map(|sub| sub["name"].as_str().expect("a subcommand name"))
         .collect::<Vec<_>>();
 
-    assert_eq!(names, ["ado prs list", "ado prs show"]);
+    assert_eq!(
+        names,
+        [
+            "ado prs list",
+            "ado prs show",
+            "ado prs create",
+            "ado prs complete",
+            "ado prs approve",
+            "ado prs vote",
+            "ado prs abandon"
+        ]
+    );
 }
 
 /// `login` has one option of its own, `--method`; the Elixir's four local options
