@@ -118,8 +118,8 @@ fn schema_root_lists_exactly_the_shipped_subcommands() {
 }
 
 /// Wave 1 ported the two read paths; Task 9 adds the five lifecycle mutations,
-/// Task 10 the diff and Task 11a the comments parent (its five leaves are this
-/// node's grandchildren). `reviewers` is the rest of Task 11.
+/// Task 10 the diff, Task 11a the comments parent and Task 11b the reviewers
+/// parent (their leaves are this node's grandchildren).
 #[test]
 fn schema_prs_node_lists_every_shipped_subcommand() {
     let prs = find_node("prs").expect("the prs node");
@@ -140,9 +140,57 @@ fn schema_prs_node_lists_every_shipped_subcommand() {
             "ado prs vote",
             "ado prs abandon",
             "ado prs diff",
-            "ado prs comments"
+            "ado prs comments",
+            "ado prs reviewers"
         ]
     );
+}
+
+/// The reviewers subtree: the frozen schema marks `--reviewer` required but
+/// CliMate never enforces it (the `Map.fetch!` crash, D34), so this tree's
+/// `required: true` is the loud half the harness's two `(no --reviewer)` cases
+/// pin; `--required` and `--search` keep the module's own names and the
+/// `--json`/globals are the shared set.
+#[test]
+fn schema_prs_reviewers_node_marks_the_reviewer_required() {
+    let reviewers = find_node("prs reviewers").expect("the reviewers node");
+
+    assert_eq!(
+        subcommands(&reviewers)
+            .iter()
+            .map(|sub| sub["name"].as_str().expect("a subcommand name"))
+            .collect::<Vec<_>>(),
+        [
+            "ado prs reviewers list",
+            "ado prs reviewers add",
+            "ado prs reviewers remove"
+        ]
+    );
+
+    let list = find_node("prs reviewers list").expect("the list node");
+    assert!(
+        option_names(&list).contains(&"search"),
+        "the fuzzy filter stays a real flag: {:?}",
+        option_names(&list)
+    );
+
+    for leaf in ["prs reviewers add", "prs reviewers remove"] {
+        let node = find_node(leaf).expect("the leaf node");
+
+        assert_eq!(
+            option(&node, "reviewer")["required"],
+            json!(true),
+            "{leaf} marks --reviewer required (the oracle does too; it never enforces it, D34)"
+        );
+    }
+
+    let add = find_node("prs reviewers add").expect("the add node");
+    assert!(
+        option_names(&add).contains(&"required"),
+        "--required is the module's own name: {:?}",
+        option_names(&add)
+    );
+    assert_eq!(argument(&add, "pr_id")["required"], json!(true));
 }
 
 /// `login` has one option of its own, `--method`; the Elixir's four local options
