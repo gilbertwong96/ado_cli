@@ -273,6 +273,52 @@ fn main() -> ExitCode {
                         .copied()
                         .expect("the positional is required"),
                 ),
+                Some(("comments", comments)) => match comments.subcommand() {
+                    Some(("list", list)) => commands::workitems::comments_list(
+                        &mut context,
+                        list.get_one::<i64>("id")
+                            .copied()
+                            .expect("the positional is required"),
+                    ),
+                    Some(("add", add)) => commands::workitems::comments_add(
+                        &mut context,
+                        add.get_one::<i64>("id")
+                            .copied()
+                            .expect("the positional is required"),
+                        add.get_one::<String>("text")
+                            .expect("the option is required")
+                            .as_str(),
+                    ),
+                    Some(("update", update)) => commands::workitems::comments_update(
+                        &mut context,
+                        update
+                            .get_one::<i64>("id")
+                            .copied()
+                            .expect("the positional is required"),
+                        update
+                            .get_one::<String>("text")
+                            .expect("the option is required")
+                            .as_str(),
+                    ),
+                    _ => Err(AdoError::validation(MISSING_SUBCOMMAND)),
+                },
+                Some(("attachments", attachments)) => match attachments.subcommand() {
+                    Some(("list", list)) => commands::workitems::attachments_list(
+                        &mut context,
+                        list.get_one::<i64>("id")
+                            .copied()
+                            .expect("the positional is required"),
+                    ),
+                    Some(("download", download)) => commands::workitems::attachments_download(
+                        &mut context,
+                        download
+                            .get_one::<String>("attachment_id")
+                            .expect("the positional is required")
+                            .as_str(),
+                        download.get_one::<String>("output").cloned(),
+                    ),
+                    _ => Err(AdoError::validation(MISSING_SUBCOMMAND)),
+                },
                 _ => Err(AdoError::validation(MISSING_SUBCOMMAND)),
             }
         }

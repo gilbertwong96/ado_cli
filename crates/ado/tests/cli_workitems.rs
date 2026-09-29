@@ -1606,3 +1606,1436 @@ fn delete_has_no_force_flag() {
     );
     assert!(server.received().is_empty());
 }
+
+// ── Task 8: work item comments and attachments ─────────────────────────────
+//
+// The module's path spellings are not uniform and the captures keep them: the
+// comments read uses `workItems` (capital I) where every other path uses
+// `workitems`. Both writes are the module's one-operation `System.History`
+// JSON patch under `application/json-patch+json` — the same content type as
+// Task 7's writes. The download is a metadata GET and then a raw-content GET
+// **on the same path** (the raw one carrying the resolved filename), so its
+// byte tests register two expectations for one path: the mock answers
+// newest-first. D28's streamed write is the shared helper the artifact download
+// already uses, so the failed-stream invariants read the same way here.
+
+use std::fs;
+use std::io::Read;
+use std::net::TcpListener;
+use std::path::Path;
+use std::thread;
+
+const COMMENTS_42_PATH: &str = "/myorg/_apis/wit/workItems/42/comments";
+const COMMENTS_8_PATH: &str = "/myorg/_apis/wit/workItems/8/comments";
+const COMMENTS_NO_KEY_PATH: &str = "/myorg/_apis/wit/workItems/7/comments";
+const COMMENTS_404_PATH: &str = "/myorg/_apis/wit/workItems/999/comments";
+const COMMENT_ADD_PATH: &str = "/myorg/_apis/wit/workitems/500";
+const COMMENT_UPDATE_PATH: &str = "/myorg/_apis/wit/workitems/501";
+const COMMENT_ADD_404_PATH: &str = "/myorg/_apis/wit/workitems/896";
+const COMMENT_UPDATE_404_PATH: &str = "/myorg/_apis/wit/workitems/897";
+const ATTACHMENTS_42_PATH: &str = "/myorg/_apis/wit/workitems/42/attachments";
+const ATTACHMENTS_8_PATH: &str = "/myorg/_apis/wit/workitems/8/attachments";
+const ATTACHMENTS_NO_KEY_PATH: &str = "/myorg/_apis/wit/workitems/7/attachments";
+const ATTACHMENTS_404_PATH: &str = "/myorg/_apis/wit/workitems/999/attachments";
+const ATTACHMENT_1_PATH: &str = "/myorg/_apis/wit/attachments/att-1";
+const ATTACHMENT_2_PATH: &str = "/myorg/_apis/wit/attachments/att-2";
+const ATTACHMENT_3_PATH: &str = "/myorg/_apis/wit/attachments/att-3";
+const ATTACHMENT_404_PATH: &str = "/myorg/_apis/wit/attachments/att-404";
+
+/// The reader-level failure a short body provokes: ureq's own constant. The
+/// scripted listener writes the whole header block before it drops the stream,
+/// so once `get_raw` returns, a reader failure is the only thing that can fail.
+const MID_BODY_FAILURE: &str = "[Network error] Request failed: io: Peer disconnected";
+
+fn run_in(home: &TempHome, server: &MockServer, cwd: &Path, args: &[&str]) -> Output {
+    command(home, server, args)
+        .current_dir(cwd)
+        .output()
+        .expect("run ado")
+}
+
+/// The captured `GET .../workItems/42/comments` answer, with the fields the
+/// module's formatter reads.
+fn comments_body() -> Value {
+    json!({
+        "totalCount": 2,
+        "count": 2,
+        "comments": [
+            {
+                "id": 7,
+                "text": "Looks good",
+                "createdBy": {"displayName": "Alice Example", "id": "u1"},
+                "createdDate": "2026-09-20T12:00:00.000Z",
+                "url": "https://dev.azure.com/myorg/_apis/wit/workItems/42/comments/7",
+            },
+            {
+                "id": 8,
+                "text": "Second note",
+                "createdBy": {"displayName": "Bob Example"},
+                "createdDate": "2026-09-21T09:30:00.000Z",
+            },
+        ],
+    })
+}
+
+/// The captured `GET .../workitems/42/attachments` answer.
+fn attachments_body() -> Value {
+    json!({
+        "count": 2,
+        "attachments": [
+            {
+                "id": "att-1",
+                "url": "https://dev.azure.com/myorg/_apis/wit/attachments/att-1",
+                "attributes": {"name": "report.pdf"},
+            },
+            {
+                "id": "att-2",
+                "url": "https://dev.azure.com/myorg/_apis/wit/attachments/att-2",
+                "attributes": {"name": "notes.txt"},
+            },
+        ],
+    })
+}
+
+/// The metadata answer the download reads its filename from; the raw GET is
+/// answered separately, from the same path.
+fn attachment_metadata(id: &str, name: Option<&str>) -> Value {
+    match name {
+        Some(name) => json!({
+            "id": id,
+            "url": format!("https://dev.azure.com/myorg/_apis/wit/attachments/{id}"),
+            "attributes": {"name": name},
+        }),
+        None => json!({"id": id, "attributes": {}}),
+    }
+}
+
+/// Registers the download's two answers for one path: the raw bytes first, so
+/// the metadata expectation (newest-first) answers the metadata GET and leaves
+/// the bytes for the raw GET.
+fn expect_download(server: &MockServer, path: &str, metadata: Value, bytes: Vec<u8>) {
+    server.expect("GET", path, MockResponse::bytes(200, bytes));
+    server.expect("GET", path, MockResponse::json(200, metadata));
+}
+
+/// The `.tmp` files left in `home`, which must be none after any download: a
+/// successful rename removes the temp, a failed stream removes it too.
+fn temp_siblings(home: &TempHome) -> Vec<String> {
+    fs::read_dir(home.path())
+        .expect("the temp home")
+        .filter_map(Result::ok)
+        .map(|entry| entry.file_name().to_string_lossy().into_owned())
+        .filter(|name| name.ends_with(".tmp"))
+        .collect()
+}
+
+/// A scripted listener for the download's two requests on one path: the first
+/// connection gets the metadata JSON (with `connection: close`, so the client
+/// opens a fresh connection for the raw GET), the second gets headers declaring
+/// `declared_len` bytes and then a short prefix before the stream drops
+/// mid-body.
+fn spawn_truncating_attachment(metadata: String, prefix: Vec<u8>, declared_len: usize) -> u16 {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind a truncating attachment server");
+    let port = listener.local_addr().expect("the bound address").port();
+
+    thread::spawn(move || {
+        let mut answered_metadata = false;
+
+        for stream in listener.incoming() {
+            let Ok(mut stream) = stream else { return };
+
+            loop {
+                let mut head = [0u8; 4096];
+                let Ok(read) = stream.read(&mut head) else {
+                    break;
+                };
+
+                if read == 0 {
+                    break;
+                }
+
+                if !answered_metadata {
+                    answered_metadata = true;
+                    let _ = write!(
+                        stream,
+                        "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\nconnection: close\r\ncontent-length: {}\r\n\r\n{}",
+                        metadata.len(),
+                        metadata
+                    );
+                    let _ = stream.flush();
+                    continue;
+                }
+
+                let _ = write!(
+                    stream,
+                    "HTTP/1.1 200 OK\r\ncontent-type: application/octet-stream\r\ncontent-length: {declared_len}\r\n\r\n"
+                );
+                let _ = stream.write_all(&prefix);
+                let _ = stream.flush();
+
+                return;
+            }
+        }
+    });
+
+    port
+}
+
+#[test]
+fn comments_list_sends_the_module_path_and_emits_the_value_envelope() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "GET",
+        COMMENTS_42_PATH,
+        MockResponse::json(200, comments_body()),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &["workitems", "comments", "list", "42", "--json"],
+    );
+
+    assert_success(&output);
+    assert_eq!(
+        serde_json::from_str::<Value>(&stdout_of(&output)).expect("stdout is one JSON document"),
+        json!({"ok": true, "result": comments_body()["comments"]}),
+        "the comments array is the value envelope"
+    );
+
+    let received = server.received();
+    assert_eq!(received.len(), 1);
+    assert_eq!(received[0].method, "GET");
+    assert_eq!(
+        received[0].path, COMMENTS_42_PATH,
+        "the comments read keeps the module's capital-I path"
+    );
+    assert_eq!(received[0].query_pairs(), vec![api_version()]);
+}
+
+#[test]
+fn comments_list_human_output_is_the_module_layout() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "GET",
+        COMMENTS_42_PATH,
+        MockResponse::json(200, comments_body()),
+    );
+
+    let output = run(&home, &server, &["workitems", "comments", "list", "42"]);
+
+    assert_success(&output);
+    assert_eq!(
+        stdout_of(&output),
+        "\n  [7] Alice Example (2026-09-20T12:00:00.000Z)\n  Looks good\n\n  [8] Bob Example (2026-09-21T09:30:00.000Z)\n  Second note\n\n"
+    );
+}
+
+#[test]
+fn comments_list_with_an_empty_array_is_the_empty_value_envelope() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "GET",
+        COMMENTS_8_PATH,
+        MockResponse::json(200, json!({"count": 0, "comments": []})),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &["workitems", "comments", "list", "8", "--json"],
+    );
+
+    assert_success(&output);
+    assert_eq!(
+        serde_json::from_str::<Value>(&stdout_of(&output)).expect("stdout is one JSON document"),
+        json!({"ok": true, "result": []}),
+        "a present-but-empty comments array is the empty value envelope on both sides"
+    );
+}
+
+/// Captured: against a body without a `comments` key the frozen CLI prints
+/// `No comments found.` even under `--json`; this build emits the empty value
+/// envelope (D21).
+#[test]
+fn comments_list_without_the_comments_key_is_an_empty_envelope() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "GET",
+        COMMENTS_NO_KEY_PATH,
+        MockResponse::json(200, json!({"count": 0, "value": []})),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &["workitems", "comments", "list", "7", "--json"],
+    );
+
+    assert_success(&output);
+    assert_eq!(
+        serde_json::from_str::<Value>(&stdout_of(&output)).expect("stdout is one JSON document"),
+        json!({"ok": true, "result": []}),
+        "the missing key is the module's own not-found branch, not an error"
+    );
+}
+
+#[test]
+fn comments_list_without_the_comments_key_human_says_no_comments_found() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "GET",
+        COMMENTS_NO_KEY_PATH,
+        MockResponse::json(200, json!({"count": 0, "value": []})),
+    );
+
+    let output = run(&home, &server, &["workitems", "comments", "list", "7"]);
+
+    assert_success(&output);
+    assert_eq!(stdout_of(&output), "No comments found.\n");
+}
+
+#[test]
+fn comments_list_404_is_the_not_found_envelope() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "GET",
+        COMMENTS_404_PATH,
+        MockResponse::json(
+            404,
+            json!({"message": "TF401232: Work item 999 does not exist."}),
+        ),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &["workitems", "comments", "list", "999", "--json"],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    let envelope: Value =
+        serde_json::from_str(&stdout_of(&output)).expect("stdout is one JSON document");
+    assert_eq!(envelope["ok"], json!(false));
+    assert_eq!(envelope["error"]["code"], json!("not_found"));
+    assert_eq!(envelope["error"]["status"], json!(404));
+    assert_eq!(
+        envelope["error"]["message"],
+        json!("Resource not found. Check the project/repo/build ID and your permissions.")
+    );
+    assert_eq!(
+        envelope["error"]["details"]["body"],
+        json!(r#"{"message":"TF401232: Work item 999 does not exist."}"#),
+        "this build keeps the upstream bytes (D24)"
+    );
+}
+
+#[test]
+fn comments_list_without_an_id_is_a_usage_error() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+
+    let output = run(&home, &server, &["workitems", "comments", "list", "--json"]);
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        stderr_of(&output).contains("id"),
+        "the usage error names the positional: {}",
+        stderr_of(&output)
+    );
+    assert!(server.received().is_empty());
+}
+
+#[test]
+fn comments_add_posts_the_system_history_patch_and_emits_the_message_envelope() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "PATCH",
+        COMMENT_ADD_PATH,
+        MockResponse::json(200, json!({"id": 500, "rev": 2})),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "workitems",
+            "comments",
+            "add",
+            "500",
+            "--text",
+            "Looks good",
+            "--json",
+        ],
+    );
+
+    assert_success(&output);
+    assert_eq!(
+        serde_json::from_str::<Value>(&stdout_of(&output)).expect("stdout is one JSON document"),
+        json!({"ok": true, "message": "Comment added to work item #500."}),
+        "the frozen success line under --json is D33's class; this build emits the message envelope"
+    );
+
+    let received = server.received();
+    assert_eq!(received.len(), 1);
+    assert_eq!(received[0].method, "PATCH");
+    assert_eq!(received[0].path, COMMENT_ADD_PATH);
+    assert_eq!(received[0].query_pairs(), vec![api_version()]);
+    assert_eq!(
+        received[0].header("content-type"),
+        Some(JSON_PATCH),
+        "captured: the history write is a JSON patch"
+    );
+    assert_eq!(
+        sent_body(&received[0]),
+        json!([{"op": "add", "path": "/fields/System.History", "value": "Looks good"}]),
+        "the captured one-operation patch, not a plain object"
+    );
+}
+
+#[test]
+fn comments_add_human_output_is_the_module_line() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "PATCH",
+        COMMENT_ADD_PATH,
+        MockResponse::json(200, json!({"id": 500, "rev": 2})),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "workitems",
+            "comments",
+            "add",
+            "500",
+            "--text",
+            "Looks good",
+        ],
+    );
+
+    assert_success(&output);
+    assert_eq!(stdout_of(&output), "Comment added to work item #500.\n");
+}
+
+/// No prompt: with `n` on stdin the PATCH still goes out (the capture sends it
+/// on `n` and on EOF too).
+#[test]
+fn comments_add_with_stdin_n_sends_the_request() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "PATCH",
+        COMMENT_ADD_PATH,
+        MockResponse::json(200, json!({"id": 500, "rev": 2})),
+    );
+
+    let output = run_with_stdin(
+        &home,
+        &server,
+        &[
+            "workitems",
+            "comments",
+            "add",
+            "500",
+            "--text",
+            "Looks good",
+            "--json",
+        ],
+        b"n\n",
+    );
+
+    assert_success(&output);
+    assert_eq!(
+        server.received().len(),
+        1,
+        "the comment write is not prompted"
+    );
+}
+
+#[test]
+fn comments_add_with_eof_sends_the_request() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "PATCH",
+        COMMENT_ADD_PATH,
+        MockResponse::json(200, json!({"id": 500, "rev": 2})),
+    );
+
+    let output = run_with_stdin(
+        &home,
+        &server,
+        &[
+            "workitems",
+            "comments",
+            "add",
+            "500",
+            "--text",
+            "Looks good",
+            "--json",
+        ],
+        b"",
+    );
+
+    assert_success(&output);
+    assert_eq!(
+        server.received().len(),
+        1,
+        "EOF does not hide a prompt either"
+    );
+}
+
+#[test]
+fn comments_add_without_text_is_a_usage_error_that_names_the_option() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+
+    let output = run(
+        &home,
+        &server,
+        &["workitems", "comments", "add", "500", "--json"],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        stderr_of(&output).contains("--text"),
+        "the usage error names the required option: {}",
+        stderr_of(&output)
+    );
+    assert!(
+        stdout_of(&output).is_empty(),
+        "no help on stdout: {}",
+        stdout_of(&output)
+    );
+    assert!(
+        server.received().is_empty(),
+        "the oracle's silent exit 0 sends nothing; this build refuses before the wire"
+    );
+}
+
+#[test]
+fn comments_add_404_is_the_api_error_envelope() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "PATCH",
+        COMMENT_ADD_404_PATH,
+        MockResponse::json(
+            404,
+            json!({"message": "TF401232: Work item 896 does not exist."}),
+        ),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "workitems",
+            "comments",
+            "add",
+            "896",
+            "--text",
+            "Looks good",
+            "--json",
+        ],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    let envelope: Value =
+        serde_json::from_str(&stdout_of(&output)).expect("stdout is one JSON document");
+    assert_eq!(envelope["error"]["code"], json!("not_found"));
+    assert_eq!(envelope["error"]["status"], json!(404));
+    assert_eq!(
+        envelope["error"]["message"],
+        json!("Resource not found. Check the project/repo/build ID and your permissions."),
+        "the module has no 404 clause here: the shared classification carries it"
+    );
+}
+
+#[test]
+fn comments_update_posts_the_edited_history_patch() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "PATCH",
+        COMMENT_UPDATE_PATH,
+        MockResponse::json(200, json!({"id": 501, "rev": 3})),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "workitems",
+            "comments",
+            "update",
+            "501",
+            "7",
+            "--text",
+            "Edited text",
+            "--json",
+        ],
+    );
+
+    assert_success(&output);
+    assert_eq!(
+        serde_json::from_str::<Value>(&stdout_of(&output)).expect("stdout is one JSON document"),
+        json!({"ok": true, "message": "Comment updated on work item #501."})
+    );
+
+    let received = server.received();
+    assert_eq!(received.len(), 1);
+    assert_eq!(received[0].path, COMMENT_UPDATE_PATH);
+    assert_eq!(received[0].header("content-type"), Some(JSON_PATCH));
+    assert_eq!(
+        sent_body(&received[0]),
+        json!([{"op": "add", "path": "/fields/System.History", "value": "[Edited] Edited text"}]),
+        "captured: the edit is a new history entry prefixed with [Edited]"
+    );
+}
+
+#[test]
+fn comments_update_human_output_is_the_module_line() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "PATCH",
+        COMMENT_UPDATE_PATH,
+        MockResponse::json(200, json!({"id": 501, "rev": 3})),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "workitems",
+            "comments",
+            "update",
+            "501",
+            "7",
+            "--text",
+            "Edited text",
+        ],
+    );
+
+    assert_success(&output);
+    assert_eq!(stdout_of(&output), "Comment updated on work item #501.\n");
+}
+
+#[test]
+fn comments_update_with_stdin_n_sends_the_request() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "PATCH",
+        COMMENT_UPDATE_PATH,
+        MockResponse::json(200, json!({"id": 501, "rev": 3})),
+    );
+
+    let output = run_with_stdin(
+        &home,
+        &server,
+        &[
+            "workitems",
+            "comments",
+            "update",
+            "501",
+            "7",
+            "--text",
+            "Edited text",
+            "--json",
+        ],
+        b"n\n",
+    );
+
+    assert_success(&output);
+    assert_eq!(
+        server.received().len(),
+        1,
+        "the comment edit is not prompted"
+    );
+}
+
+#[test]
+fn comments_update_without_text_is_a_usage_error_that_names_the_option() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+
+    let output = run(
+        &home,
+        &server,
+        &["workitems", "comments", "update", "501", "7", "--json"],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        stderr_of(&output).contains("--text"),
+        "the usage error names the required option: {}",
+        stderr_of(&output)
+    );
+    assert!(server.received().is_empty());
+}
+
+#[test]
+fn comments_update_without_a_comment_id_is_a_usage_error() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "workitems",
+            "comments",
+            "update",
+            "501",
+            "--text",
+            "Edited text",
+        ],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        stderr_of(&output).contains("COMMENT_ID"),
+        "the usage error names the missing positional: {}",
+        stderr_of(&output)
+    );
+    assert!(server.received().is_empty());
+}
+
+#[test]
+fn comments_update_404_is_the_api_error_envelope() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "PATCH",
+        COMMENT_UPDATE_404_PATH,
+        MockResponse::json(
+            404,
+            json!({"message": "TF401232: Work item 897 does not exist."}),
+        ),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "workitems",
+            "comments",
+            "update",
+            "897",
+            "7",
+            "--text",
+            "Edited text",
+            "--json",
+        ],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    let envelope: Value =
+        serde_json::from_str(&stdout_of(&output)).expect("stdout is one JSON document");
+    assert_eq!(envelope["error"]["code"], json!("not_found"));
+    assert_eq!(envelope["error"]["status"], json!(404));
+}
+
+#[test]
+fn attachments_list_sends_the_module_path_and_emits_the_value_envelope() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "GET",
+        ATTACHMENTS_42_PATH,
+        MockResponse::json(200, attachments_body()),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &["workitems", "attachments", "list", "42", "--json"],
+    );
+
+    assert_success(&output);
+    assert_eq!(
+        serde_json::from_str::<Value>(&stdout_of(&output)).expect("stdout is one JSON document"),
+        json!({"ok": true, "result": attachments_body()["attachments"]})
+    );
+
+    let received = server.received();
+    assert_eq!(received.len(), 1);
+    assert_eq!(
+        received[0].path, ATTACHMENTS_42_PATH,
+        "the attachments read keeps the module's lowercase path"
+    );
+    assert_eq!(received[0].query_pairs(), vec![api_version()]);
+}
+
+#[test]
+fn attachments_list_human_output_is_the_module_layout() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "GET",
+        ATTACHMENTS_42_PATH,
+        MockResponse::json(200, attachments_body()),
+    );
+
+    let output = run(&home, &server, &["workitems", "attachments", "list", "42"]);
+
+    assert_success(&output);
+    assert_eq!(
+        stdout_of(&output),
+        "\n  att-1  report.pdf\n     https://dev.azure.com/myorg/_apis/wit/attachments/att-1\n\n  att-2  notes.txt\n     https://dev.azure.com/myorg/_apis/wit/attachments/att-2\n\n"
+    );
+}
+
+#[test]
+fn attachments_list_with_an_empty_array_is_the_empty_value_envelope() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "GET",
+        ATTACHMENTS_8_PATH,
+        MockResponse::json(200, json!({"count": 0, "attachments": []})),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &["workitems", "attachments", "list", "8", "--json"],
+    );
+
+    assert_success(&output);
+    assert_eq!(
+        serde_json::from_str::<Value>(&stdout_of(&output)).expect("stdout is one JSON document"),
+        json!({"ok": true, "result": []})
+    );
+}
+
+/// Captured: against a body without an `attachments` key the frozen CLI prints
+/// `No attachments found.` even under `--json`; this build emits the empty value
+/// envelope (D21).
+#[test]
+fn attachments_list_without_the_attachments_key_is_an_empty_envelope() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "GET",
+        ATTACHMENTS_NO_KEY_PATH,
+        MockResponse::json(200, json!({"count": 0, "value": []})),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &["workitems", "attachments", "list", "7", "--json"],
+    );
+
+    assert_success(&output);
+    assert_eq!(
+        serde_json::from_str::<Value>(&stdout_of(&output)).expect("stdout is one JSON document"),
+        json!({"ok": true, "result": []})
+    );
+}
+
+#[test]
+fn attachments_list_without_the_attachments_key_human_says_no_attachments_found() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "GET",
+        ATTACHMENTS_NO_KEY_PATH,
+        MockResponse::json(200, json!({"count": 0, "value": []})),
+    );
+
+    let output = run(&home, &server, &["workitems", "attachments", "list", "7"]);
+
+    assert_success(&output);
+    assert_eq!(stdout_of(&output), "No attachments found.\n");
+}
+
+#[test]
+fn attachments_list_404_is_the_not_found_envelope() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "GET",
+        ATTACHMENTS_404_PATH,
+        MockResponse::json(
+            404,
+            json!({"message": "TF401232: Work item 999 does not exist."}),
+        ),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &["workitems", "attachments", "list", "999", "--json"],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    let envelope: Value =
+        serde_json::from_str(&stdout_of(&output)).expect("stdout is one JSON document");
+    assert_eq!(envelope["error"]["code"], json!("not_found"));
+    assert_eq!(envelope["error"]["status"], json!(404));
+}
+
+#[test]
+fn attachments_list_without_an_id_is_a_usage_error() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+
+    let output = run(
+        &home,
+        &server,
+        &["workitems", "attachments", "list", "--json"],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        stderr_of(&output).contains("id"),
+        "the usage error names the positional: {}",
+        stderr_of(&output)
+    );
+    assert!(server.received().is_empty());
+}
+
+#[test]
+fn attachments_download_sends_the_metadata_then_the_named_raw_get() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    expect_download(
+        &server,
+        ATTACHMENT_1_PATH,
+        attachment_metadata("att-1", Some("out.bin")),
+        b"attachment bytes".to_vec(),
+    );
+
+    let output = run_in(
+        &home,
+        &server,
+        home.path(),
+        &[
+            "workitems",
+            "attachments",
+            "download",
+            "42",
+            "att-1",
+            "--output",
+            "out.bin",
+            "--json",
+        ],
+    );
+
+    assert_success(&output);
+    assert_eq!(
+        stdout_of(&output),
+        "Downloaded 16 bytes to out.bin\n",
+        "the download prints the module's line even under --json"
+    );
+    assert_eq!(
+        fs::read(home.path().join("out.bin")).expect("the downloaded file"),
+        b"attachment bytes"
+    );
+
+    let received = server.received();
+    assert_eq!(received.len(), 2, "the metadata GET, then the raw GET");
+    assert_eq!(received[0].method, "GET");
+    assert_eq!(received[0].path, ATTACHMENT_1_PATH);
+    assert_eq!(
+        received[0].query_pairs(),
+        vec![api_version()],
+        "the metadata GET carries only api-version"
+    );
+    assert_eq!(received[1].method, "GET");
+    assert_eq!(received[1].path, ATTACHMENT_1_PATH);
+    assert_eq!(
+        received[1].query_pairs(),
+        vec![api_version(), pair("fileName", "out.bin")],
+        "the raw GET names the resolved file (the frozen client glues the version onto it; D25's class)"
+    );
+    assert!(
+        temp_siblings(&home).is_empty(),
+        "no temp sibling is left behind: {:?}",
+        temp_siblings(&home)
+    );
+}
+
+#[test]
+fn attachments_download_defaults_to_the_attachment_name() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    expect_download(
+        &server,
+        ATTACHMENT_2_PATH,
+        attachment_metadata("att-2", Some("notes.txt")),
+        b"noted".to_vec(),
+    );
+
+    let output = run_in(
+        &home,
+        &server,
+        home.path(),
+        &["workitems", "attachments", "download", "42", "att-2"],
+    );
+
+    assert_success(&output);
+    assert_eq!(stdout_of(&output), "Downloaded 5 bytes to notes.txt\n");
+    assert_eq!(
+        fs::read(home.path().join("notes.txt")).expect("the file"),
+        b"noted"
+    );
+}
+
+#[test]
+fn attachments_download_defaults_to_the_id_name_without_an_attribute_name() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    expect_download(
+        &server,
+        ATTACHMENT_3_PATH,
+        attachment_metadata("att-3", None),
+        b"bytes".to_vec(),
+    );
+
+    let output = run_in(
+        &home,
+        &server,
+        home.path(),
+        &["workitems", "attachments", "download", "42", "att-3"],
+    );
+
+    assert_success(&output);
+    assert_eq!(
+        stdout_of(&output),
+        "Downloaded 5 bytes to attachment_att-3\n",
+        "a metadata answer without attributes.name falls back to attachment_<id>"
+    );
+    assert_eq!(
+        fs::read(home.path().join("attachment_att-3")).expect("the file"),
+        b"bytes"
+    );
+}
+
+/// The work item `id` positional is declared but never read by the frozen flow:
+/// the requests name only the attachment id, and two work item ids produce the
+/// same chain.
+#[test]
+fn attachments_download_ignores_the_work_item_id_positional() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    expect_download(
+        &server,
+        ATTACHMENT_1_PATH,
+        attachment_metadata("att-1", Some("out.bin")),
+        b"bytes".to_vec(),
+    );
+    expect_download(
+        &server,
+        ATTACHMENT_1_PATH,
+        attachment_metadata("att-1", Some("out.bin")),
+        b"bytes".to_vec(),
+    );
+
+    let first = run_in(
+        &home,
+        &server,
+        home.path(),
+        &[
+            "workitems",
+            "attachments",
+            "download",
+            "42",
+            "att-1",
+            "--output",
+            "one.bin",
+        ],
+    );
+    let second = run_in(
+        &home,
+        &server,
+        home.path(),
+        &[
+            "workitems",
+            "attachments",
+            "download",
+            "43",
+            "att-1",
+            "--output",
+            "two.bin",
+        ],
+    );
+
+    assert_success(&first);
+    assert_success(&second);
+
+    let received = server.received();
+    assert_eq!(received.len(), 4);
+    assert_eq!(received[0].path, ATTACHMENT_1_PATH);
+    assert_eq!(received[2].path, ATTACHMENT_1_PATH);
+    assert!(
+        received
+            .iter()
+            .all(|request| request.path == ATTACHMENT_1_PATH),
+        "the work item id never reaches the wire"
+    );
+}
+
+#[test]
+fn attachments_download_writes_non_utf8_bytes_verbatim() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    let body = MockResponse::from_bytes_fixture("artifacts_download.zip").body;
+    expect_download(
+        &server,
+        ATTACHMENT_1_PATH,
+        attachment_metadata("att-1", Some("raw.bin")),
+        body.clone(),
+    );
+
+    let output = run_in(
+        &home,
+        &server,
+        home.path(),
+        &[
+            "workitems",
+            "attachments",
+            "download",
+            "42",
+            "att-1",
+            "--output",
+            "raw.bin",
+        ],
+    );
+
+    assert_success(&output);
+    assert_eq!(
+        fs::read(home.path().join("raw.bin")).expect("the file"),
+        body,
+        "the raw GET's bytes land byte-for-byte, binary included"
+    );
+    assert_eq!(
+        stdout_of(&output),
+        format!("Downloaded {} bytes to raw.bin\n", body.len())
+    );
+}
+
+/// A connection dropped after the headers is a classified transport failure, and
+/// nothing appears at the target — the body streams to a sibling temp file that
+/// is removed, so there is never a partial attachment to mistake for a real one
+/// (D28).
+#[test]
+fn attachments_download_leaves_no_file_when_the_stream_breaks() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    let target = home.path().join("partial.bin");
+    let metadata = attachment_metadata("att-1", None).to_string();
+    let port = spawn_truncating_attachment(metadata.clone(), b"PK\x03\x04partial".to_vec(), 4096);
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "workitems",
+            "attachments",
+            "download",
+            "42",
+            "att-1",
+            "--output",
+            target.to_str().expect("a utf-8 path"),
+            "--server",
+            &format!("http://127.0.0.1:{port}"),
+        ],
+    );
+
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "a short body is not a success"
+    );
+    assert!(
+        stdout_of(&output).is_empty(),
+        "no success line: {}",
+        stdout_of(&output)
+    );
+    assert!(
+        stderr_of(&output).contains(MID_BODY_FAILURE),
+        "the mid-body reader error is classified: {}",
+        stderr_of(&output)
+    );
+    assert!(!target.exists(), "no partial file appears at the target");
+    assert!(
+        temp_siblings(&home).is_empty(),
+        "no temp sibling is left behind: {:?}",
+        temp_siblings(&home)
+    );
+}
+
+/// A failed stream must not destroy a pre-existing `--output` file: the body goes
+/// to a sibling temp file, so the target keeps its old bytes byte for byte (D28).
+#[test]
+fn attachments_download_keeps_a_pre_existing_file_when_the_stream_breaks() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    let target = home.path().join("existing.bin");
+    fs::write(&target, b"old attachment bytes").expect("seed the target");
+    let metadata = attachment_metadata("att-1", None).to_string();
+    let port = spawn_truncating_attachment(metadata.clone(), b"PK\x03\x04partial".to_vec(), 4096);
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "workitems",
+            "attachments",
+            "download",
+            "42",
+            "att-1",
+            "--output",
+            target.to_str().expect("a utf-8 path"),
+            "--server",
+            &format!("http://127.0.0.1:{port}"),
+        ],
+    );
+
+    assert_eq!(output.status.code(), Some(1), "the download failed");
+    assert_eq!(
+        fs::read(&target).expect("the pre-existing file"),
+        b"old attachment bytes",
+        "an existing target survives a failed download byte for byte"
+    );
+    assert!(
+        temp_siblings(&home).is_empty(),
+        "no temp sibling is left behind: {:?}",
+        temp_siblings(&home)
+    );
+}
+
+/// The temp name carries a unique infix, so a pre-existing `{target}.tmp` — a
+/// name nobody asked us to touch — survives a failed download byte for byte.
+#[test]
+fn attachments_download_keeps_a_pre_existing_tmp_file_when_the_stream_breaks() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    let target = home.path().join("existing.bin");
+    let bystander = home.path().join("existing.bin.tmp");
+    fs::write(&bystander, b"someone else's temp").expect("seed the bystander");
+    let metadata = attachment_metadata("att-1", None).to_string();
+    let port = spawn_truncating_attachment(metadata.clone(), b"PK\x03\x04partial".to_vec(), 4096);
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "workitems",
+            "attachments",
+            "download",
+            "42",
+            "att-1",
+            "--output",
+            target.to_str().expect("a utf-8 path"),
+            "--server",
+            &format!("http://127.0.0.1:{port}"),
+        ],
+    );
+
+    assert_eq!(output.status.code(), Some(1), "the download failed");
+    assert_eq!(
+        fs::read(&bystander).expect("the pre-existing temp"),
+        b"someone else's temp",
+        "a pre-existing `<target>.tmp` is not our temp and must survive"
+    );
+    assert_eq!(
+        temp_siblings(&home),
+        vec!["existing.bin.tmp".to_owned()],
+        "our own temp was removed and only the bystander remains"
+    );
+    assert!(!target.exists(), "the target never appears");
+}
+
+#[test]
+fn attachments_download_404_on_the_metadata_is_the_not_found_envelope() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "GET",
+        ATTACHMENT_404_PATH,
+        MockResponse::json(
+            404,
+            json!({"message": "TF401232: Attachment att-404 does not exist."}),
+        ),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "workitems",
+            "attachments",
+            "download",
+            "42",
+            "att-404",
+            "--json",
+        ],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    let envelope: Value =
+        serde_json::from_str(&stdout_of(&output)).expect("stdout is one JSON document");
+    assert_eq!(envelope["error"]["code"], json!("not_found"));
+    assert_eq!(envelope["error"]["status"], json!(404));
+    assert_eq!(server.received().len(), 1, "the raw GET never starts");
+}
+
+/// The raw-content GET's status is classified (D25's class), where the frozen
+/// `get_raw/2` answers `%{status: 404}` with no body and reports a network error.
+#[test]
+fn attachments_download_404_on_the_raw_get_classifies_by_status() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "GET",
+        ATTACHMENT_1_PATH,
+        MockResponse::json(404, json!({"message": "gone"})),
+    );
+    server.expect(
+        "GET",
+        ATTACHMENT_1_PATH,
+        MockResponse::json(200, attachment_metadata("att-1", Some("out.bin"))),
+    );
+
+    let output = run_in(
+        &home,
+        &server,
+        home.path(),
+        &[
+            "workitems",
+            "attachments",
+            "download",
+            "42",
+            "att-1",
+            "--output",
+            "out.bin",
+            "--json",
+        ],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    let envelope: Value =
+        serde_json::from_str(&stdout_of(&output)).expect("stdout is one JSON document");
+    assert_eq!(
+        envelope["error"]["code"],
+        json!("not_found"),
+        "the status is the classification, not a network error: {envelope}"
+    );
+    assert_eq!(envelope["error"]["status"], json!(404));
+    assert_eq!(
+        server.received().len(),
+        2,
+        "the metadata, then the failed raw GET"
+    );
+    assert!(!home.path().join("out.bin").exists(), "nothing is written");
+}
+
+#[test]
+fn attachments_download_redirect_is_the_redirect_error() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "GET",
+        ATTACHMENT_1_PATH,
+        MockResponse::json(302, json!({"message": "sign in"})),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "workitems",
+            "attachments",
+            "download",
+            "42",
+            "att-1",
+            "--json",
+        ],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    let envelope: Value =
+        serde_json::from_str(&stdout_of(&output)).expect("stdout is one JSON document");
+    assert_eq!(envelope["error"]["code"], json!("auth_required"));
+    assert_eq!(envelope["error"]["status"], json!(302));
+    assert_eq!(
+        envelope["error"]["message"],
+        json!("API redirected without a Location header. Run 'ado login' to authenticate."),
+        "the redirect is refused with its true status (D8); the raw GET never starts"
+    );
+    assert_eq!(server.received().len(), 1);
+}
+
+#[test]
+fn attachments_download_without_an_attachment_id_is_a_usage_error() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+
+    let output = run(
+        &home,
+        &server,
+        &["workitems", "attachments", "download", "42", "--json"],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        stderr_of(&output).contains("ATTACHMENT_ID"),
+        "the usage error names the missing positional: {}",
+        stderr_of(&output)
+    );
+    assert!(server.received().is_empty());
+}
+
+/// Captured: the frozen node declares `-o` for both `--org` and `--output`, and
+/// the global wins — `-o short.bin` sets the organization, so the request goes to
+/// `/short.bin/...`. This build cannot declare a local `-o` at all (clap panics on
+/// a duplicate short), and `--output` is the only spelling for the file.
+#[test]
+fn attachments_download_short_o_is_the_org_flag_not_output() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "GET",
+        "/otherorg/_apis/wit/attachments/att-1",
+        MockResponse::json(404, json!({"message": "no route"})),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "workitems",
+            "attachments",
+            "download",
+            "42",
+            "att-1",
+            "-o",
+            "otherorg",
+            "--json",
+        ],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    let received = server.received();
+    assert_eq!(received.len(), 1);
+    assert_eq!(
+        received[0].path, "/otherorg/_apis/wit/attachments/att-1",
+        "-o is the global organization flag, exactly as the frozen binary reads it"
+    );
+}

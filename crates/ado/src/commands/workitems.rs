@@ -1,20 +1,32 @@
-//! `ado workitems list|show|query|create|update|delete` — the read and write
-//! paths of `lib/ado_cli/cli/work_items.ex`: the same WIQL surface, the same
-//! filters, the same JSON-patch bodies, and the same human layouts.
+//! `ado workitems list|show|query|create|update|delete|comments|attachments` —
+//! the read and write paths of `lib/ado_cli/cli/work_items.ex`: the same WIQL
+//! surface, the same filters, the same JSON-patch bodies, and the same human
+//! layouts.
 //!
-//! Both writes send a **JSON-patch array** under `application/json-patch+json`
-//! (captured; the frozen CLI's `build_json_patch/1`): `create`'s six `add`
-//! operations follow the module's field order, `update`'s five follow *its* own
-//! (state before assigned-to) with a `replace` for tags prepended. `delete` was
+//! Both work-item writes send a **JSON-patch array** under
+//! `application/json-patch+json` (captured; the frozen CLI's `build_json_patch/1`):
+//! `create`'s six `add` operations follow the module's field order, `update`'s five
+//! follow *its* own (state before assigned-to) with a `replace` for tags prepended,
+//! and the two comment writes are one `System.History` operation each. `delete` was
 //! re-verified against the mock with `n` on stdin and on EOF (R5): the DELETE
 //! goes out on both, so this module asks no question and the tree has no
-//! `--force`.
+//! `--force`. The comment writes were probed the same way (captured: the PATCH
+//! goes out with `n` on stdin and on EOF), and so was the attachment download.
+//!
+//! The comments/attachments paths are the module's own, spelling included: the
+//! comments read uses `workItems` (capital I) where every other path uses
+//! `workitems`. `attachments download` resolves its filename from `--output`, then
+//! the metadata's `attributes.name`, then `attachment_<id>`, and writes the raw
+//! body through the shared streamed write (D28) — the same path the artifact
+//! download uses. The work item `id` positional is declared but never read by the
+//! frozen flow (captured: the request chain names only the attachment id).
 
 use ado_core::client::encode_path_segment;
 use ado_core::envelope::{ok_message, ok_value};
 use ado_core::error::{AdoError, ErrorCode};
 use serde_json::{Value, json};
 
+use crate::commands::download::write_streamed;
 use crate::context::Context;
 use crate::output::Report;
 
@@ -252,6 +264,211 @@ pub fn delete(context: &mut Context, id: i64) -> Result<Report, AdoError> {
             ..error
         }),
         Err(error) => Err(error),
+    }
+}
+
+/// `ado workitems comments list`: `GET /_apis/wit/workItems/{id}/comments` — the
+/// module's capital-I path, on purpose. A body carrying a `comments` key is the
+/// value envelope under `--json` and the module's comment layout otherwise; a
+/// body without one is the module's `No comments found.` (this build's empty
+/// value envelope under `--json`, D21). Every error is the shared envelope, so
+/// the 404 keeps the upstream bytes (D24) with no module message.
+pub fn comments_list(context: &mut Context, id: i64) -> Result<Report, AdoError> {
+    let path = format!("/_apis/wit/workItems/{id}/comments");
+    let body = context.client()?.get(&path, &[])?;
+
+    match body.get("comments") {
+        Some(comments) => {
+            Ok(context.json_or_report(ok_value(comments.clone()), || comments_text(comments)))
+        }
+        None => Ok(
+            context.json_or_report(ok_value(Value::Array(Vec::new())), || {
+                Report::Text("No comments found.".to_owned())
+            }),
+        ),
+    }
+}
+
+/// The module's `print_comment/1`, preceded by the callback's blank line: one
+/// `  [id] author (date)` line and one indented text line per comment, each
+/// followed by a blank line.
+fn comments_text(comments: &Value) -> Report {
+    let mut text = String::from("\n");
+
+    for comment in comments.as_array().map(Vec::as_slice).unwrap_or_default() {
+        let author = comment
+            .get("createdBy")
+            .and_then(|created_by| created_by.get("displayName"))
+            .filter(|value| truthy(value))
+            .map(interpolate)
+            .unwrap_or_else(|| "unknown".to_owned());
+        let date = comment
+            .get("createdDate")
+            .filter(|value| truthy(value))
+            .map(interpolate)
+            .unwrap_or_default();
+        let text_of = comment
+            .get("text")
+            .filter(|value| truthy(value))
+            .map(interpolate)
+            .unwrap_or_default();
+        let id = comment.get("id").map(interpolate).unwrap_or_default();
+
+        text.push_str(&format!("  [{id}] {author} ({date})\n  {text_of}\n\n"));
+    }
+
+    Report::Text(text)
+}
+
+/// `ado workitems comments add`: `PATCH /_apis/wit/workitems/{id}` with the
+/// module's one-operation `System.History` patch. The frozen CLI prints its
+/// success line under `--json` too; this build emits the message envelope (D33).
+pub fn comments_add(context: &mut Context, id: i64, text: &str) -> Result<Report, AdoError> {
+    let path = format!("/_apis/wit/workitems/{id}");
+    let patch = history_patch(text);
+    context
+        .client()?
+        .patch_json_patch(&path, &Value::Array(patch), &[])?;
+
+    let message = format!("Comment added to work item #{id}.");
+
+    Ok(context.json_or_report(ok_message(&message), || Report::Text(message)))
+}
+
+/// `ado workitems comments update`: the same endpoint as `add`, with the
+/// module's `[Edited]` prefix written into the new history entry. The
+/// `comment_id` positional is required by the argv but never read by the frozen
+/// flow (captured: the PATCH names only the work item), so it is not a parameter
+/// here.
+pub fn comments_update(context: &mut Context, id: i64, text: &str) -> Result<Report, AdoError> {
+    let path = format!("/_apis/wit/workitems/{id}");
+    let patch = history_patch(&format!("[Edited] {text}"));
+    context
+        .client()?
+        .patch_json_patch(&path, &Value::Array(patch), &[])?;
+
+    let message = format!("Comment updated on work item #{id}.");
+
+    Ok(context.json_or_report(ok_message(&message), || Report::Text(message)))
+}
+
+/// The module's comment patch: one `add` of `/fields/System.History`, captured
+/// byte-for-byte for both the add and the update (the latter prefixed).
+fn history_patch(text: &str) -> Vec<Value> {
+    vec![json!({"op": "add", "path": "/fields/System.History", "value": text})]
+}
+
+/// `ado workitems attachments list`: `GET /_apis/wit/workitems/{id}/attachments`
+/// (lowercase, unlike the comments read). A body carrying an `attachments` key is
+/// the value envelope under `--json` and the module's layout otherwise; a body
+/// without one is the module's `No attachments found.` (this build's empty value
+/// envelope under `--json`, D21).
+pub fn attachments_list(context: &mut Context, id: i64) -> Result<Report, AdoError> {
+    let path = format!("/_apis/wit/workitems/{id}/attachments");
+    let body = context.client()?.get(&path, &[])?;
+
+    match body.get("attachments") {
+        Some(attachments) => Ok(context.json_or_report(ok_value(attachments.clone()), || {
+            attachments_text(attachments)
+        })),
+        None => Ok(
+            context.json_or_report(ok_value(Value::Array(Vec::new())), || {
+                Report::Text("No attachments found.".to_owned())
+            }),
+        ),
+    }
+}
+
+/// The module's `list_attachments/1` formatter: `  <id>  <attributes.name>` and a
+/// five-space-indented URL per attachment, each followed by a blank line.
+fn attachments_text(attachments: &Value) -> Report {
+    let mut text = String::from("\n");
+
+    for attachment in attachments
+        .as_array()
+        .map(Vec::as_slice)
+        .unwrap_or_default()
+    {
+        let id = attachment.get("id").map(interpolate).unwrap_or_default();
+        let name = attachment
+            .get("attributes")
+            .and_then(|attributes| attributes.get("name"))
+            .map(interpolate)
+            .unwrap_or_default();
+        let url = attachment.get("url").map(interpolate).unwrap_or_default();
+
+        text.push_str(&format!("  {id}  {name}\n     {url}\n\n"));
+    }
+
+    Report::Text(text)
+}
+
+/// `ado workitems attachments download`: `GET /_apis/wit/attachments/{id}` for
+/// the metadata, resolve the target filename (`--output`, then
+/// `attributes.name`, then `attachment_<id>`), `GET` the same path again with the
+/// resolved `fileName`, and stream the body through the shared write (D28). The
+/// success line is the module's, with the number of bytes written; there is no
+/// envelope, under `--json` or otherwise — the frozen CLI prints the same line.
+///
+/// The work item `id` positional is not a parameter here because the frozen flow
+/// never reads it (captured): the request chain names only the attachment id.
+///
+/// D25's class: the frozen `get_raw/2` appends its `api-version` onto the path
+/// after the module has already put `?fileName=…` in it, so its query is one
+/// glued pair with no separate version; this build sends `fileName` and
+/// `api-version` as the two query pairs they are intended to be. Captured: the
+/// oracle's raw GET is `…/attachments/{id}?fileName=out.bin?api-version=7.1`,
+/// and a redirect on either request is refused with its true status (D8), as the
+/// frozen `get_raw` refuses every non-2xx without following it.
+pub fn attachments_download(
+    context: &mut Context,
+    attachment_id: &str,
+    output: Option<String>,
+) -> Result<Report, AdoError> {
+    let path = format!(
+        "/_apis/wit/attachments/{}",
+        encode_path_segment(attachment_id)
+    );
+    let metadata = context.client()?.get(&path, &[])?;
+    let target = output
+        .or_else(|| attachment_name(&metadata))
+        .unwrap_or_else(|| format!("attachment_{attachment_id}"));
+
+    let url = context
+        .client()?
+        .url_for(&path, &[("fileName".to_owned(), target.clone())]);
+    let body = context.client()?.get_raw(&url)?;
+    let written = write_streamed(&target, "attachment", body)?;
+
+    Ok(Report::Text(format!(
+        "Downloaded {written} bytes to {target}"
+    )))
+}
+
+/// `get_in(meta, ["attributes", "name"])` for the filename fallback: only a
+/// string is a usable name, and a missing chain reads as none so the caller falls
+/// through to `attachment_<id>` — the module's `||` chain drops `nil` and `false`
+/// the same way.
+fn attachment_name(metadata: &Value) -> Option<String> {
+    metadata
+        .get("attributes")
+        .and_then(|attributes| attributes.get("name"))
+        .and_then(Value::as_str)
+        .map(str::to_owned)
+}
+
+/// Elixir's truthiness for a decoded JSON value: only `null` and `false` are falsy.
+fn truthy(value: &Value) -> bool {
+    !matches!(value, Value::Null | Value::Bool(false))
+}
+
+/// A JSON value as `#{}` would interpolate it: `nil` as empty, a string as itself,
+/// anything else by its JSON text.
+fn interpolate(value: &Value) -> String {
+    match value {
+        Value::Null => String::new(),
+        Value::String(text) => text.clone(),
+        other => other.to_string(),
     }
 }
 
@@ -890,5 +1107,94 @@ mod tests {
             text,
             "Work item #42 updated.\n  Title: Renamed\n  State: Active"
         );
+    }
+
+    #[test]
+    fn comments_text_is_the_modules_comment_layout() {
+        let Report::Text(text) = comments_text(&json!([
+            {
+                "id": 7,
+                "text": "Looks good",
+                "createdBy": {"displayName": "Alice Example"},
+                "createdDate": "2026-09-20T12:00:00.000Z",
+            },
+            {"id": 8},
+        ])) else {
+            panic!("the comments layout is a text report");
+        };
+
+        assert_eq!(
+            text,
+            "\n  [7] Alice Example (2026-09-20T12:00:00.000Z)\n  Looks good\n\n  [8] unknown ()\n  \n\n",
+            "a missing createdBy is 'unknown', a missing date/text is empty"
+        );
+    }
+
+    #[test]
+    fn comments_text_of_nothing_is_the_callbacks_blank_line() {
+        assert_eq!(
+            comments_text(&json!([])),
+            Report::Text("\n".to_owned()),
+            "the module writes its leading blank line even with no comments"
+        );
+        assert_eq!(attachments_text(&json!([])), Report::Text("\n".to_owned()));
+    }
+
+    #[test]
+    fn attachments_text_is_the_modules_attachment_layout() {
+        let Report::Text(text) = attachments_text(&json!([
+            {
+                "id": "att-1",
+                "url": "https://dev.azure.com/myorg/_apis/wit/attachments/att-1",
+                "attributes": {"name": "report.pdf"},
+            },
+            {"id": "att-2", "attributes": {}},
+        ])) else {
+            panic!("the attachments layout is a text report");
+        };
+
+        assert_eq!(
+            text,
+            "\n  att-1  report.pdf\n     https://dev.azure.com/myorg/_apis/wit/attachments/att-1\n\n  att-2  \n     \n\n",
+            "a missing name and url are empty, exactly as `#{{}}` interpolates nil"
+        );
+    }
+
+    #[test]
+    fn history_patch_is_the_captured_single_operation() {
+        assert_eq!(
+            history_patch("Looks good"),
+            vec![json!({"op": "add", "path": "/fields/System.History", "value": "Looks good"})],
+            "captured: one add of System.History, not a plain object"
+        );
+        assert_eq!(
+            history_patch("[Edited] Edited text"),
+            vec![
+                json!({"op": "add", "path": "/fields/System.History", "value": "[Edited] Edited text"})
+            ],
+            "the update's value is the caller's prefixed text"
+        );
+    }
+
+    #[test]
+    fn attachment_name_reads_only_a_string() {
+        assert_eq!(
+            attachment_name(&json!({"attributes": {"name": "report.pdf"}})),
+            Some("report.pdf".to_owned())
+        );
+        for metadata in [
+            json!({}),
+            json!({"attributes": null}),
+            json!({"attributes": {}}),
+            json!({"attributes": {"name": null}}),
+            json!({"attributes": {"name": false}}),
+            json!({"attributes": {"name": 7}}),
+        ] {
+            assert_eq!(
+                attachment_name(&metadata),
+                None,
+                "only a string name is usable: {metadata}"
+            );
+        }
     }
 }

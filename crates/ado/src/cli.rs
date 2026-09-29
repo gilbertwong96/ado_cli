@@ -642,6 +642,118 @@ pub fn command() -> Command {
                                 .value_parser(clap::value_parser!(i64))
                                 .help("Work item ID"),
                         ),
+                )
+                .subcommand(
+                    Command::new("comments")
+                        .about(
+                            "Add, list, or update discussion comments on a work item. Comments are threaded; each update creates a revision.",
+                        )
+                        .subcommand(
+                            Command::new("list")
+                                .about(
+                                    "List all discussion comments on a work item. Returns comment ID, author, date, and text. Use for auditing or review.",
+                                )
+                                .arg(
+                                    Arg::new("id")
+                                        .value_name("ID")
+                                        .required(true)
+                                        .value_parser(clap::value_parser!(i64))
+                                        .help("Work item ID"),
+                                ),
+                        )
+                        .subcommand(
+                            Command::new("add")
+                                .about(
+                                    "Add a new discussion comment to a work item. Comment text supports markdown. The comment appears in the Discussion section.",
+                                )
+                                .arg(
+                                    Arg::new("id")
+                                        .value_name("ID")
+                                        .required(true)
+                                        .value_parser(clap::value_parser!(i64))
+                                        .help("Work item ID"),
+                                )
+                                .arg(
+                                    Arg::new("text")
+                                        .long("text")
+                                        .value_name("TEXT")
+                                        .required(true)
+                                        .help("Comment text"),
+                                ),
+                        )
+                        .subcommand(
+                            Command::new("update")
+                                .about(
+                                    "Edit an existing discussion comment by revision ID. Only the comment body can be changed; author and timestamp are preserved. Use list to find comment IDs.",
+                                )
+                                .arg(
+                                    Arg::new("id")
+                                        .value_name("ID")
+                                        .required(true)
+                                        .value_parser(clap::value_parser!(i64))
+                                        .help("Work item ID"),
+                                )
+                                .arg(
+                                    Arg::new("comment_id")
+                                        .value_name("COMMENT_ID")
+                                        .required(true)
+                                        .value_parser(clap::value_parser!(i64))
+                                        .help(
+                                            "Comment revision number (from the list command). Each edit creates a new revision.",
+                                        ),
+                                )
+                                .arg(
+                                    Arg::new("text")
+                                        .long("text")
+                                        .value_name("TEXT")
+                                        .required(true)
+                                        .help("Replacement comment text."),
+                                ),
+                        ),
+                )
+                .subcommand(
+                    Command::new("attachments")
+                        .about(
+                            "Upload, list, or download file attachments on a work item. Attachments are stored in Azure DevOps with the work item.",
+                        )
+                        .subcommand(
+                            Command::new("list")
+                                .about(
+                                    "List all file attachments on a work item: filename, size, and attachment ID.",
+                                )
+                                .arg(
+                                    Arg::new("id")
+                                        .value_name("ID")
+                                        .required(true)
+                                        .value_parser(clap::value_parser!(i64))
+                                        .help("Work item ID"),
+                                ),
+                        )
+                        .subcommand(
+                            Command::new("download")
+                                .about(
+                                    "Download a single attachment to a local file. Default filename matches the original attachment name. Use --output to specify a custom path.",
+                                )
+                                .arg(
+                                    Arg::new("id")
+                                        .value_name("ID")
+                                        .required(true)
+                                        .value_parser(clap::value_parser!(i64))
+                                        .help("Work item ID"),
+                                )
+                                .arg(
+                                    Arg::new("attachment_id")
+                                        .value_name("ATTACHMENT_ID")
+                                        .required(true)
+                                        .help("Attachment ID"),
+                                )
+                                .arg(
+                                    Arg::new("output")
+                                        .long("output")
+                                        .value_name("PATH")
+                                        .help("Output file path (default: attachment filename)"),
+                                ),
+                        ),
                 ),
         )
         .subcommand(

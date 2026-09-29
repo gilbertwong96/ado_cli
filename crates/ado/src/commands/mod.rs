@@ -1,6 +1,7 @@
 pub mod artifacts;
 pub mod builds;
 pub mod completion;
+pub mod download;
 pub mod items;
 pub mod login;
 pub mod logout;

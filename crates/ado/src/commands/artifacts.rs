@@ -5,21 +5,19 @@
 //!
 //! `download` produces bytes, not an envelope: it streams the artifact to
 //! `--output` (default `./<artifact-name>.zip`) and reports the module's
-//! `Downloaded <n> bytes to <path>` line. The body goes straight to a sibling temp
-//! file in 64 KiB chunks — no size cap — and only a fully received body is renamed
-//! onto the target. `--output` is always a file path — the frozen `--output -`
-//! writes a file literally named `-`, and this wave does not invent a stdout
-//! destination.
+//! `Downloaded <n> bytes to <path>` line. The body goes through
+//! [`crate::commands::download::write_streamed`] — the streamed sibling-temp write
+//! D28 rules — so no partial artifact appears at the target, a pre-existing target
+//! survives a failed download byte for byte, and no temp sibling is left behind.
+//! `--output` is always a file path — the frozen `--output -` writes a file
+//! literally named `-`, and this wave does not invent a stdout destination.
 
-use std::fs;
-use std::io::{self, Write};
-use std::sync::atomic::{AtomicUsize, Ordering};
-
-use ado_core::client::{RawBody, encode_path_segment};
+use ado_core::client::encode_path_segment;
 use ado_core::envelope::ok_value;
 use ado_core::error::AdoError;
 use serde_json::Value;
 
+use crate::commands::download::write_streamed;
 use crate::commands::items::items;
 use crate::context::Context;
 use crate::output::Report;
@@ -78,7 +76,7 @@ pub fn download(
     let body = client.get_raw(&url)?;
 
     let target = output.unwrap_or_else(|| format!("{artifact_name}.zip"));
-    let written = write_artifact(&target, body)?;
+    let written = write_streamed(&target, "artifact", body)?;
 
     Ok(Report::Text(format!(
         "Downloaded {written} bytes to {target}"
@@ -125,76 +123,6 @@ fn download_url(artifact: &Value, name: &str) -> Result<String, AdoError> {
 /// client resolves against its base (D25).
 fn is_absolute(url: &str) -> bool {
     url.starts_with("http://") || url.starts_with("https://")
-}
-
-/// The module's `File.write!/2` raises; Rust answers with the usual command-level
-/// error presentation, the way `completion --write-to-file` does (D4).
-fn write_error(path: &str, error: &io::Error) -> AdoError {
-    AdoError::validation(format!("Could not write the artifact to {path}: {error}"))
-}
-
-/// Stream the open body into a sibling temp file and rename it onto `target` only
-/// once the whole body arrived. That keeps both invariants: no partial artifact
-/// ever appears at the target, and a pre-existing target survives a failed
-/// download byte for byte — the module reads the whole body before its
-/// `File.write!/2`, so it never leaves a partial file and never destroys an
-/// existing one either. A failure while removing the temp file never masks the
-/// original error.
-fn write_artifact(target: &str, mut body: RawBody) -> Result<u64, AdoError> {
-    let temp = temp_path(target);
-    let mut file = fs::File::create(&temp).map_err(|error| write_error(target, &error))?;
-
-    let written = match copy_body(&mut body, &mut file, target) {
-        Ok(written) => written,
-        Err(error) => {
-            drop(file);
-            let _ = fs::remove_file(&temp);
-
-            return Err(error);
-        }
-    };
-
-    drop(file);
-    fs::rename(&temp, target).map_err(|error| {
-        let _ = fs::remove_file(&temp);
-        write_error(target, &error)
-    })?;
-
-    Ok(written)
-}
-
-/// The temp name sits beside the target, so the successful rename is a
-/// same-directory replace of the target's bytes. The pid and per-process counter
-/// infix keeps it unique, so a pre-existing `{target}.tmp` is never opened — a
-/// failed download cannot truncate or delete it. The `.tmp` suffix stays, so the
-/// temp still reads as a temporary download in the target's directory.
-fn temp_path(target: &str) -> String {
-    static COUNTER: AtomicUsize = AtomicUsize::new(0);
-
-    let unique = COUNTER.fetch_add(1, Ordering::Relaxed);
-
-    format!("{target}.{}.{unique}.tmp", std::process::id())
-}
-
-/// The copy loop, so a reader failure and a writer failure classify differently:
-/// a dropped connection is the §6.2 transport class, while an unwritable target is
-/// command-level input. A fixed 64 KiB buffer keeps the copy at one allocation and
-/// the body itself has no size cap.
-fn copy_body(body: &mut RawBody, file: &mut fs::File, target: &str) -> Result<u64, AdoError> {
-    let mut buffer = vec![0u8; 64 * 1024];
-    let mut written = 0u64;
-
-    loop {
-        let read = body.read_chunk(&mut buffer)?;
-
-        if read == 0 {
-            return Ok(written);
-        }
-
-        file.write_all(&buffer[..read])
-            .map_err(|error| write_error(target, &error))?;
-        written += read as u64;
-    }
 }
 
 /// The module's `print_artifacts_table/1`: Name and Size.
@@ -253,33 +181,6 @@ fn text(value: &Value) -> String {
 mod tests {
     use super::*;
     use serde_json::json;
-
-    #[test]
-    fn temp_path_is_a_unique_tmp_sibling() {
-        use std::path::Path;
-
-        let first = temp_path("out.zip");
-        let second = temp_path("out.zip");
-
-        assert!(
-            first.ends_with(".tmp"),
-            "the temp reads as a temporary download: {first}"
-        );
-        assert!(
-            first.starts_with("out.zip."),
-            "the temp is derived from the target: {first}"
-        );
-        assert_ne!(
-            first, "out.zip.tmp",
-            "a pre-existing `{{target}}.tmp` is never reused: {first}"
-        );
-        assert_ne!(first, second, "each download gets its own temp name");
-        assert_eq!(
-            Path::new(&temp_path("/tmp/dir/out.zip")).parent(),
-            Some(Path::new("/tmp/dir")),
-            "the temp stays in the target's directory, so the rename is same-filesystem"
-        );
-    }
 
     #[test]
     fn artifacts_table_uses_the_module_columns_and_the_size_fallback() {

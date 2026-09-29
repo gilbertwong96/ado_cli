@@ -416,7 +416,8 @@ fn schema_pipelines_folders_node_lists_its_three_subcommands() {
 /// Wave 2 Task 7 adds the three write paths in the oracle's own order, with the
 /// runnable hyphenated `--assigned-to` spelling (D17: the schema's `assigned_to`
 /// keyword is not an invocation) and the integer options reported as clap's
-/// `string` (D23). `delete` has no `--force`.
+/// `string` (D23). `delete` has no `--force`. Task 8 adds the `comments` and
+/// `attachments` group nodes and their leaves, in the oracle's order.
 #[test]
 fn schema_workitems_node_lists_every_shipped_subcommand() {
     let workitems = find_node("workitems").expect("the workitems node");
@@ -434,7 +435,9 @@ fn schema_workitems_node_lists_every_shipped_subcommand() {
             "ado workitems query",
             "ado workitems create",
             "ado workitems update",
-            "ado workitems delete"
+            "ado workitems delete",
+            "ado workitems comments",
+            "ado workitems attachments"
         ]
     );
 
@@ -503,6 +506,53 @@ fn schema_workitems_node_lists_every_shipped_subcommand() {
         ),
         GLOBALS,
         "the tree has no --force: the captured command refuses it (R5)"
+    );
+
+    let comments = find_node("workitems comments").expect("the comments node");
+    assert_eq!(
+        subcommands(&comments)
+            .iter()
+            .map(|sub| sub["name"].as_str().expect("a subcommand name"))
+            .collect::<Vec<_>>(),
+        [
+            "ado workitems comments list",
+            "ado workitems comments add",
+            "ado workitems comments update"
+        ]
+    );
+    let comments_add = find_node("workitems comments add").expect("the comments add node");
+    assert_eq!(argument(&comments_add, "id")["required"], json!(true));
+    assert_eq!(
+        option(&comments_add, "text")["required"],
+        json!(true),
+        "the oracle's schema marks --text required; it never enforces it (D34)"
+    );
+    let comments_update = find_node("workitems comments update").expect("the comments update node");
+    assert_eq!(
+        argument(&comments_update, "comment_id")["required"],
+        json!(true)
+    );
+
+    let attachments = find_node("workitems attachments").expect("the attachments node");
+    assert_eq!(
+        subcommands(&attachments)
+            .iter()
+            .map(|sub| sub["name"].as_str().expect("a subcommand name"))
+            .collect::<Vec<_>>(),
+        [
+            "ado workitems attachments list",
+            "ado workitems attachments download"
+        ]
+    );
+    let download = find_node("workitems attachments download").expect("the download node");
+    assert_eq!(
+        argument(&download, "attachment_id")["type"],
+        json!("string")
+    );
+    assert_eq!(
+        option(&download, "output")["short"],
+        json!(""),
+        "the global -o is --org, exactly as the frozen node's duplicate short resolves"
     );
 }
 
