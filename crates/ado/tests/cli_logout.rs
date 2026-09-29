@@ -61,9 +61,11 @@ const NOTHING_PLAIN: &str = "Logged out. No stored credentials to remove.\n";
 const ORG: &str = "ado-cli-test-org";
 
 /// A port nothing listens on, pinned on the runs that follow a logout: they must
-/// fail with `auth_required` before any client is built, and if a regression ever
-/// re-authenticated, the failure would be a refused connection rather than the
-/// synthetic PAT reaching `dev.azure.com`.
+/// fail `auth_required`, and a regression that re-authenticated would send its
+/// request here, where `ConnectionRefused` classifies as `network_error`
+/// (`crates/ado-core/src/error.rs:154-178`, pinned at `:265-271`) — a code those
+/// assertions reject. The dead server is what keeps a re-authenticated regression
+/// from sending the synthetic PAT at Azure.
 const DEAD_SERVER: &str = "http://127.0.0.1:1";
 
 fn command(home: &TempHome, args: &[&str]) -> Command {
@@ -365,9 +367,11 @@ fn a_migrated_install_is_not_re_imported_after_logout() {
     );
 
     // 3. The next command cannot import it back: no marker, no legacy file, no
-    // credential, no request. The dead server pins that last part: even a
-    // regression that re-authenticated would be refused rather than send the
-    // synthetic PAT at Azure.
+    // credential. The dead server is what pins "no request": a regression that
+    // re-authenticated would send one, and that attempt classifies as
+    // `network_error` (`crates/ado-core/src/error.rs:154-178`, pinned at `:265-271`),
+    // not the `auth_required` asserted below — so the observed code is the evidence
+    // that nothing reached Azure with the synthetic PAT.
     let mut again = command(&home, &["projects", "list", "--org", ORG, "--json"]);
     again.env("ADO_SERVER", DEAD_SERVER);
     let again = again.output().expect("run the post-logout list");
@@ -387,6 +391,68 @@ fn a_migrated_install_is_not_re_imported_after_logout() {
         server.received().len(),
         1,
         "only the importing run reached the server"
+    );
+}
+
+/// A legacy file naming another organization survives a logout by design and,
+/// because that logout removes the emptied `config.toml` (the import marker), the
+/// next client command imports it — the combination T12's re-review accepted (D27).
+#[test]
+fn a_logout_leaves_a_legacy_file_naming_another_org_for_the_next_import() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "GET",
+        "/ado-cli-test-other/_apis/projects",
+        MockResponse::json(200, json!({"value": []})),
+    );
+    seed(
+        &home,
+        "default_org = \"ado-cli-test-org\"\n\n[orgs.ado-cli-test-org]\nauth = \"pat\"\n",
+        "{\n  \"ado-cli-test-org\": {\n    \"method\": \"pat\",\n    \"token\": \"ado-cli-test-org-token\"\n  }\n}",
+    );
+    let legacy = legacy_file(&home);
+    fs::create_dir_all(legacy.parent().expect("the legacy directory"))
+        .expect("create the legacy directory");
+    fs::write(
+        &legacy,
+        r#"{"org":"ado-cli-test-other","method":"pat","pat":"legacy-pat"}"#,
+    )
+    .expect("write the legacy file");
+
+    let output = run(&home, &["logout", "--json"]);
+
+    assert_success(&output);
+    assert_eq!(stdout_of(&output), format!("{}\n", logout_json(ORG)));
+    assert!(
+        !config_file(&home).exists(),
+        "the emptied config is removed, so the import marker is gone"
+    );
+    assert!(
+        legacy.exists(),
+        "the legacy file names another organization, so the logout leaves it"
+    );
+
+    let mut next = command(&home, &["projects", "list", "--json"]);
+    next.env("ADO_SERVER", server.base_url());
+    let next = next.output().expect("run the post-logout list");
+
+    assert_success(&next);
+    let received = server.received();
+    assert_eq!(
+        received.len(),
+        1,
+        "the next command imported the surviving legacy file"
+    );
+    assert_eq!(received[0].path, "/ado-cli-test-other/_apis/projects");
+    assert_eq!(
+        received[0].header("authorization"),
+        Some("Basic OmxlZ2FjeS1wYXQ="),
+        "Basic base64(':legacy-pat')"
+    );
+    assert!(
+        config_file(&home).exists(),
+        "the import leaves its marker behind"
     );
 }
 

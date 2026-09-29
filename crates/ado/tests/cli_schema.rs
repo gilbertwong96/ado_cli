@@ -46,6 +46,15 @@ fn option<'a>(node: &'a Value, name: &str) -> &'a Value {
         .unwrap_or_else(|| panic!("the '{name}' option is missing"))
 }
 
+fn argument<'a>(node: &'a Value, name: &str) -> &'a Value {
+    node["arguments"]
+        .as_array()
+        .expect("an argument array")
+        .iter()
+        .find(|argument| argument["name"] == json!(name))
+        .unwrap_or_else(|| panic!("the '{name}' argument is missing"))
+}
+
 /// Every node reachable from `node`, including `node` itself.
 fn nodes(node: &Value) -> Vec<&Value> {
     let mut all = vec![node];
@@ -453,6 +462,47 @@ fn schema_version_target_shape_matches_oracle() {
     let value: Value = serde_json::from_slice(&output.stdout).expect("stdout is a JSON document");
 
     insta::assert_json_snapshot!(value);
+}
+
+/// D23: the three metadata deviations the row records, pinned here because §10's
+/// schema comparison checks node names only. An argument or option the oracle types
+/// `integer` reports `"string"` (clap's value-parser type), a positional reports
+/// `"required":true` where the oracle says `false` (the parse tree really requires
+/// it), and the oracle's `assigned_to` keyword key reports as the hyphenated flag an
+/// agent can pass.
+#[test]
+fn schema_wave_one_nodes_pin_the_documented_metadata() {
+    let show = find_node("workitems show").expect("the workitems show node");
+    assert_eq!(argument(&show, "id")["type"], json!("string"));
+    assert_eq!(argument(&show, "id")["required"], json!(true));
+
+    let list = find_node("workitems list").expect("the workitems list node");
+    assert_eq!(option(&list, "top")["type"], json!("string"));
+    assert_eq!(argument(&list, "project")["required"], json!(true));
+    assert!(
+        option_names(&list).contains(&"assigned-to"),
+        "the flag an agent can pass: {:?}",
+        option_names(&list)
+    );
+    assert!(
+        !option_names(&list).contains(&"assigned_to"),
+        "the Elixir keyword key leaking into JSON: {:?}",
+        option_names(&list)
+    );
+
+    let repos_show = find_node("repos show").expect("the repos show node");
+    for name in ["project", "repo_id"] {
+        assert_eq!(
+            argument(&repos_show, name)["required"],
+            json!(true),
+            "{name}"
+        );
+    }
+
+    let download = find_node("pipelines-artifacts download").expect("the download node");
+    for name in ["project", "pipeline_id", "run_id", "artifact_name"] {
+        assert_eq!(argument(&download, name)["required"], json!(true), "{name}");
+    }
 }
 
 #[test]

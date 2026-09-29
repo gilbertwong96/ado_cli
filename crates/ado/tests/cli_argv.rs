@@ -74,6 +74,28 @@ fn server_short_is_s() {
     assert_eq!(stdout_of(&output), VERSION_LINE);
 }
 
+/// D6: `-h`/`--help` is a display request, not a usage error — help on stdout,
+/// exit 0. It had no test and no harness case; `bare_ado_*` above is the
+/// missing-subcommand help (D13).
+#[test]
+fn help_flags_are_display_requests() {
+    for flag in ["-h", "--help"] {
+        let output = ado().arg(flag).output().expect("run `ado --help`");
+
+        assert_eq!(output.status.code(), Some(0), "{flag}");
+        assert!(
+            stdout_of(&output).contains("Usage:"),
+            "{flag}: help went to stdout: {}",
+            stdout_of(&output)
+        );
+        assert!(
+            stderr_of(&output).is_empty(),
+            "{flag}: stderr: {}",
+            stderr_of(&output)
+        );
+    }
+}
+
 #[test]
 fn bare_ado_is_a_missing_subcommand() {
     let output = ado().output().expect("run bare `ado`");
