@@ -314,7 +314,7 @@ fn list_human_output_says_no_repositories_found_when_empty() {
 }
 
 #[test]
-fn list_api_error_is_the_error_envelope() {
+fn list_404_is_the_not_found_envelope() {
     let home = TempHome::new();
     let server = MockServer::start();
     server.expect(
