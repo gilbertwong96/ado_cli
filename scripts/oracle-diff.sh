@@ -451,7 +451,7 @@ mock_exit_check() { # the status is contract: 0 success, 1 every error (§6.3)
         elif [[ $elixir_status == "$rust_status" ]]; then
             note "exit $rust_status on both"
         else
-            ruled "${status_rule:-the expected status pair: oracle $elixir_status, rust $rust_status}"
+            ruled "${status_rule:-the expected status pair}: oracle $elixir_status, rust $rust_status"
         fi
 
         return
@@ -849,12 +849,14 @@ run_mock_cases() {
 
     envelope_rule='D16: a blank value reads as unset here, so --pat "" is a validation error where the frozen CLI stores an empty token'
     status_rule='D16: --pat "" reads as unset here (exit 1) where the frozen CLI treats it as a value and exits 0'
+    expect_statuses='0 1'
     case_pat=
     mock_case login-blank-pat "login --method pat --pat ''" \
         login --method pat --org "$mock_org" --pat "" --json
 
     envelope_rule='D16: a blank ADO_PAT leaves no method to infer, so this build refuses the invocation (the message wording is §8)'
     status_rule='D16: a blank ADO_PAT reads as unset here (exit 1) where the frozen CLI infers method=pat from it and exits 0'
+    expect_statuses='0 1'
     case_pat=
     case_extra=("ADO_PAT=")
     mock_case login-blank-env-pat "login with a blank ADO_PAT" login --json
@@ -905,6 +907,7 @@ run_mock_cases() {
     mock_case projects-delete-refused-json "projects delete (refused, --json)" projects delete Alpha --json
 
     status_rule='D30: the frozen CLI exits 0 on an unanswered prompt; this build refuses with exit 1'
+    expect_statuses='0 1'
     stdout_mode=prompt-text
     mock_case projects-delete-eof "projects delete (EOF)" projects delete Alpha
 
@@ -928,6 +931,7 @@ run_mock_cases() {
     mock_case repos-delete-refused-json "repos delete (refused, --json)" repos delete Alpha Alpha.Core --json
 
     status_rule='D30: the frozen CLI exits 0 on an unanswered prompt; this build refuses with exit 1'
+    expect_statuses='0 1'
     stdout_mode=prompt-text
     mock_case repos-delete-eof "repos delete (EOF)" repos delete Alpha Alpha.Core
 
@@ -952,6 +956,7 @@ run_mock_cases() {
         --folder MyTeam/Frontend --json
 
     status_rule='D5/D23 (R4): a required option the oracle never validates is a silent exit 0 there; this build makes it a loud usage error'
+    expect_statuses='0 1'
     stdout_mode=text
     mock_case pipelines-create-no-name "pipelines create (no --name)" \
         pipelines create Alpha --repo Alpha.Core --path pipelines/new.yml --json
@@ -990,6 +995,7 @@ run_mock_cases() {
         --variables 'DB_HOST=db.example.com,DB_PASS=hunter2' --secret DB_PASS --json
 
     status_rule='D5/D23 (R4): a required option the oracle never validates is a silent exit 0 there; this build makes it a loud usage error'
+    expect_statuses='0 1'
     stdout_mode=text
     mock_case pipelines-vars-create-no-name "pipelines vars create (no --name)" \
         pipelines vars create Alpha --json
@@ -1049,6 +1055,7 @@ run_mock_cases() {
         pipelines variables create Alpha 16 --key API_KEY --value s3cret --secret --json
 
     status_rule='D5/D23 (R4): a required option the oracle never validates is a silent exit 0 there; this build makes it a loud usage error'
+    expect_statuses='0 1'
     stdout_mode=text
     mock_case pipelines-variables-create-no-key "pipelines variables create (no --key)" \
         pipelines variables create Alpha 13 --json
@@ -1063,6 +1070,7 @@ run_mock_cases() {
         pipelines variables delete Alpha 14 --key DEBUG --json
 
     status_rule='D5/D23 (R4): a required option the oracle never validates is a silent exit 0 there; this build makes it a loud usage error'
+    expect_statuses='0 1'
     stdout_mode=text
     mock_case pipelines-variables-delete-no-key "pipelines variables delete (no --key)" \
         pipelines variables delete Alpha 14 --json
@@ -1095,6 +1103,7 @@ run_mock_cases() {
         --file "$root/crates/ado-testkit/fixtures/secure_file_upload.pem" --json
 
     status_rule='D5/D23 (R4): a required option the oracle never validates is a silent exit 0 there; this build makes it a loud usage error'
+    expect_statuses='0 1'
     stdout_mode=text
     mock_case pipelines-secure-files-upload-no-file "pipelines secure_files upload (no --file)" \
         pipelines secure_files upload Alpha cert.pem --json
@@ -1131,6 +1140,7 @@ run_mock_cases() {
 
     case_stdin=$'n\n'
     status_rule='D32: the oracle prints its guard on stdout and exits 0 having sent nothing; this build refuses with exit 1 and sends nothing'
+    expect_statuses='0 1'
     envelope_rule='D32: the oracle prints its guard on stdout and exits 0; this build writes the refusal to stderr with no document'
     stdout_mode=text
     mock_case pipelines-secure-files-delete-guard "pipelines secure_files delete (stdin n — no prompt, no --force)" \
@@ -1201,6 +1211,7 @@ run_mock_cases() {
         pipelines-folders delete FoldersMissing --path MyTeam/Frontend --json
 
     status_rule='D5/D23 (R4): a required option the oracle never validates is a silent exit 0 there; this build makes it a loud usage error'
+    expect_statuses='0 1'
     stdout_mode=text
     mock_case pipelines-folders-delete-no-path "pipelines-folders delete (no --path)" \
         pipelines-folders delete Folders --json
@@ -1222,6 +1233,7 @@ run_mock_cases() {
         pipelines-builds queue BuildsBroken --definition 5 --json
 
     status_rule='D5/D23 (R4): a required option the oracle never validates is a silent exit 0 there; this build makes it a loud usage error'
+    expect_statuses='0 1'
     stdout_mode=text
     mock_case pipelines-builds-queue-no-definition "pipelines-builds queue (no --definition)" \
         pipelines-builds queue Builds --json
@@ -1243,6 +1255,7 @@ run_mock_cases() {
         pipelines-builds tags add BuildsTrim 128 --tags 'trimmed, spaced ' --json
 
     status_rule='D5/D23 (R4): a required option the oracle never validates is a silent exit 0 there; this build makes it a loud usage error'
+    expect_statuses='0 1'
     stdout_mode=text
     mock_case pipelines-builds-tags-add-no-tags "pipelines-builds tags add (no --tags)" \
         pipelines-builds tags add Builds 128 --json
@@ -1387,6 +1400,7 @@ run_mock_cases() {
         workitems comments add 500 --text 'Looks good' --json
 
     status_rule='D5/D23 (D34): a required option the oracle never validates is a silent exit 0 there; this build makes it a loud usage error'
+    expect_statuses='0 1'
     stdout_mode=text
     mock_case workitems-comments-add-no-text "workitems comments add (no --text)" \
         workitems comments add 500 --json
@@ -1410,6 +1424,7 @@ run_mock_cases() {
         workitems comments update 501 7 --text 'Edited text' --json
 
     status_rule='D5/D23 (D34): a required option the oracle never validates is a silent exit 0 there; this build makes it a loud usage error'
+    expect_statuses='0 1'
     stdout_mode=text
     mock_case workitems-comments-update-no-text "workitems comments update (no --text)" \
         workitems comments update 501 7 --json
@@ -1540,6 +1555,7 @@ run_mock_cases() {
         --title 'Add checkout retries' --source feature/payments --target main --json
 
     status_rule='D34: a missing required option is a silent exit 0 in the oracle; this build is a loud usage error'
+    expect_statuses='0 1'
     stdout_mode=text
     mock_case prs-create-no-title "prs create (no --title)" prs create CreateMin Alpha.Core \
         --source feature/payments --target main --json
@@ -1664,6 +1680,7 @@ run_mock_cases() {
         prs vote Alpha Alpha.Core 137 --vote 10 --json
 
     status_rule='D34: a missing required option is a silent exit 0 in the oracle; this build is a loud usage error'
+    expect_statuses='0 1'
     stdout_mode=text
     mock_case prs-vote-no-option "prs vote (no --vote)" prs vote Alpha Alpha.Core 137 --json
 
@@ -1726,6 +1743,7 @@ run_mock_cases() {
         prs diff Alpha Alpha.Core 137 --iteration 99 --json
 
     status_rule='D34: an iteration below 1 has no resolve_iteration/2 clause and the oracle exits 0 silently; this build is a loud usage error'
+    expect_statuses='0 1'
     stdout_mode=text
     mock_case prs-diff-iteration-0 "prs diff --iteration 0" \
         prs diff Alpha Alpha.Core 137 --iteration 0 --json
@@ -1832,6 +1850,7 @@ run_mock_cases() {
         prs comments add Alpha Alpha.Core 137 --content 'Looks good'
 
     status_rule='D34: the oracle proceeds with an empty body when --content is absent; this build is a loud usage error'
+    expect_statuses='0 1'
     rest_rule='D34: the oracle sends the empty-content thread where this build refuses before the request'
     envelope_rule='D34: the oracle sends an empty comment where this build refuses before the request'
     stdout_mode=text
@@ -1925,12 +1944,14 @@ run_mock_cases() {
 
     case_stdin=$'n\n'
     status_rule='D32: the oracle answers a refusal with `Cancelled.` on stdout and exit 0; this build refuses on stderr with exit 1'
+    expect_statuses='0 1'
     envelope_rule='D32: the oracle prints its refusal on stdout even under --json; this build writes the refusal to stderr and leaves stdout empty'
     stdout_mode=prompt-text
     mock_case prs-comments-delete-refused "prs comments delete (refused)" \
         prs comments delete Alpha Alpha.Core 137 26 --json
 
     status_rule='D30/D32: the oracle exits 0 on an unanswered prompt; this build refuses on stderr with exit 1'
+    expect_statuses='0 1'
     stdout_mode=prompt-text
     mock_case prs-comments-delete-eof "prs comments delete (EOF)" \
         prs comments delete Alpha Alpha.Core 137 26
@@ -2046,6 +2067,7 @@ run_mock_cases() {
         --reviewer aaaaaaaa-0001-0001-0001-000000000001 --json
 
     status_rule='D34: a missing required option is a silent exit 0 in the oracle; this build is a loud usage error'
+    expect_statuses='0 1'
     stdout_mode=text
     mock_case prs-reviewers-add-no-reviewer "prs reviewers add (no --reviewer)" \
         prs reviewers add Alpha Alpha.Core 137 --json
@@ -2071,6 +2093,7 @@ run_mock_cases() {
         --reviewer bbbbbbbb-0002-0002-0002-000000000002 --json
 
     status_rule='D34: a missing required option is a silent exit 0 in the oracle; this build is a loud usage error'
+    expect_statuses='0 1'
     stdout_mode=text
     mock_case prs-reviewers-remove-no-reviewer "prs reviewers remove (no --reviewer)" \
         prs reviewers remove Alpha Alpha.Core 137 --json
