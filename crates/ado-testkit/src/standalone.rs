@@ -679,6 +679,56 @@ mod tests {
     }
 
     #[test]
+    fn a_json_request_body_compares_array_order_positionally() {
+        let path = scratch("log-body-array-order");
+        let mock = StandaloneMock::start(
+            scenario(
+                r#"{"responses": [{
+                    "method": "PATCH",
+                    "path": "/x",
+                    "request_body": [
+                        {"op": "replace", "path": "/fields/System.Tags", "value": "a,b"},
+                        {"op": "add", "path": "/fields/System.Title", "value": "T"},
+                        {"op": "add", "path": "/fields/System.AssignedTo", "value": "bob"}
+                    ],
+                    "json": {}
+                }]}"#,
+            ),
+            Some(&path),
+            0,
+        );
+
+        // update's captured pin is replace-tags-first; create's is add-ops-first.
+        let _ = http_request(
+            &mock,
+            "PATCH",
+            "/x",
+            r#"[{"op":"add","path":"/fields/System.Title","value":"T"},{"op":"add","path":"/fields/System.AssignedTo","value":"bob"},{"op":"replace","path":"/fields/System.Tags","value":"a,b"}]"#,
+        );
+        let _ = http_request(
+            &mock,
+            "PATCH",
+            "/x",
+            r#"[{"value":"a,b","path":"/fields/System.Tags","op":"replace"},{"value":"T","path":"/fields/System.Title","op":"add"},{"value":"bob","path":"/fields/System.AssignedTo","op":"add"}]"#,
+        );
+
+        let lines = request_log(&path);
+        assert_eq!(
+            lines[0]["body_matched"],
+            json!(false),
+            "the same ops in create's order must not satisfy update's pin"
+        );
+        assert_eq!(
+            lines[1]["body_matched"],
+            json!(true),
+            "key order inside an op object stays ignored"
+        );
+
+        drop(mock);
+        std::fs::remove_file(&path).expect("remove the log");
+    }
+
+    #[test]
     fn a_string_request_body_compares_the_bytes_as_sent() {
         let path = scratch("log-body-string");
         let mock = StandaloneMock::start(
