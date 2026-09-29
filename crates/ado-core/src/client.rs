@@ -15,6 +15,10 @@ use crate::error::{AdoError, ErrorCode};
 /// The REST API version merged into every URL; a caller's own `api-version` wins.
 pub const API_VERSION: &str = "7.1";
 
+/// The content type the work-item write API requires (captured): a JSON-patch
+/// body sent as `application/json` is rejected by Azure DevOps.
+const JSON_PATCH_CONTENT_TYPE: &str = "application/json-patch+json";
+
 const REDIRECT_STATUSES: [u16; 4] = [301, 302, 307, 308];
 const REDIRECT_TO_SIGN_IN: &str =
     "API redirected to sign-in page. Run 'ado login' to authenticate.";
@@ -206,6 +210,46 @@ impl Client {
             Some(("application/octet-stream", body.to_vec())),
         )?
         .json()
+    }
+
+    /// `POST` with a JSON body and `application/json-patch+json`, the content
+    /// type the frozen work-item create sends (captured): the work item API
+    /// rejects a patch under `application/json`.
+    pub fn post_json_patch(
+        &self,
+        path: &str,
+        body: &Value,
+        params: &[(String, String)],
+    ) -> Result<Value, AdoError> {
+        self.json_patch("POST", path, body, params)?.json()
+    }
+
+    /// `PATCH` with a JSON body and `application/json-patch+json`, the frozen
+    /// `Client.patch/4` the work-item update sends (captured).
+    pub fn patch_json_patch(
+        &self,
+        path: &str,
+        body: &Value,
+        params: &[(String, String)],
+    ) -> Result<Value, AdoError> {
+        self.json_patch("PATCH", path, body, params)?.json()
+    }
+
+    fn json_patch(
+        &self,
+        method: &str,
+        path: &str,
+        body: &Value,
+        params: &[(String, String)],
+    ) -> Result<Reply, AdoError> {
+        let payload = serde_json::to_vec(body).map_err(|error| encode_failed(&error))?;
+
+        self.dispatch(
+            method,
+            path,
+            params,
+            Some((JSON_PATCH_CONTENT_TYPE, payload)),
+        )
     }
 
     fn send(

@@ -413,6 +413,99 @@ fn schema_pipelines_folders_node_lists_its_three_subcommands() {
     }
 }
 
+/// Wave 2 Task 7 adds the three write paths in the oracle's own order, with the
+/// runnable hyphenated `--assigned-to` spelling (D17: the schema's `assigned_to`
+/// keyword is not an invocation) and the integer options reported as clap's
+/// `string` (D23). `delete` has no `--force`.
+#[test]
+fn schema_workitems_node_lists_every_shipped_subcommand() {
+    let workitems = find_node("workitems").expect("the workitems node");
+
+    let names = subcommands(&workitems)
+        .iter()
+        .map(|sub| sub["name"].as_str().expect("a subcommand name"))
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        names,
+        [
+            "ado workitems list",
+            "ado workitems show",
+            "ado workitems query",
+            "ado workitems create",
+            "ado workitems update",
+            "ado workitems delete"
+        ]
+    );
+
+    let create = workitems["subcommands"]
+        .as_array()
+        .expect("the subcommand array")
+        .iter()
+        .find(|sub| sub["name"] == json!("ado workitems create"))
+        .expect("the create node");
+    assert_eq!(
+        option_names(create),
+        [
+            "assigned-to",
+            "description",
+            "json",
+            "org",
+            "pat",
+            "priority",
+            "server",
+            "state",
+            "tags",
+            "title",
+            "type",
+            "verbose"
+        ]
+    );
+    assert_eq!(option(create, "type")["required"], json!(true));
+    assert_eq!(option(create, "title")["required"], json!(true));
+    assert_eq!(
+        option(create, "priority")["type"],
+        json!("string"),
+        "the oracle types it integer; clap's value-parser reports string (D23)"
+    );
+    assert_eq!(argument(create, "project")["required"], json!(true));
+
+    let update = workitems["subcommands"]
+        .as_array()
+        .expect("the subcommand array")
+        .iter()
+        .find(|sub| sub["name"] == json!("ado workitems update"))
+        .expect("the update node");
+    assert_eq!(
+        option_names(update),
+        [
+            "assigned-to",
+            "description",
+            "json",
+            "org",
+            "pat",
+            "priority",
+            "server",
+            "state",
+            "tags",
+            "title",
+            "verbose"
+        ]
+    );
+    assert_eq!(
+        option_names(
+            workitems["subcommands"]
+                .as_array()
+                .expect("the subcommand array")
+                .iter()
+                .find(|sub| sub["name"] == json!("ado workitems delete"))
+                .expect("the delete node")
+        ),
+        GLOBALS,
+        "the tree has no --force: the captured command refuses it (R5)"
+    );
+}
+
 /// W1-1/D18: `ado schema --json` names the node the way the binary parses it, so an
 /// agent can copy the name straight into argv.
 #[test]

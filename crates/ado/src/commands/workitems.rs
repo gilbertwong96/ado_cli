@@ -1,9 +1,17 @@
-//! `ado workitems list|show|query` — the read paths of
-//! `lib/ado_cli/cli/work_items.ex`: the same WIQL surface, the same filters, and
-//! the same human layouts.
+//! `ado workitems list|show|query|create|update|delete` — the read and write
+//! paths of `lib/ado_cli/cli/work_items.ex`: the same WIQL surface, the same
+//! filters, the same JSON-patch bodies, and the same human layouts.
+//!
+//! Both writes send a **JSON-patch array** under `application/json-patch+json`
+//! (captured; the frozen CLI's `build_json_patch/1`): `create`'s six `add`
+//! operations follow the module's field order, `update`'s five follow *its* own
+//! (state before assigned-to) with a `replace` for tags prepended. `delete` was
+//! re-verified against the mock with `n` on stdin and on EOF (R5): the DELETE
+//! goes out on both, so this module asks no question and the tree has no
+//! `--force`.
 
 use ado_core::client::encode_path_segment;
-use ado_core::envelope::ok_value;
+use ado_core::envelope::{ok_message, ok_value};
 use ado_core::error::{AdoError, ErrorCode};
 use serde_json::{Value, json};
 
@@ -77,6 +85,214 @@ pub fn query(
         wiql.ok_or_else(|| AdoError::validation("--wiql is required for the query command"))?;
 
     run_wiql(context, project, &wiql, top)
+}
+
+/// The five optional field flags both write paths share; `None` means the flag was
+/// not given, so the field's operation is left out of the patch. `title` stays a
+/// parameter of its own because `create` requires it and `update` does not.
+#[derive(Debug, Default, PartialEq)]
+pub struct WorkItemOptions {
+    pub description: Option<String>,
+    pub state: Option<String>,
+    pub assigned_to: Option<String>,
+    pub priority: Option<i64>,
+    pub tags: Option<String>,
+}
+
+impl WorkItemOptions {
+    /// No field at all was given; `update`'s guard refuses that.
+    pub fn is_empty(&self) -> bool {
+        self.description.is_none()
+            && self.state.is_none()
+            && self.assigned_to.is_none()
+            && self.priority.is_none()
+            && self.tags.is_none()
+    }
+}
+
+/// `ado workitems create`: `POST /{project}/_apis/wit/workitems/${type}` with the
+/// module's JSON-patch array, under the API's JSON-patch content type. Under
+/// `--json` the created work item is the value envelope where the frozen CLI
+/// prints its success line even under `--json` (D33).
+pub fn create(
+    context: &mut Context,
+    project: &str,
+    item_type: &str,
+    title: &str,
+    options: WorkItemOptions,
+) -> Result<Report, AdoError> {
+    let patch = create_patch(title, options);
+    let path = format!(
+        "/{}/_apis/wit/workitems/${}",
+        encode_path_segment(project),
+        encode_path_segment(item_type)
+    );
+    let work_item = context
+        .client()?
+        .post_json_patch(&path, &Value::Array(patch), &[])?;
+
+    Ok(context.json_or_report(ok_value(work_item.clone()), || created_lines(&work_item)))
+}
+
+/// The module's `create_work_item/1` patch, captured: one `add` per option given,
+/// in the order the module lists them — title, description, assigned-to, state,
+/// priority, tags — with `--priority` an integer, not a string.
+fn create_patch(title: &str, options: WorkItemOptions) -> Vec<Value> {
+    [
+        ("/fields/System.Title", Some(Value::from(title))),
+        (
+            "/fields/System.Description",
+            options.description.map(Value::from),
+        ),
+        (
+            "/fields/System.AssignedTo",
+            options.assigned_to.map(Value::from),
+        ),
+        ("/fields/System.State", options.state.map(Value::from)),
+        (
+            "/fields/Microsoft.VSTS.Common.Priority",
+            options.priority.map(Value::from),
+        ),
+        ("/fields/System.Tags", options.tags.map(Value::from)),
+    ]
+    .into_iter()
+    .filter_map(|(path, value)| value.map(|value| add_op(path, value)))
+    .collect()
+}
+
+/// `ado workitems update`: `PATCH /_apis/wit/workitems/{id}` with the module's
+/// JSON-patch array, after its own guard — no field at all is a `validation_error`
+/// with no request (captured). A 404 answers the module's own message; every other
+/// error is the shared envelope.
+pub fn update(
+    context: &mut Context,
+    id: i64,
+    title: Option<String>,
+    options: WorkItemOptions,
+) -> Result<Report, AdoError> {
+    if title.is_none() && options.is_empty() {
+        return Err(AdoError::validation(
+            "At least one field to update is required (--title, --state, --assigned-to, etc.)",
+        ));
+    }
+
+    let patch = update_patch(title, options);
+    let path = format!("/_apis/wit/workitems/{id}");
+
+    match context
+        .client()?
+        .patch_json_patch(&path, &Value::Array(patch), &[])
+    {
+        Ok(work_item) => {
+            Ok(context.json_or_report(ok_value(work_item.clone()), || updated_lines(&work_item)))
+        }
+        Err(error) if error.code == ErrorCode::NotFound => Err(AdoError {
+            message: format!("Work item #{id} not found"),
+            ..error
+        }),
+        Err(error) => Err(error),
+    }
+}
+
+/// The module's `update_work_item/1` patch, captured: five `add` operations in
+/// the module's own order — title, description, **state, assigned-to**, priority
+/// — and, when `--tags` is given, one `replace` for the tag list **first**, which
+/// is how `[tags | patch]` prepends it.
+fn update_patch(title: Option<String>, options: WorkItemOptions) -> Vec<Value> {
+    let mut patch = [
+        ("/fields/System.Title", title.map(Value::from)),
+        (
+            "/fields/System.Description",
+            options.description.map(Value::from),
+        ),
+        ("/fields/System.State", options.state.map(Value::from)),
+        (
+            "/fields/System.AssignedTo",
+            options.assigned_to.map(Value::from),
+        ),
+        (
+            "/fields/Microsoft.VSTS.Common.Priority",
+            options.priority.map(Value::from),
+        ),
+    ]
+    .into_iter()
+    .filter_map(|(path, value)| value.map(|value| add_op(path, value)))
+    .collect::<Vec<_>>();
+
+    if let Some(tags) = options.tags {
+        patch.insert(
+            0,
+            json!({"op": "replace", "path": "/fields/System.Tags", "value": tags}),
+        );
+    }
+
+    patch
+}
+
+/// One `add` operation of the module's `build_json_patch/1`.
+fn add_op(path: &str, value: Value) -> Value {
+    json!({"op": "add", "path": path, "value": value})
+}
+
+/// `ado workitems delete`: `DELETE /_apis/wit/workitems/{id}`. No prompt and no
+/// `--force` (R5, captured): the frozen CLI sends the DELETE on `n` and on EOF.
+/// A 404 answers the module's own message; every other error is the shared
+/// envelope.
+pub fn delete(context: &mut Context, id: i64) -> Result<Report, AdoError> {
+    let path = format!("/_apis/wit/workitems/{id}");
+
+    match context.client()?.delete(&path, &[]) {
+        Ok(()) => {
+            let message = format!("Work item #{id} deleted.");
+
+            Ok(context.json_or_report(ok_message(&message), || Report::Text(message)))
+        }
+        Err(error) if error.code == ErrorCode::NotFound => Err(AdoError {
+            message: format!("Work item #{id} not found"),
+            ..error
+        }),
+        Err(error) => Err(error),
+    }
+}
+
+/// The module's `create_work_item/1` success lines, minus the colour: the created
+/// id and title, then type, state and the `_links.html.href` (empty when the link
+/// is missing, exactly as the frozen Access chain reads it).
+fn created_lines(work_item: &Value) -> Report {
+    let fields = fields_of(work_item);
+
+    Report::Text(format!(
+        "Work item #{} created: {}\n  Type:  {}\n  State: {}\n  URL:   {}",
+        id_cell(work_item),
+        field(fields, "System.Title").unwrap_or_default(),
+        field(fields, "System.WorkItemType").unwrap_or_default(),
+        field(fields, "System.State").unwrap_or_default(),
+        html_url(work_item),
+    ))
+}
+
+/// The module's `update_work_item/1` success lines: the id, then the answered
+/// title and state.
+fn updated_lines(work_item: &Value) -> Report {
+    let fields = fields_of(work_item);
+
+    Report::Text(format!(
+        "Work item #{} updated.\n  Title: {}\n  State: {}",
+        id_cell(work_item),
+        field(fields, "System.Title").unwrap_or_default(),
+        field(fields, "System.State").unwrap_or_default(),
+    ))
+}
+
+/// `wi["_links"]["html"]["href"] || ""`: a missing link chain reads as empty.
+fn html_url(work_item: &Value) -> String {
+    work_item
+        .get("_links")
+        .and_then(|links| links.get("html"))
+        .and_then(|html| html.get("href"))
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_owned()
 }
 
 /// The module's `run_wiql_query/3`: POST the WIQL, slice the ids with `--top`,
@@ -538,6 +754,141 @@ mod tests {
         assert!(
             detail.contains("  Assigned To: (unassigned)\n"),
             "detail: {detail}"
+        );
+    }
+
+    #[test]
+    fn create_patch_is_the_captured_field_order_and_skips_absent_options() {
+        assert_eq!(
+            create_patch("T", WorkItemOptions::default()),
+            vec![json!({"op": "add", "path": "/fields/System.Title", "value": "T"})],
+            "an absent option is an absent operation"
+        );
+        assert_eq!(
+            create_patch(
+                "T",
+                WorkItemOptions {
+                    description: Some("D".to_owned()),
+                    state: Some("Active".to_owned()),
+                    assigned_to: Some("alice".to_owned()),
+                    priority: Some(2),
+                    tags: Some("frontend,ui".to_owned()),
+                },
+            ),
+            vec![
+                json!({"op": "add", "path": "/fields/System.Title", "value": "T"}),
+                json!({"op": "add", "path": "/fields/System.Description", "value": "D"}),
+                json!({"op": "add", "path": "/fields/System.AssignedTo", "value": "alice"}),
+                json!({"op": "add", "path": "/fields/System.State", "value": "Active"}),
+                json!({"op": "add", "path": "/fields/Microsoft.VSTS.Common.Priority", "value": 2}),
+                json!({"op": "add", "path": "/fields/System.Tags", "value": "frontend,ui"}),
+            ],
+            "captured: title, description, assigned-to, state, priority, tags"
+        );
+        assert_eq!(
+            create_patch(
+                "T",
+                WorkItemOptions {
+                    priority: Some(3),
+                    ..WorkItemOptions::default()
+                },
+            ),
+            vec![
+                json!({"op": "add", "path": "/fields/System.Title", "value": "T"}),
+                json!({"op": "add", "path": "/fields/Microsoft.VSTS.Common.Priority", "value": 3}),
+            ],
+            "--priority is an integer operation"
+        );
+    }
+
+    #[test]
+    fn update_patch_puts_tags_first_and_uses_the_modules_own_field_order() {
+        assert_eq!(
+            update_patch(Some("T".to_owned()), WorkItemOptions::default()),
+            vec![json!({"op": "add", "path": "/fields/System.Title", "value": "T"})]
+        );
+        assert_eq!(
+            update_patch(
+                Some("T".to_owned()),
+                WorkItemOptions {
+                    description: Some("D".to_owned()),
+                    state: Some("Closed".to_owned()),
+                    assigned_to: Some("bob".to_owned()),
+                    priority: Some(1),
+                    tags: Some("a,b".to_owned()),
+                },
+            ),
+            vec![
+                json!({"op": "replace", "path": "/fields/System.Tags", "value": "a,b"}),
+                json!({"op": "add", "path": "/fields/System.Title", "value": "T"}),
+                json!({"op": "add", "path": "/fields/System.Description", "value": "D"}),
+                json!({"op": "add", "path": "/fields/System.State", "value": "Closed"}),
+                json!({"op": "add", "path": "/fields/System.AssignedTo", "value": "bob"}),
+                json!({"op": "add", "path": "/fields/Microsoft.VSTS.Common.Priority", "value": 1}),
+            ],
+            "captured: tags first with replace, then title, description, state, assigned-to, priority"
+        );
+        assert_eq!(
+            update_patch(
+                None,
+                WorkItemOptions {
+                    tags: Some("solo".to_owned()),
+                    ..WorkItemOptions::default()
+                },
+            ),
+            vec![json!({"op": "replace", "path": "/fields/System.Tags", "value": "solo"})],
+            "tags alone is still a non-empty patch"
+        );
+        assert!(
+            WorkItemOptions::default().is_empty(),
+            "the guard reads no field at all from the options"
+        );
+    }
+
+    #[test]
+    fn created_lines_print_the_captured_success_line() {
+        let Report::Text(text) = created_lines(&json!({
+            "id": 42,
+            "fields": {
+                "System.Title": "Checkout fails on expired cards",
+                "System.WorkItemType": "Bug",
+                "System.State": "New",
+            },
+            "_links": {"html": {"href": "https://dev.azure.com/myorg/Alpha/_workitems/edit/42"}},
+        })) else {
+            panic!("the success line is a text report");
+        };
+
+        assert_eq!(
+            text,
+            "Work item #42 created: Checkout fails on expired cards\n  Type:  Bug\n  State: New\n  URL:   https://dev.azure.com/myorg/Alpha/_workitems/edit/42"
+        );
+    }
+
+    #[test]
+    fn created_lines_read_a_missing_link_and_missing_fields_as_empty() {
+        let Report::Text(text) = created_lines(&json!({"id": 7})) else {
+            panic!("the success line is a text report");
+        };
+
+        assert_eq!(
+            text, "Work item #7 created: \n  Type:  \n  State: \n  URL:   ",
+            "the frozen Access chain reads nil as empty, and interpolation prints nothing"
+        );
+    }
+
+    #[test]
+    fn updated_lines_print_the_captured_success_line() {
+        let Report::Text(text) = updated_lines(&json!({
+            "id": 42,
+            "fields": {"System.Title": "Renamed", "System.State": "Active"},
+        })) else {
+            panic!("the success line is a text report");
+        };
+
+        assert_eq!(
+            text,
+            "Work item #42 updated.\n  Title: Renamed\n  State: Active"
         );
     }
 }

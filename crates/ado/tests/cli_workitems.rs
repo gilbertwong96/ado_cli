@@ -976,3 +976,633 @@ fn a_closed_stdout_is_a_silent_success() {
     );
     assert!(output.stderr.is_empty(), "stderr: {}", stderr_of(&output));
 }
+
+// ── write paths: create, update, delete ──────────────────────────────────
+//
+// Every method, path and body below is the request the frozen escript sent,
+// captured against the standalone mock; every response the tests serve is that
+// capture's answer. The two work item writes carry `application/json-patch+json`
+// and a **JSON-patch array**, not an object: `create` builds its six `add`
+// operations in the module's order (title, description, assigned-to, state,
+// priority, tags), and `update` builds five in *its* order (title, description,
+// state, assigned-to, priority) and prepends a `replace` for tags when it is
+// given. The `--json` success output is this build's value/message envelope where
+// the frozen CLI prints its human success line (D33). Stdin is always scripted:
+// `/dev/null` is EOF, and the captures show no prompt for the delete (R5) — it
+// proceeds on EOF and on `n`, and the tree has no `--force`.
+
+use std::io::Write;
+
+const CREATE_BUG_PATH: &str = "/myorg/Alpha/_apis/wit/workitems/$Bug";
+const CREATE_USER_STORY_PATH: &str = "/myorg/Alpha/_apis/wit/workitems/$User%20Story";
+const UPDATE_42_PATH: &str = "/myorg/_apis/wit/workitems/42";
+const UPDATE_43_PATH: &str = "/myorg/_apis/wit/workitems/43";
+const DELETE_42_PATH: &str = "/myorg/_apis/wit/workitems/42";
+const JSON_PATCH: &str = "application/json-patch+json";
+
+/// Runs the binary with `stdin` written to a pipe (never a terminal); an empty
+/// slice is EOF.
+fn run_with_stdin(home: &TempHome, server: &MockServer, args: &[&str], stdin: &[u8]) -> Output {
+    let mut child = command(home, server, args)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn ado");
+    child
+        .stdin
+        .take()
+        .expect("a piped stdin")
+        .write_all(stdin)
+        .expect("write the scripted stdin");
+    child.wait_with_output().expect("wait for ado")
+}
+
+/// The request body as JSON — an array for the JSON-patch writes.
+fn sent_body(request: &RecordedRequest) -> Value {
+    serde_json::from_str(request.body.as_deref().expect("a request body"))
+        .expect("the request body is JSON")
+}
+
+/// The captured `POST .../workitems/$Bug` answer.
+fn created_bug() -> Value {
+    json!({
+        "id": 42,
+        "rev": 1,
+        "fields": {
+            "System.Id": 42,
+            "System.Title": "Checkout fails on expired cards",
+            "System.WorkItemType": "Bug",
+            "System.State": "New",
+        },
+        "_links": {
+            "html": {"href": "https://dev.azure.com/myorg/Alpha/_workitems/edit/42"},
+        },
+        "url": "https://dev.azure.com/myorg/_apis/wit/workItems/42",
+    })
+}
+
+/// The captured `PATCH .../workitems/42` answer.
+fn updated_work_item() -> Value {
+    json!({
+        "id": 42,
+        "rev": 5,
+        "fields": {
+            "System.Id": 42,
+            "System.Title": "Checkout fails on expired cards (renamed)",
+            "System.State": "Active",
+        },
+    })
+}
+
+#[test]
+fn create_posts_the_captured_json_patch_and_emits_the_value_envelope() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "POST",
+        CREATE_BUG_PATH,
+        MockResponse::json(200, created_bug()),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "workitems",
+            "create",
+            "Alpha",
+            "--type",
+            "Bug",
+            "--title",
+            "Checkout fails on expired cards",
+            "--json",
+        ],
+    );
+
+    assert_success(&output);
+    assert_eq!(
+        serde_json::from_str::<Value>(&stdout_of(&output)).expect("stdout is one JSON document"),
+        json!({"ok": true, "result": created_bug()}),
+        "the created work item is the value envelope"
+    );
+
+    let received = server.received();
+    assert_eq!(received.len(), 1);
+    assert_eq!(received[0].method, "POST");
+    assert_eq!(received[0].path, CREATE_BUG_PATH);
+    assert_eq!(
+        received[0].query_pairs(),
+        vec![api_version()],
+        "the write carries only api-version"
+    );
+    assert_eq!(
+        received[0].header("content-type"),
+        Some(JSON_PATCH),
+        "captured: the write API requires a JSON-patch content type"
+    );
+    assert_eq!(
+        sent_body(&received[0]),
+        json!([{"op": "add", "path": "/fields/System.Title", "value": "Checkout fails on expired cards"}]),
+        "an array of patch operations, not a plain object — the field set the capture names"
+    );
+}
+
+#[test]
+fn create_full_patch_has_the_captured_field_order_and_integer_priority() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "POST",
+        CREATE_USER_STORY_PATH,
+        MockResponse::json(200, created_bug()),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "workitems",
+            "create",
+            "Alpha",
+            "--type",
+            "User Story",
+            "--title",
+            "Payment retries for soft declines",
+            "--description",
+            "Description body",
+            "--assigned-to",
+            "alice",
+            "--state",
+            "Active",
+            "--priority",
+            "2",
+            "--tags",
+            "frontend,ui",
+            "--json",
+        ],
+    );
+
+    assert_success(&output);
+
+    let received = server.received();
+    assert_eq!(
+        received[0].path, CREATE_USER_STORY_PATH,
+        "the type is a path segment: a space becomes %20"
+    );
+    assert_eq!(
+        sent_body(&received[0]),
+        json!([
+            {"op": "add", "path": "/fields/System.Title", "value": "Payment retries for soft declines"},
+            {"op": "add", "path": "/fields/System.Description", "value": "Description body"},
+            {"op": "add", "path": "/fields/System.AssignedTo", "value": "alice"},
+            {"op": "add", "path": "/fields/System.State", "value": "Active"},
+            {"op": "add", "path": "/fields/Microsoft.VSTS.Common.Priority", "value": 2},
+            {"op": "add", "path": "/fields/System.Tags", "value": "frontend,ui"},
+        ]),
+        "captured: create's order is title, description, assigned-to, state, priority, tags"
+    );
+    assert_eq!(
+        received[0].header("content-type"),
+        Some(JSON_PATCH),
+        "captured: the JSON-patch content type on the full patch too"
+    );
+}
+
+#[test]
+fn create_human_output_is_the_module_lines() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "POST",
+        CREATE_BUG_PATH,
+        MockResponse::json(200, created_bug()),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "workitems",
+            "create",
+            "Alpha",
+            "--type",
+            "Bug",
+            "--title",
+            "Checkout fails on expired cards",
+        ],
+    );
+
+    assert_success(&output);
+    assert_eq!(
+        stdout_of(&output),
+        "Work item #42 created: Checkout fails on expired cards\n  Type:  Bug\n  State: New\n  URL:   https://dev.azure.com/myorg/Alpha/_workitems/edit/42\n",
+        "the module's success line and three detail lines"
+    );
+}
+
+#[test]
+fn create_without_type_is_a_usage_error_that_names_the_option() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+
+    let output = run(&home, &server, &["workitems", "create", "Alpha", "--json"]);
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        stderr_of(&output).contains("--type"),
+        "the required option is named: {}",
+        stderr_of(&output)
+    );
+    assert!(
+        stdout_of(&output).is_empty(),
+        "no envelope for a usage error: {}",
+        stdout_of(&output)
+    );
+    assert!(
+        server.received().is_empty(),
+        "a missing required option sends no request"
+    );
+}
+
+#[test]
+fn create_without_title_is_a_usage_error_that_names_the_option() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+
+    let output = run(
+        &home,
+        &server,
+        &["workitems", "create", "Alpha", "--type", "Bug", "--json"],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        stderr_of(&output).contains("--title"),
+        "the required option is named: {}",
+        stderr_of(&output)
+    );
+    assert!(server.received().is_empty());
+}
+
+#[test]
+fn create_400_is_the_error_envelope_with_the_upstream_body() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "POST",
+        "/myorg/Broken/_apis/wit/workitems/$Bug",
+        MockResponse::json(
+            400,
+            json!({"message": "TF400898: An Internal Error Occurred."}),
+        ),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "workitems",
+            "create",
+            "Broken",
+            "--type",
+            "Bug",
+            "--title",
+            "T",
+            "--json",
+        ],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    let envelope: Value =
+        serde_json::from_str(&stdout_of(&output)).expect("stdout is one JSON document");
+    assert_eq!(envelope["ok"], json!(false));
+    assert_eq!(
+        envelope["error"]["code"],
+        json!("api_error"),
+        "the frozen taxonomy: 400 is api_error, not validation_error (R7)"
+    );
+    assert_eq!(envelope["error"]["status"], json!(400));
+    assert_eq!(
+        envelope["error"]["details"]["body"],
+        json!(r#"{"message":"TF400898: An Internal Error Occurred."}"#),
+        "this build keeps the upstream bytes (D24)"
+    );
+}
+
+#[test]
+fn update_sends_a_json_patch_array_not_a_plain_object() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "PATCH",
+        UPDATE_42_PATH,
+        MockResponse::json(200, updated_work_item()),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "workitems",
+            "update",
+            "42",
+            "--title",
+            "Checkout fails on expired cards (renamed)",
+            "--json",
+        ],
+    );
+
+    assert_success(&output);
+    assert_eq!(
+        serde_json::from_str::<Value>(&stdout_of(&output)).expect("stdout is one JSON document"),
+        json!({"ok": true, "result": updated_work_item()}),
+        "the updated work item is the value envelope"
+    );
+
+    let received = server.received();
+    assert_eq!(received.len(), 1);
+    assert_eq!(received[0].method, "PATCH");
+    assert_eq!(received[0].path, UPDATE_42_PATH);
+    assert_eq!(received[0].header("content-type"), Some(JSON_PATCH));
+    assert_eq!(
+        sent_body(&received[0]),
+        json!([{"op": "add", "path": "/fields/System.Title", "value": "Checkout fails on expired cards (renamed)"}]),
+        "the body is a patch array: a plain object here is the defect this task exists to avoid"
+    );
+}
+
+#[test]
+fn update_all_fields_prepends_tags_with_the_replace_op() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "PATCH",
+        UPDATE_43_PATH,
+        MockResponse::json(200, updated_work_item()),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "workitems",
+            "update",
+            "43",
+            "--title",
+            "Payment retries for soft declines (renamed)",
+            "--description",
+            "New body",
+            "--state",
+            "Closed",
+            "--assigned-to",
+            "bob",
+            "--priority",
+            "1",
+            "--tags",
+            "a,b",
+            "--json",
+        ],
+    );
+
+    assert_success(&output);
+    assert_eq!(
+        sent_body(&server.received()[0]),
+        json!([
+            {"op": "replace", "path": "/fields/System.Tags", "value": "a,b"},
+            {"op": "add", "path": "/fields/System.Title", "value": "Payment retries for soft declines (renamed)"},
+            {"op": "add", "path": "/fields/System.Description", "value": "New body"},
+            {"op": "add", "path": "/fields/System.State", "value": "Closed"},
+            {"op": "add", "path": "/fields/System.AssignedTo", "value": "bob"},
+            {"op": "add", "path": "/fields/Microsoft.VSTS.Common.Priority", "value": 1},
+        ]),
+        "captured: update's order is tags (replace, first), then title, description, state, assigned-to, priority"
+    );
+}
+
+#[test]
+fn update_human_output_is_the_module_lines() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "PATCH",
+        UPDATE_42_PATH,
+        MockResponse::json(200, updated_work_item()),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "workitems",
+            "update",
+            "42",
+            "--title",
+            "Checkout fails on expired cards (renamed)",
+        ],
+    );
+
+    assert_success(&output);
+    assert_eq!(
+        stdout_of(&output),
+        "Work item #42 updated.\n  Title: Checkout fails on expired cards (renamed)\n  State: Active\n"
+    );
+}
+
+#[test]
+fn update_without_options_is_a_validation_error_without_a_request() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+
+    let output = run(&home, &server, &["workitems", "update", "42", "--json"]);
+
+    assert_eq!(output.status.code(), Some(1));
+    let envelope: Value =
+        serde_json::from_str(&stdout_of(&output)).expect("stdout is one JSON document");
+    assert_eq!(
+        envelope,
+        json!({
+            "ok": false,
+            "error": {
+                "code": "validation_error",
+                "message": "At least one field to update is required (--title, --state, --assigned-to, etc.)",
+            },
+        }),
+        "the module's guard, as this build's envelope"
+    );
+    assert!(server.received().is_empty());
+}
+
+#[test]
+fn update_404_reports_the_work_item_not_found_message() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "PATCH",
+        "/myorg/_apis/wit/workitems/999",
+        MockResponse::from_fixture("error_404").with_status(404),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &["workitems", "update", "999", "--title", "T", "--json"],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    let envelope: Value =
+        serde_json::from_str(&stdout_of(&output)).expect("stdout is one JSON document");
+    assert_eq!(envelope["error"]["code"], json!("not_found"));
+    assert_eq!(envelope["error"]["status"], json!(404));
+    assert_eq!(
+        envelope["error"]["message"],
+        json!("Work item #999 not found")
+    );
+}
+
+#[test]
+fn delete_sends_the_delete_and_emits_the_message_envelope() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "DELETE",
+        DELETE_42_PATH,
+        MockResponse::json(200, json!({"id": 42, "rev": 6})),
+    );
+
+    let output = run(&home, &server, &["workitems", "delete", "42", "--json"]);
+
+    assert_success(&output);
+    assert_eq!(
+        serde_json::from_str::<Value>(&stdout_of(&output)).expect("stdout is one JSON document"),
+        json!({"ok": true, "message": "Work item #42 deleted."}),
+        "a delete reports a message, not an API value"
+    );
+
+    let received = server.received();
+    assert_eq!(received.len(), 1);
+    assert_eq!(received[0].method, "DELETE");
+    assert_eq!(received[0].path, DELETE_42_PATH);
+    assert_eq!(received[0].query_pairs(), vec![api_version()]);
+}
+
+/// R5's evidence: with `n` on stdin the DELETE still goes out, so a prompt added
+/// here would fail this test.
+#[test]
+fn delete_with_stdin_n_sends_the_request() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "DELETE",
+        DELETE_42_PATH,
+        MockResponse::json(200, json!({"id": 42, "rev": 6})),
+    );
+
+    let output = run_with_stdin(
+        &home,
+        &server,
+        &["workitems", "delete", "42", "--json"],
+        b"n\n",
+    );
+
+    assert_success(&output);
+    assert_eq!(server.received().len(), 1, "the delete is not prompted");
+}
+
+/// R5's other blind spot: EOF (the default stdin) must not hide a prompt either.
+#[test]
+fn delete_with_eof_sends_the_request() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "DELETE",
+        DELETE_42_PATH,
+        MockResponse::json(200, json!({"id": 42, "rev": 6})),
+    );
+
+    let output = run_with_stdin(
+        &home,
+        &server,
+        &["workitems", "delete", "42", "--json"],
+        b"",
+    );
+
+    assert_success(&output);
+    assert_eq!(server.received().len(), 1, "the delete is not prompted");
+}
+
+#[test]
+fn delete_human_output_is_the_module_line() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "DELETE",
+        DELETE_42_PATH,
+        MockResponse::json(200, json!({"id": 42, "rev": 6})),
+    );
+
+    let output = run(&home, &server, &["workitems", "delete", "42"]);
+
+    assert_success(&output);
+    assert_eq!(stdout_of(&output), "Work item #42 deleted.\n");
+}
+
+#[test]
+fn delete_404_reports_the_work_item_not_found_message() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "DELETE",
+        "/myorg/_apis/wit/workitems/999",
+        MockResponse::from_fixture("error_404").with_status(404),
+    );
+
+    let output = run(&home, &server, &["workitems", "delete", "999", "--json"]);
+
+    assert_eq!(output.status.code(), Some(1));
+    let envelope: Value =
+        serde_json::from_str(&stdout_of(&output)).expect("stdout is one JSON document");
+    assert_eq!(envelope["error"]["code"], json!("not_found"));
+    assert_eq!(
+        envelope["error"]["message"],
+        json!("Work item #999 not found")
+    );
+}
+
+#[test]
+fn delete_without_an_id_is_a_usage_error() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+
+    let output = run(&home, &server, &["workitems", "delete", "--json"]);
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        stderr_of(&output).contains("id"),
+        "the usage error names the positional: {}",
+        stderr_of(&output)
+    );
+    assert!(server.received().is_empty());
+}
+
+/// The tree has no `--force` on this delete (captured: `invalid option --force`),
+/// so it must not grow one for symmetry.
+#[test]
+fn delete_has_no_force_flag() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+
+    let output = run(
+        &home,
+        &server,
+        &["workitems", "delete", "42", "--force", "--json"],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        stderr_of(&output).contains("--force"),
+        "the unknown flag is named: {}",
+        stderr_of(&output)
+    );
+    assert!(server.received().is_empty());
+}

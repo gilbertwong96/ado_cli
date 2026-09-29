@@ -229,6 +229,50 @@ fn main() -> ExitCode {
                     query.get_one::<String>("wiql").cloned(),
                     query.get_one::<i64>("top").copied(),
                 ),
+                Some(("create", create)) => commands::workitems::create(
+                    &mut context,
+                    create
+                        .get_one::<String>("project")
+                        .expect("the positional is required")
+                        .as_str(),
+                    create
+                        .get_one::<String>("type")
+                        .expect("the option is required")
+                        .as_str(),
+                    create
+                        .get_one::<String>("title")
+                        .expect("the option is required")
+                        .as_str(),
+                    commands::workitems::WorkItemOptions {
+                        description: create.get_one::<String>("description").cloned(),
+                        state: create.get_one::<String>("state").cloned(),
+                        assigned_to: create.get_one::<String>("assigned-to").cloned(),
+                        priority: create.get_one::<i64>("priority").copied(),
+                        tags: create.get_one::<String>("tags").cloned(),
+                    },
+                ),
+                Some(("update", update)) => commands::workitems::update(
+                    &mut context,
+                    update
+                        .get_one::<i64>("id")
+                        .copied()
+                        .expect("the positional is required"),
+                    update.get_one::<String>("title").cloned(),
+                    commands::workitems::WorkItemOptions {
+                        description: update.get_one::<String>("description").cloned(),
+                        state: update.get_one::<String>("state").cloned(),
+                        assigned_to: update.get_one::<String>("assigned-to").cloned(),
+                        priority: update.get_one::<i64>("priority").copied(),
+                        tags: update.get_one::<String>("tags").cloned(),
+                    },
+                ),
+                Some(("delete", delete)) => commands::workitems::delete(
+                    &mut context,
+                    delete
+                        .get_one::<i64>("id")
+                        .copied()
+                        .expect("the positional is required"),
+                ),
                 _ => Err(AdoError::validation(MISSING_SUBCOMMAND)),
             }
         }

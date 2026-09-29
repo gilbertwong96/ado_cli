@@ -506,6 +506,142 @@ pub fn command() -> Command {
                                 .allow_negative_numbers(true)
                                 .help("Maximum number of results"),
                         ),
+                )
+                .subcommand(
+                    Command::new("create")
+                        .about(
+                            "Create a new work item. Requires --type and --title. Optional: --description, --assigned_to, --state, --priority (1-4), --tags (comma-separated).",
+                        )
+                        .arg(
+                            Arg::new("project")
+                                .value_name("PROJECT")
+                                .required(true)
+                                .help("Project name or ID"),
+                        )
+                        .arg(
+                            Arg::new("type")
+                                .long("type")
+                                .value_name("TYPE")
+                                .required(true)
+                                .help("Work item type (Bug, Task, User Story, Epic, Issue)"),
+                        )
+                        .arg(
+                            Arg::new("title")
+                                .long("title")
+                                .value_name("TITLE")
+                                .required(true)
+                                .help(
+                                    "Title for the work item. Keep it concise (shown in list views, boards, and queries).",
+                                ),
+                        )
+                        .arg(
+                            Arg::new("description")
+                                .long("description")
+                                .value_name("DESC")
+                                .help(
+                                    "Description body (markdown supported). Multi-word values do not need quoting.",
+                                ),
+                        )
+                        .arg(
+                            Arg::new("assigned-to")
+                                .long("assigned-to")
+                                .value_name("USER")
+                                .help(
+                                    "User display name or email to assign the item to. The user must be a member of the project.",
+                                ),
+                        )
+                        .arg(
+                            Arg::new("state")
+                                .long("state")
+                                .value_name("STATE")
+                                .help(
+                                    "Initial state: New, Active, Proposed, etc. Depends on process template. Default is the first state in the workflow.",
+                                ),
+                        )
+                        .arg(
+                            Arg::new("priority")
+                                .long("priority")
+                                .value_name("N")
+                                .value_parser(clap::value_parser!(i64))
+                                .allow_negative_numbers(true)
+                                .help(
+                                    "Priority level: 1 (highest), 2 (high), 3 (medium), 4 (low). Default depends on process template.",
+                                ),
+                        )
+                        .arg(
+                            Arg::new("tags")
+                                .long("tags")
+                                .value_name("TAGS")
+                                .help(
+                                    "Tags as comma-separated list (e.g. frontend,ui,regression). Case-insensitive. Existing tags are auto-created.",
+                                ),
+                        ),
+                )
+                .subcommand(
+                    Command::new("update")
+                        .about(
+                            "Update a work item's fields. Pass only the fields you want to change. Setting a field to its current value is a no-op but still creates a revision entry.",
+                        )
+                        .arg(
+                            Arg::new("id")
+                                .value_name("ID")
+                                .required(true)
+                                .value_parser(clap::value_parser!(i64))
+                                .help("Work item ID"),
+                        )
+                        .arg(
+                            Arg::new("title")
+                                .long("title")
+                                .value_name("TITLE")
+                                .help("Replacement title. Leave unset to keep the current title."),
+                        )
+                        .arg(
+                            Arg::new("description")
+                                .long("description")
+                                .value_name("DESC")
+                                .help("Replacement description. Leave unset to keep current."),
+                        )
+                        .arg(
+                            Arg::new("state")
+                                .long("state")
+                                .value_name("STATE")
+                                .help(
+                                    "Target state. Must be a valid transition from the current state. Use the web UI to discover valid states for your process template.",
+                                ),
+                        )
+                        .arg(
+                            Arg::new("assigned-to")
+                                .long("assigned-to")
+                                .value_name("USER")
+                                .help("Assign to user"),
+                        )
+                        .arg(
+                            Arg::new("priority")
+                                .long("priority")
+                                .value_name("N")
+                                .value_parser(clap::value_parser!(i64))
+                                .allow_negative_numbers(true)
+                                .help("Priority (1-4)"),
+                        )
+                        .arg(
+                            Arg::new("tags")
+                                .long("tags")
+                                .value_name("TAGS")
+                                .help("Comma-separated tags (replaces all)"),
+                        ),
+                )
+                .subcommand(
+                    Command::new("delete")
+                        .about(
+                            "Permanently delete a work item. This is irreversible. By default work items can be moved to the Recycle Bin instead; deletion requires special permissions.",
+                        )
+                        .arg(
+                            Arg::new("id")
+                                .value_name("ID")
+                                .required(true)
+                                .value_parser(clap::value_parser!(i64))
+                                .help("Work item ID"),
+                        ),
                 ),
         )
         .subcommand(
