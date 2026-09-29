@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 
-use crate::config::{AuthMethod, Config, OrgEntry, save_at};
+use crate::config::{AuthMethod, Config, OrgEntry, load_at, save_at};
 use crate::credentials::{SecretStore, Stored};
 use crate::env::non_empty;
 use crate::error::AdoError;
@@ -42,12 +42,13 @@ pub fn legacy_path() -> Option<PathBuf> {
     dirs::home_dir().map(|home| home.join(LEGACY_RELATIVE_PATH))
 }
 
-/// Imports the legacy credential into `config` and `store` the first time it
-/// runs, and never again once the new config file exists. `config_file` is where
-/// the new config belongs — its absence is the "not imported yet" marker — and
-/// `legacy_file` is the Elixir CLI's `config.json`. Both come from the caller
-/// (`Context` in the binary), so the import reads and writes exactly the paths
-/// the run already resolved.
+/// Imports the legacy credential into `config` and `store`, and never again once
+/// the config file at `config_file` loads. `config_file` is where the new config
+/// belongs — the file *not* loading is the "not imported yet" marker, so a
+/// missing, unreadable or malformed file imports and a malformed one is replaced
+/// — and `legacy_file` is the Elixir CLI's `config.json`. Both come from the
+/// caller (`Context` in the binary), so the import reads and writes exactly the
+/// paths the run already resolved.
 ///
 /// A blank value is not a value (`env::non_empty`), so a legacy file whose org,
 /// token or server is whitespace-only reads as absent where the first version of
@@ -58,7 +59,7 @@ pub fn import_once(
     config_file: Option<&Path>,
     legacy_file: Option<&Path>,
 ) -> Result<bool, AdoError> {
-    let Some(target) = config_file.filter(|path| !path.exists()) else {
+    let Some(target) = config_file.filter(|path| !config_loads(path)) else {
         return Ok(false);
     };
 
@@ -87,6 +88,13 @@ pub fn import_once(
     save_at(target, config)?;
 
     Ok(true)
+}
+
+/// Whether the config file at `path` loads; a missing, unreadable or malformed
+/// file does not, and reads as absent (`config::load_at`), which is exactly what
+/// makes the one-time import run again.
+fn config_loads(path: &Path) -> bool {
+    load_at(path).is_ok_and(|config| config.is_some())
 }
 
 /// Reads the legacy file at `path` — the caller owns the path, so the binary reads
@@ -326,6 +334,40 @@ mod tests {
         assert!(
             !config_file.exists(),
             "a failed import must not leave the config marker, or the token is dropped forever"
+        );
+    }
+
+    #[test]
+    fn legacy_import_replaces_a_marker_that_does_not_load() {
+        let dir = TempDir::new("legacy-corrupt-marker");
+        let legacy = legacy_file(&dir, r#"{"org":"myorg","method":"pat","pat":"legacy-pat"}"#);
+        let config_file = dir.path().join("ado").join("config.toml");
+        fs::create_dir_all(config_file.parent().expect("parent")).expect("mkdir");
+        fs::write(&config_file, "org = \"broken").expect("write the corrupt marker");
+        let store = InMemoryStore::new();
+
+        let imported = import_once(
+            &mut Config::default(),
+            &store,
+            Some(&config_file),
+            Some(&legacy),
+        )
+        .expect("a marker that does not load is not an error");
+
+        assert!(
+            imported,
+            "a config file that does not load must not block the import"
+        );
+        let saved = load_at(&config_file)
+            .expect("load")
+            .expect("the corrupt marker is replaced");
+        assert_eq!(saved.default_org.as_deref(), Some("myorg"));
+        assert_eq!(
+            store.get("myorg").expect("get"),
+            Some(Stored {
+                method: AuthMethod::Pat,
+                token: "legacy-pat".to_owned()
+            })
         );
     }
 

@@ -262,7 +262,7 @@ impl Context {
     pub fn auth_status(&self) -> AuthStatus {
         let env = self.env();
         let configured = self.config.is_some();
-        let org = present(env.get(ENV_ORG)).or_else(|| self.default_org());
+        let org = self.requested_org();
         let server = self.server().unwrap_or_else(|| DEFAULT_SERVER.to_owned());
         let method = self
             .stored_method(org.as_deref())
@@ -293,8 +293,11 @@ impl Context {
     }
 
     /// The credential this run uses: the flags and the environment first — neither
-    /// reads the store — then the store for the organization, and when nothing
-    /// answered at all, the one-time legacy import (W1-5).
+    /// reads the store — then the store for the organization, and when neither
+    /// produced a credential, the one-time legacy import (W1-5). The import runs
+    /// only when the run named no organization or named the legacy file's own, so
+    /// a failed `--org other` cannot re-default the install to the legacy
+    /// organization.
     fn credentials(&mut self) -> Result<Credentials, AdoError> {
         match self.resolve() {
             Err(error) if error.code == ErrorCode::AuthRequired => {
@@ -312,12 +315,34 @@ impl Context {
         credentials::resolve(&self.env(), self.store.as_ref(), self.config.as_ref())
     }
 
-    /// The one-time import of the Elixir CLI's config file (spec §7). The missing
-    /// config file is what allows it and what makes it one-time: the credential is
-    /// stored before the marker is written, so a failed import leaves no marker and
-    /// the next run may import again, while a successful one is never repeated.
+    /// The organization the run itself named: the flag or `ADO_ORG`, then the
+    /// config's default — the same pair `credentials::resolve` reads, so "the run
+    /// named one" is exactly "resolution would use it".
+    fn requested_org(&self) -> Option<String> {
+        present(self.env().get(ENV_ORG)).or_else(|| self.default_org())
+    }
+
+    /// The one-time import of the Elixir CLI's config file (spec §7). A config
+    /// file that does not load — missing, unreadable or malformed — is what allows
+    /// it and what makes it one-time: the credential is stored before the marker is
+    /// written, so a failed import leaves no marker and the next run may import
+    /// again, while a successful one is never repeated. The run's own organization
+    /// also has to agree: naming no organization imports the legacy one, naming the
+    /// legacy file's organization rescues a migrated install whose organization is
+    /// set but whose credential is not, and naming any other organization imports
+    /// nothing.
     fn import_legacy(&mut self) -> Result<bool, AdoError> {
-        let mut config = self.config.clone().unwrap_or_default();
+        if self.config.is_some() {
+            return Ok(false);
+        }
+
+        if let Some(requested) = self.requested_org()
+            && self.legacy_org().as_deref() != Some(requested.as_str())
+        {
+            return Ok(false);
+        }
+
+        let mut config = Config::default();
         let imported = legacy::import_once(
             &mut config,
             self.store.as_ref(),
@@ -470,6 +495,14 @@ mod tests {
             legacy_file: Some(home.path().join(LEGACY_RELATIVE_PATH)),
             client: None,
         }
+    }
+
+    /// Writes `~/.ado_cli/config.json` in the test home.
+    fn write_legacy(home: &TempHome, contents: &str) {
+        let legacy_file = home.path().join(LEGACY_RELATIVE_PATH);
+        fs::create_dir_all(legacy_file.parent().expect("the legacy directory"))
+            .expect("create the legacy directory");
+        fs::write(&legacy_file, contents).expect("write the legacy file");
     }
 
     #[test]
@@ -768,6 +801,109 @@ mod tests {
         assert!(
             fresh_store.calls().is_empty(),
             "the legacy credential is stored once, never again"
+        );
+    }
+
+    #[test]
+    fn a_failed_named_org_does_not_import_the_legacy_file() {
+        let home = TempHome::new();
+        write_legacy(
+            &home,
+            r#"{"org":"legacyorg","method":"pat","pat":"legacy-pat"}"#,
+        );
+        let store = InMemoryStore::new();
+        let flags = GlobalOpts {
+            org: Some("otherorg".to_owned()),
+            ..opts()
+        };
+        let mut context = client_context(flags, &MapEnv::new(), &store, &home);
+
+        let error = context
+            .client()
+            .err()
+            .expect("the named organization has no credential");
+
+        assert_eq!(error.code, ErrorCode::AuthRequired);
+        assert!(
+            !home.config_dir().join(CONFIG_FILE).exists(),
+            "a failed named organization must not write the import's marker"
+        );
+        assert_eq!(
+            store.calls(),
+            vec![StoreCall::Get("otherorg".to_owned())],
+            "the named organization is read, and nothing is written"
+        );
+    }
+
+    #[test]
+    fn the_legacy_org_still_imports_when_the_environment_names_it() {
+        let home = TempHome::new();
+        let server = MockServer::start();
+        server.expect(
+            "GET",
+            "/legacyorg/_apis/projects",
+            MockResponse::json(200, json!({"value": []})),
+        );
+        write_legacy(
+            &home,
+            r#"{"org":"legacyorg","method":"pat","pat":"legacy-pat"}"#,
+        );
+        let store = InMemoryStore::new();
+        let env = MapEnv::new()
+            .set(ENV_ORG, "legacyorg")
+            .set(ENV_SERVER, server.base_url());
+        let mut context = client_context(opts(), &env, &store, &home);
+
+        context
+            .client()
+            .expect("the run named the legacy file's own organization, so the import rescues it")
+            .get("/_apis/projects", &[])
+            .expect("the mock answers");
+
+        let received = server.received();
+        assert_eq!(received[0].path, "/legacyorg/_apis/projects");
+        assert_eq!(received[0].header("authorization"), Some(BASIC_LEGACY_PAT));
+        assert!(
+            home.config_dir().join(CONFIG_FILE).exists(),
+            "the import leaves its marker behind"
+        );
+    }
+
+    #[test]
+    fn a_marker_that_does_not_load_is_replaced_by_the_import() {
+        let home = TempHome::new();
+        let server = MockServer::start();
+        server.expect(
+            "GET",
+            "/legacyorg/_apis/projects",
+            MockResponse::json(200, json!({"value": []})),
+        );
+        let config_file = home.config_dir().join(CONFIG_FILE);
+        fs::create_dir_all(config_file.parent().expect("the config directory"))
+            .expect("create the config directory");
+        fs::write(&config_file, "org = \"broken").expect("write the corrupt marker");
+        write_legacy(
+            &home,
+            r#"{"org":"legacyorg","method":"pat","pat":"legacy-pat"}"#,
+        );
+        let store = InMemoryStore::new();
+        let env = MapEnv::new().set(ENV_SERVER, server.base_url());
+        let mut context = client_context(opts(), &env, &store, &home);
+
+        context
+            .client()
+            .expect("a marker that does not load must not block the import")
+            .get("/_apis/projects", &[])
+            .expect("the mock answers");
+
+        let text = fs::read_to_string(&config_file).expect("read the replaced marker");
+        assert!(
+            text.contains(r#"default_org = "legacyorg""#),
+            "the corrupt marker was replaced: {text}"
+        );
+        assert_eq!(
+            store.get("legacyorg").expect("the imported credential"),
+            Some(stored(AuthMethod::Pat, "legacy-pat"))
         );
     }
 
