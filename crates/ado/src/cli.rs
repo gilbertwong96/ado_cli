@@ -646,6 +646,303 @@ pub fn command() -> Command {
                                     "Output a single concatenated unified diff stream for ALL changed files (like `git diff` on the whole PR). Pipe to a pager or syntax highlighter.",
                                 ),
                         ),
+                )
+                .subcommand(
+                    Command::new("comments")
+                        .about(
+                            "Manage pull request review comments. Subcommands: add (create thread or reply), list (view threads), update (edit content or status), delete (remove comment or close thread), resolve (mark thread as fixed). A 'thread' is the top-level comment; a 'comment' is a reply within a thread.",
+                        )
+                        .subcommand(
+                            Command::new("list")
+                                .about(
+                                    "List review threads on a pull request. Default output is a compact table of thread headers (ID, status, file, line, author). Use --all to expand each thread with full comment content, file paths, and reply markers.",
+                                )
+                                .arg(
+                                    Arg::new("project")
+                                        .value_name("PROJECT")
+                                        .required(true)
+                                        .help("Project name or ID"),
+                                )
+                                .arg(
+                                    Arg::new("repo_id")
+                                        .value_name("REPO_ID")
+                                        .required(true)
+                                        .help("Repository name or ID"),
+                                )
+                                .arg(
+                                    Arg::new("pr_id")
+                                        .value_name("PR_ID")
+                                        .required(true)
+                                        .value_parser(clap::value_parser!(i64))
+                                        .help("Numeric PR ID"),
+                                )
+                                .arg(
+                                    Arg::new("all")
+                                        .long("all")
+                                        .action(ArgAction::SetTrue)
+                                        .help(
+                                            "Show full comment content, file paths, and reply markers for each thread (verbose mode). Default shows just thread headers.",
+                                        ),
+                                ),
+                        )
+                        .subcommand(
+                            Command::new("update")
+                                .about(
+                                    "Update a comment or thread. Pass --content to edit a comment's text, --status to change a thread's resolution state, or both. --content supports @<file> and - (stdin) for multi-line input.",
+                                )
+                                .arg(
+                                    Arg::new("project")
+                                        .value_name("PROJECT")
+                                        .required(true)
+                                        .help("Project name or ID"),
+                                )
+                                .arg(
+                                    Arg::new("repo_id")
+                                        .value_name("REPO_ID")
+                                        .required(true)
+                                        .help("Repository name or ID"),
+                                )
+                                .arg(
+                                    Arg::new("pr_id")
+                                        .value_name("PR_ID")
+                                        .required(true)
+                                        .value_parser(clap::value_parser!(i64))
+                                        .help("Numeric PR ID"),
+                                )
+                                .arg(
+                                    Arg::new("thread_id")
+                                        .value_name("THREAD_ID")
+                                        .required(true)
+                                        .value_parser(clap::value_parser!(i64))
+                                        .help("Thread ID (from `comments list`)"),
+                                )
+                                .arg(
+                                    Arg::new("comment_id")
+                                        .value_name("COMMENT_ID")
+                                        .required(true)
+                                        .value_parser(clap::value_parser!(i64))
+                                        .help("Comment ID within the thread (from `comments list --all`)"),
+                                )
+                                .arg(
+                                    Arg::new("content")
+                                        .long("content")
+                                        .value_name("TEXT")
+                                        .help(
+                                            "New comment content. Use @<file> to read from a file or `-` to read from stdin. Omit to update status only.",
+                                        ),
+                                )
+                                .arg(
+                                    Arg::new("status")
+                                        .long("status")
+                                        .value_name("STATUS")
+                                        .help(
+                                            "New thread status. Valid: active (default — open thread), fixed (resolved, hides from active view), wontFix (acknowledged but won't fix), closed (admin-closed), byDesign (working as intended). Omit to update content only.",
+                                        ),
+                                )
+                                .arg(
+                                    Arg::new("resolved-by-me")
+                                        .long("resolved-by-me")
+                                        .action(ArgAction::SetTrue)
+                                        .help(
+                                            "When --status is set, also set the thread's resolvedBy field to the currently-authenticated user's GUID. Makes an extra GET to /_apis/connectionData to look up your ID.",
+                                        ),
+                                )
+                                .arg(
+                                    Arg::new("dry-run")
+                                        .long("dry-run")
+                                        .action(ArgAction::SetTrue)
+                                        .help(
+                                            "Print the API request(s) that would be made (method, path, body) as JSON, then exit. Makes no network calls. Useful for previewing the patch before applying.",
+                                        ),
+                                ),
+                        )
+                        .subcommand(
+                            Command::new("add")
+                                .about(
+                                    "Add a review comment to a pull request. By default creates a new thread; pass --thread-id to reply to an existing one. For an inline code comment, also pass --file-path and --line.",
+                                )
+                                .arg(
+                                    Arg::new("project")
+                                        .value_name("PROJECT")
+                                        .required(true)
+                                        .help("Project name or ID"),
+                                )
+                                .arg(
+                                    Arg::new("repo_id")
+                                        .value_name("REPO_ID")
+                                        .required(true)
+                                        .help("Repository name or ID"),
+                                )
+                                .arg(
+                                    Arg::new("pr_id")
+                                        .value_name("PR_ID")
+                                        .required(true)
+                                        .value_parser(clap::value_parser!(i64))
+                                        .help("Numeric PR ID"),
+                                )
+                                .arg(
+                                    Arg::new("content")
+                                        .long("content")
+                                        .value_name("TEXT")
+                                        .required(true)
+                                        .help(
+                                            "Comment text (markdown supported in the web UI). Use @<file> to read from a file or `-` to read from stdin.",
+                                        ),
+                                )
+                                .arg(
+                                    Arg::new("file-path")
+                                        .long("file-path")
+                                        .value_name("PATH")
+                                        .help(
+                                            "File path for an inline comment (e.g. 'src/foo.ex'). Omit for a general PR comment (not attached to a file).",
+                                        ),
+                                )
+                                .arg(
+                                    Arg::new("line")
+                                        .long("line")
+                                        .value_name("N")
+                                        .value_parser(clap::value_parser!(i64))
+                                        .allow_negative_numbers(true)
+                                        .help(
+                                            "Starting line number for an inline comment. Requires --file-path. Use --end-line to comment on a range of lines.",
+                                        ),
+                                )
+                                .arg(
+                                    Arg::new("end-line")
+                                        .long("end-line")
+                                        .value_name("N")
+                                        .value_parser(clap::value_parser!(i64))
+                                        .allow_negative_numbers(true)
+                                        .help(
+                                            "Ending line number for a multi-line (codeblock) comment. Requires --file-path and --line.",
+                                        ),
+                                )
+                                .arg(
+                                    Arg::new("thread-id")
+                                        .long("thread-id")
+                                        .value_name("THREAD_ID")
+                                        .value_parser(clap::value_parser!(i64))
+                                        .allow_negative_numbers(true)
+                                        .help(
+                                            "Reply to an existing thread (the comment is added as a new reply). Without this flag, a NEW thread is created.",
+                                        ),
+                                )
+                                .arg(
+                                    Arg::new("comment-id")
+                                        .long("comment-id")
+                                        .value_name("COMMENT_ID")
+                                        .value_parser(clap::value_parser!(i64))
+                                        .allow_negative_numbers(true)
+                                        .help(
+                                            "Parent comment to reply to (requires --thread-id). Use 0 to start a new top-level comment in the thread (default behavior if --thread-id is set but --comment-id is not).",
+                                        ),
+                                )
+                                .arg(
+                                    Arg::new("status")
+                                        .long("status")
+                                        .value_name("STATUS")
+                                        .help(
+                                            "Thread status when creating a new thread. Valid: active (default), fixed, wontFix, closed, byDesign.",
+                                        ),
+                                ),
+                        )
+                        .subcommand(
+                            Command::new("delete")
+                                .about(
+                                    "Delete a review comment or close a thread. Pass --comment-id to delete a specific comment (HTTP DELETE). Without --comment-id, the thread is closed (PATCH status=closed). Use --force to skip the confirmation prompt.",
+                                )
+                                .arg(
+                                    Arg::new("project")
+                                        .value_name("PROJECT")
+                                        .required(true)
+                                        .help("Project name or ID"),
+                                )
+                                .arg(
+                                    Arg::new("repo_id")
+                                        .value_name("REPO_ID")
+                                        .required(true)
+                                        .help("Repository name or ID"),
+                                )
+                                .arg(
+                                    Arg::new("pr_id")
+                                        .value_name("PR_ID")
+                                        .required(true)
+                                        .value_parser(clap::value_parser!(i64))
+                                        .help("Numeric PR ID"),
+                                )
+                                .arg(
+                                    Arg::new("thread_id")
+                                        .value_name("THREAD_ID")
+                                        .required(true)
+                                        .value_parser(clap::value_parser!(i64))
+                                        .help("Thread ID (from `comments list`)"),
+                                )
+                                .arg(
+                                    Arg::new("comment-id")
+                                        .long("comment-id")
+                                        .value_name("COMMENT_ID")
+                                        .value_parser(clap::value_parser!(i64))
+                                        .allow_negative_numbers(true)
+                                        .help(
+                                            "Comment ID within the thread to delete. Omit to delete the entire thread.",
+                                        ),
+                                )
+                                .arg(
+                                    Arg::new("force")
+                                        .long("force")
+                                        .action(ArgAction::SetTrue)
+                                        .help("Skip confirmation prompt."),
+                                ),
+                        )
+                        .subcommand(
+                            Command::new("resolve")
+                                .about(
+                                    "Resolve a review thread by setting its status. This is a convenience wrapper around `comments update --status` that does not require a comment ID. Default status is 'fixed'. Use --resolved-by-me to attribute the resolution to yourself.",
+                                )
+                                .arg(
+                                    Arg::new("project")
+                                        .value_name("PROJECT")
+                                        .required(true)
+                                        .help("Project name or ID"),
+                                )
+                                .arg(
+                                    Arg::new("repo_id")
+                                        .value_name("REPO_ID")
+                                        .required(true)
+                                        .help("Repository name or ID"),
+                                )
+                                .arg(
+                                    Arg::new("pr_id")
+                                        .value_name("PR_ID")
+                                        .required(true)
+                                        .value_parser(clap::value_parser!(i64))
+                                        .help("Numeric PR ID"),
+                                )
+                                .arg(
+                                    Arg::new("thread_id")
+                                        .value_name("THREAD_ID")
+                                        .required(true)
+                                        .value_parser(clap::value_parser!(i64))
+                                        .help("Thread ID (from `comments list`)"),
+                                )
+                                .arg(
+                                    Arg::new("status")
+                                        .long("status")
+                                        .value_name("STATUS")
+                                        .default_value("fixed")
+                                        .help(
+                                            "Resolution status. Valid: fixed (resolved), wontFix (won't fix), closed (admin-closed), byDesign (working as intended), active (reopen).",
+                                        ),
+                                )
+                                .arg(
+                                    Arg::new("resolved-by-me")
+                                        .long("resolved-by-me")
+                                        .action(ArgAction::SetTrue)
+                                        .help(
+                                            "Attribute the resolution to the currently-authenticated user. Makes an extra GET to /_apis/connectionData to look up your GUID.",
+                                        ),
+                                ),
+                        ),
                 ),
         )
         .subcommand(

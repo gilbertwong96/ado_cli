@@ -1,9 +1,9 @@
-//! `ado prs list|show|create|complete|abandon|approve|vote|diff` — the read,
-//! write and diff paths of `lib/ado_cli/cli/pull_requests.ex`: the same REST
+//! `ado prs list|show|create|complete|abandon|approve|vote|diff|comments …` — the
+//! read, write and diff paths of `lib/ado_cli/cli/pull_requests.ex`: the same REST
 //! surface, the same filters, the same merge and vote bodies, the same request
-//! chain for `diff`, and the same human layouts.
+//! chain for `diff`, the same comment-thread surface, and the same human layouts.
 //!
-//! `comments` and `reviewers` are Task 11 and deliberately absent.
+//! `reviewers` is the rest of Task 11 and deliberately absent.
 //!
 //! The captures settled four things a reader of the frozen help would get wrong.
 //! `complete` is a **two-request** command: it reads the PR for
@@ -345,19 +345,23 @@ fn cast_vote(
 /// the identity prefix, and a 2xx body without a usable id is
 /// `auth_required`.
 fn current_user_id(context: &mut Context, pr_id: i64) -> Result<String, AdoError> {
-    let fetch = context
-        .client()?
-        .get_without_version("/_apis/connectionData");
-
-    let identity = fetch.map_err(|error| AdoError {
-        code: error.code,
-        status: error.status,
+    fetch_user_id(context).map_err(|error| AdoError {
         message: format!(
             "Cannot determine authenticated user identity for PR #{pr_id}: {}",
             error.message
         ),
-        details: error.details,
-    })?;
+        ..error
+    })
+}
+
+/// `AdoCli.Auth.current_user_id/0`: `GET /_apis/connectionData` — the captured
+/// request carries no `api-version` — read for `authenticatedUser.id`. The body
+/// without a usable id is `auth_required`. Callers add their own context's
+/// prefix to the message.
+fn fetch_user_id(context: &mut Context) -> Result<String, AdoError> {
+    let identity = context
+        .client()?
+        .get_without_version("/_apis/connectionData")?;
     let user_id = identity
         .pointer("/authenticatedUser/id")
         .and_then(Value::as_str)
@@ -368,9 +372,7 @@ fn current_user_id(context: &mut Context, pr_id: i64) -> Result<String, AdoError
         None => Err(AdoError {
             code: ErrorCode::AuthRequired,
             status: None,
-            message: format!(
-                "Cannot determine authenticated user identity for PR #{pr_id}: Connection data did not include an authenticated user ID"
-            ),
+            message: "Connection data did not include an authenticated user ID".to_owned(),
             details: None,
         }),
     }
@@ -385,6 +387,646 @@ fn vote_label(vote: i64) -> String {
         -5 => "-5 (waiting for author)".to_owned(),
         -10 => "-10 (rejected)".to_owned(),
         other => other.to_string(),
+    }
+}
+
+// ── `prs comments` (Task 11a) ────────────────────────────────────────────────
+//
+// Captured against the standalone mock (`captures/task11a/`). `list` and `update`
+// spell `pullRequests` with a capital R; `add`, `delete` and `resolve` spell
+// `pullrequests` — both kept. The write paths' `--json` documents are the frozen
+// ones and are mirrored (D38) instead of rewritten into the `{ok,result}`
+// envelope, because the frozen CLI already emits a document there; `resolve`
+// passes an unknown status through (captured — the schema's "valid" list is not
+// enforced); `--dry-run` prints its actions document even without `--json`. The
+// delete prompt is the wave's third: the command owns the question and the
+// refusal, the seam owns the stream and the exit status (D30/D31/D32).
+
+/// `list_comments/1`: `GET …/pullRequests/{pr_id}/threads` (capital R), the
+/// module's compact listing or its `--all` view, and the value envelope under
+/// `--json` (W1-R12, the oracle's captured document is the same shape).
+pub fn comments_list(
+    context: &mut Context,
+    project: &str,
+    repo_id: &str,
+    pr_id: i64,
+    all: bool,
+) -> Result<Report, AdoError> {
+    let path = comments_list_path(project, repo_id, pr_id);
+    let threads = items(context.client()?.list(&path, &[])?);
+
+    Ok(
+        context.json_or_report(ok_value(Value::Array(threads.clone())), || {
+            threads_text(&threads, all)
+        }),
+    )
+}
+
+/// `add_comment/1`'s options, grouped for clippy's argument ceiling.
+#[derive(Debug, Default, PartialEq)]
+pub struct CommentAddOptions {
+    pub content: String,
+    pub file_path: Option<String>,
+    pub line: Option<i64>,
+    pub end_line: Option<i64>,
+    pub thread_id: Option<i64>,
+    pub comment_id: Option<i64>,
+    pub status: Option<String>,
+}
+
+/// `add_comment/1`: reply to a thread when `--thread-id` is given, an inline
+/// thread when `--file-path` and `--line` are, and a general thread otherwise.
+/// The captured bodies, the canonical leading slash and the reply's default
+/// `parentCommentId 0` are the module's; a reply reads the first comment of the
+/// response for the comment id and reports `null` when there is none.
+pub fn comments_add(
+    context: &mut Context,
+    project: &str,
+    repo_id: &str,
+    pr_id: i64,
+    options: CommentAddOptions,
+) -> Result<Report, AdoError> {
+    let content = resolve_comment_content(&options.content)?;
+    let status = validate_comment_status(options.status.as_deref().unwrap_or(""))?;
+
+    if let Some(thread_id) = options.thread_id {
+        let path = format!(
+            "{}/comments",
+            comments_lower_thread_path(project, repo_id, pr_id, thread_id)
+        );
+        let body = json!({
+            "commentType": "text",
+            "content": content,
+            "parentCommentId": options.comment_id.unwrap_or(0),
+        });
+        let result = context.client()?.post(&path, &body, &[])?;
+
+        return Ok(render_add_result(
+            context,
+            result,
+            &format!("Reply added to thread {thread_id}."),
+        ));
+    }
+
+    if let (Some(file_path), Some(line)) = (options.file_path.as_deref(), options.line) {
+        let canonical_path = ensure_leading_slash(file_path);
+        let end_line = options.end_line.unwrap_or(line);
+        let range = if end_line != line {
+            format!("{line}-{end_line}")
+        } else {
+            line.to_string()
+        };
+        let path = comments_add_path(project, repo_id, pr_id);
+        let body = json!({
+            "comments": [{"commentType": "text", "content": content, "parentCommentId": 0}],
+            "status": status,
+            "threadContext": {
+                "filePath": canonical_path,
+                "rightFileStart": {"line": line, "offset": 1},
+                "rightFileEnd": {"line": end_line, "offset": 1},
+            },
+        });
+        let result = context.client()?.post(&path, &body, &[])?;
+
+        return Ok(render_add_result(
+            context,
+            result,
+            &format!("Comment added to {canonical_path}:{range}."),
+        ));
+    }
+
+    let path = comments_add_path(project, repo_id, pr_id);
+    let body = json!({
+        "comments": [{"commentType": "text", "content": content, "parentCommentId": 0}],
+        "status": status,
+    });
+    let result = context.client()?.post(&path, &body, &[])?;
+
+    Ok(render_add_result(context, result, "Comment added."))
+}
+
+/// `update_comment/1`'s options, grouped like [`CommentAddOptions`].
+#[derive(Debug, Default, PartialEq)]
+pub struct CommentUpdateOptions {
+    pub content: Option<String>,
+    pub status: Option<String>,
+    pub resolved_by_me: bool,
+    pub dry_run: bool,
+}
+
+/// `update_comment/1`: `--content` PATCHes the comment, `--status` the thread,
+/// both PATCH the thread first. `--resolved-by-me` reads the authenticated user
+/// before anything else — the dry run included — and `--dry-run` prints the
+/// would-be actions document and sends nothing. The frozen render always asks
+/// the *response* for an id where it has one and the arguments otherwise; the
+/// captured documents are mirrored exactly, including the status-only path's
+/// `status: null`.
+pub fn comments_update(
+    context: &mut Context,
+    project: &str,
+    repo_id: &str,
+    pr_id: i64,
+    thread_id: i64,
+    comment_id: i64,
+    options: CommentUpdateOptions,
+) -> Result<Report, AdoError> {
+    let wants_content = options
+        .content
+        .as_deref()
+        .is_some_and(|raw| !raw.is_empty());
+    let wants_status = options.status.as_deref().is_some_and(|raw| !raw.is_empty());
+
+    if !wants_content && !wants_status {
+        return Err(AdoError::validation(
+            "Must pass --content and/or --status. Pass --content to edit a comment, --status to change a thread's resolution state, or both.",
+        ));
+    }
+
+    let content = resolve_comment_content(options.content.as_deref().unwrap_or(""))?;
+    let status = validate_comment_status(options.status.as_deref().unwrap_or(""))?.to_owned();
+    let user_id = if options.resolved_by_me {
+        Some(comment_user_id(
+            context,
+            "Cannot resolve thread as current user",
+        )?)
+    } else {
+        None
+    };
+
+    let thread_path = comments_update_thread_path(project, repo_id, pr_id, thread_id);
+    let comment_path = comments_update_comment_path(project, repo_id, pr_id, thread_id, comment_id);
+
+    if options.dry_run {
+        return Ok(Report::Raw(format!(
+            "{}\n",
+            dry_run_document(
+                wants_content,
+                wants_status,
+                &thread_path,
+                &comment_path,
+                &status,
+                user_id.as_deref(),
+                &content,
+            )
+        )));
+    }
+
+    if wants_content && wants_status {
+        let thread = context.client()?.patch(
+            &thread_path,
+            &comment_thread_body(&status, user_id.as_deref()),
+            &[],
+        )?;
+        let comment = context
+            .client()?
+            .patch(&comment_path, &json!({"content": content}), &[])?;
+
+        return Ok(update_report(
+            context,
+            thread.get("id").cloned().unwrap_or(Value::Null),
+            comment.get("id").cloned().unwrap_or(Value::Null),
+            thread.get("status").cloned().unwrap_or(Value::Null),
+            true,
+            "Comment and thread status updated.",
+        ));
+    }
+
+    if wants_content {
+        let comment = context
+            .client()?
+            .patch(&comment_path, &json!({"content": content}), &[])?;
+
+        return Ok(update_report(
+            context,
+            json!(thread_id),
+            comment.get("id").cloned().unwrap_or(Value::Null),
+            Value::Null,
+            true,
+            "Comment updated.",
+        ));
+    }
+
+    context.client()?.patch(
+        &thread_path,
+        &comment_thread_body(&status, user_id.as_deref()),
+        &[],
+    )?;
+
+    Ok(update_report(
+        context,
+        json!(thread_id),
+        json!(comment_id),
+        Value::Null,
+        false,
+        "Thread status updated.",
+    ))
+}
+
+/// `delete_comment/1`: `--comment-id` DELETEs the comment, otherwise the thread
+/// is closed with `PATCH {"status":"closed"}`. The command owns the question and
+/// the `Cancelled.` refusal; the seam writes them to stderr and the refusal exits
+/// 1 (R2/D31/D32), where the oracle prints `Cancelled.` on stdout and exits 0.
+pub fn comments_delete(
+    context: &mut Context,
+    project: &str,
+    repo_id: &str,
+    pr_id: i64,
+    thread_id: i64,
+    comment_id: Option<i64>,
+    force: bool,
+) -> Result<Report, AdoError> {
+    let label = match comment_id {
+        Some(comment_id) => format!("comment {comment_id} in thread {thread_id}"),
+        None => format!("thread {thread_id}"),
+    };
+
+    if !force && !context.confirm(&format!("Close {label}? [y/N] ")) {
+        return Err(AdoError::cancelled("Cancelled."));
+    }
+
+    let thread_path = comments_lower_thread_path(project, repo_id, pr_id, thread_id);
+
+    match comment_id {
+        Some(comment_id) => {
+            context
+                .client()?
+                .delete(&format!("{thread_path}/comments/{comment_id}"), &[])?;
+        }
+        None => {
+            context
+                .client()?
+                .patch(&thread_path, &json!({"status": "closed"}), &[])?;
+        }
+    }
+
+    Ok(
+        context.json_or_report(json!({"ok": true, "closed": label}), || {
+            Report::Text(format!("Closed {label}."))
+        }),
+    )
+}
+
+/// `resolve_thread/1`: PATCH the thread path (lower case, captured) with the
+/// status, plus `resolvedBy` when `--resolved-by-me` read the identity. The
+/// frozen command does not validate `--status` and neither does this one.
+pub fn comments_resolve(
+    context: &mut Context,
+    project: &str,
+    repo_id: &str,
+    pr_id: i64,
+    thread_id: i64,
+    status: &str,
+    resolved_by_me: bool,
+) -> Result<Report, AdoError> {
+    let user_id = if resolved_by_me {
+        Some(comment_user_id(
+            context,
+            "Cannot determine authenticated user identity",
+        )?)
+    } else {
+        None
+    };
+
+    let path = comments_lower_thread_path(project, repo_id, pr_id, thread_id);
+    context
+        .client()?
+        .patch(&path, &comment_thread_body(status, user_id.as_deref()), &[])?;
+
+    let attribution = if resolved_by_me { " (by you)" } else { "" };
+
+    Ok(context.json_or_report(
+        json!({"ok": true, "thread": thread_id, "status": status}),
+        || {
+            Report::Text(format!(
+                "Thread {thread_id} resolved as '{status}'{attribution}."
+            ))
+        },
+    ))
+}
+
+/// `/…/git/repositories/{repo_id}/pullRequests/{pr_id}/threads` — the list path's
+/// captured spelling (capital R, unlike the add/delete/resolve paths).
+fn comments_list_path(project: &str, repo_id: &str, pr_id: i64) -> String {
+    format!(
+        "{}/pullRequests/{pr_id}/threads",
+        repository_path(project, repo_id)
+    )
+}
+
+/// The `update` thread path: the captured capital-R spelling.
+fn comments_update_thread_path(project: &str, repo_id: &str, pr_id: i64, thread_id: i64) -> String {
+    format!(
+        "{}/pullRequests/{pr_id}/threads/{thread_id}",
+        repository_path(project, repo_id)
+    )
+}
+
+/// The `update` comment path: the captured capital-R spelling.
+fn comments_update_comment_path(
+    project: &str,
+    repo_id: &str,
+    pr_id: i64,
+    thread_id: i64,
+    comment_id: i64,
+) -> String {
+    format!(
+        "{}/comments/{comment_id}",
+        comments_update_thread_path(project, repo_id, pr_id, thread_id)
+    )
+}
+
+/// `/…/git/repositories/{repo_id}/pullrequests/{pr_id}/threads` — the add path's
+/// captured spelling (lower case, unlike the list/update paths).
+fn comments_add_path(project: &str, repo_id: &str, pr_id: i64) -> String {
+    format!(
+        "{}/pullrequests/{pr_id}/threads",
+        repository_path(project, repo_id)
+    )
+}
+
+/// The `delete`/`resolve` thread path: the captured lower-case spelling.
+fn comments_lower_thread_path(project: &str, repo_id: &str, pr_id: i64, thread_id: i64) -> String {
+    format!(
+        "{}/pullrequests/{pr_id}/threads/{thread_id}",
+        repository_path(project, repo_id)
+    )
+}
+
+/// The captured `--status` validation: an absent value reads `active`, the five
+/// names pass, everything else is a validation error naming the list.
+const COMMENT_STATUSES: [&str; 5] = ["active", "fixed", "wontFix", "closed", "byDesign"];
+
+fn validate_comment_status(status: &str) -> Result<&str, AdoError> {
+    if status.is_empty() {
+        return Ok("active");
+    }
+
+    if COMMENT_STATUSES.contains(&status) {
+        return Ok(status);
+    }
+
+    Err(AdoError::validation(format!(
+        "Invalid --status '{status}'. Must be one of: active, fixed, wontFix, closed, byDesign."
+    )))
+}
+
+/// `resolve_content/1`: `-` reads stdin, `@<path>` a file (both stripped of
+/// trailing newlines), anything else is the literal text.
+fn resolve_comment_content(raw: &str) -> Result<String, AdoError> {
+    if raw == "-" {
+        let mut content = String::new();
+        let _ = std::io::Read::read_to_string(&mut std::io::stdin(), &mut content);
+
+        return Ok(strip_trailing_newlines(&content));
+    }
+
+    if let Some(path) = raw.strip_prefix('@') {
+        let content = std::fs::read_to_string(path).map_err(|error| {
+            AdoError::validation(format!("Cannot read comment file '{path}': {error}"))
+        })?;
+
+        return Ok(strip_trailing_newlines(&content));
+    }
+
+    Ok(raw.to_owned())
+}
+
+/// The module's `~r/\n+\z/`: trailing newlines only, not spaces.
+fn strip_trailing_newlines(content: &str) -> String {
+    content.trim_end_matches('\n').to_owned()
+}
+
+/// `render_add_result/3`: the captured document's keys, the first comment's id
+/// (nil when the response has no comments), and the module's two human lines.
+fn render_add_result(context: &Context, result: Value, message: &str) -> Report {
+    if !result.is_object() {
+        return context.json_or_report(ok_value(result), || Report::Text(message.to_owned()));
+    }
+
+    let thread_id = result.get("id").cloned().unwrap_or(Value::Null);
+    let comment_id = result
+        .get("comments")
+        .and_then(Value::as_array)
+        .and_then(|comments| comments.first())
+        .and_then(|comment| comment.get("id"))
+        .cloned()
+        .unwrap_or(Value::Null);
+
+    context.json_or_report(
+        json!({
+            "ok": true,
+            "thread_id": thread_id,
+            "comment_id": comment_id,
+            "message": message,
+        }),
+        || {
+            Report::Text(format!(
+                "{message}\n  thread_id:  {}\n  comment_id: {}",
+                text_of(&thread_id),
+                text_of(&comment_id)
+            ))
+        },
+    )
+}
+
+/// `render_update_result/5`'s document and human lines: the status lines only
+/// when the thread response carried a status, the comment line when the comment
+/// PATCH answered.
+fn update_report(
+    context: &Context,
+    thread_id: Value,
+    comment_id: Value,
+    status: Value,
+    show_comment: bool,
+    message: &str,
+) -> Report {
+    let human = {
+        let mut text = message.to_owned();
+
+        if !status.is_null() {
+            text.push_str(&format!(
+                "\n  thread_id: {}\n  status:    {}",
+                text_of(&thread_id),
+                text_of(&status)
+            ));
+        }
+
+        if show_comment {
+            text.push_str(&format!("\n  comment_id: {}", text_of(&comment_id)));
+        }
+
+        text
+    };
+
+    context.json_or_report(
+        json!({
+            "ok": true,
+            "thread_id": thread_id,
+            "comment_id": comment_id,
+            "status": status,
+            "message": message,
+        }),
+        || Report::Text(human),
+    )
+}
+
+/// The thread PATCH body: `resolvedBy` only when `--resolved-by-me` supplied an
+/// id.
+fn comment_thread_body(status: &str, user_id: Option<&str>) -> Value {
+    match user_id {
+        Some(user_id) => json!({"status": status, "resolvedBy": {"id": user_id}}),
+        None => json!({"status": status}),
+    }
+}
+
+/// `print_dry_run/6`'s payload: one `{method,path,body}` per would-be PATCH, the
+/// thread first when both flags are present.
+fn dry_run_document(
+    wants_content: bool,
+    wants_status: bool,
+    thread_path: &str,
+    comment_path: &str,
+    status: &str,
+    user_id: Option<&str>,
+    content: &str,
+) -> Value {
+    let thread_action = json!({
+        "method": "PATCH",
+        "path": thread_path,
+        "body": comment_thread_body(status, user_id),
+    });
+    let comment_action = json!({
+        "method": "PATCH",
+        "path": comment_path,
+        "body": {"content": content},
+    });
+
+    let actions = match (wants_content, wants_status) {
+        (true, true) => vec![thread_action, comment_action],
+        (true, false) => vec![comment_action],
+        (false, true) => vec![thread_action],
+        (false, false) => Vec::new(),
+    };
+
+    json!({"ok": true, "dry_run": true, "actions": actions})
+}
+
+/// The identity lookup the comments paths share, with their own message prefixes
+/// (`Approved by AdoCli.Auth.current_user_id/0`).
+fn comment_user_id(context: &mut Context, prefix: &str) -> Result<String, AdoError> {
+    fetch_user_id(context).map_err(|error| AdoError {
+        message: format!("{prefix}: {}", error.message),
+        ..error
+    })
+}
+
+/// `list_comments/1`'s two views, byte for byte: a leading blank line, one
+/// thread block each, a blank line after every block.
+fn threads_text(threads: &[Value], all: bool) -> Report {
+    let mut text = String::from("\n");
+
+    for thread in threads {
+        if all {
+            push_full_thread(&mut text, thread);
+        } else {
+            push_compact_thread(&mut text, thread);
+        }
+    }
+
+    Report::Text(text)
+}
+
+fn push_compact_thread(text: &mut String, thread: &Value) {
+    text.push_str(&format!(
+        "  Thread {} [{}]\n",
+        text_of(thread.get("id").unwrap_or(&Value::Null)),
+        thread_status(thread)
+    ));
+
+    for comment in comments_of(thread) {
+        text.push_str(&format!(
+            "    [{}] {}: {}\n",
+            text_of(comment.get("id").unwrap_or(&Value::Null)),
+            comment_author(comment),
+            truncate_chars(&text_of(comment.get("content").unwrap_or(&Value::Null)), 80)
+        ));
+    }
+
+    text.push('\n');
+}
+
+fn push_full_thread(text: &mut String, thread: &Value) {
+    let id = text_of(thread.get("id").unwrap_or(&Value::Null));
+    let status = thread_status(thread);
+
+    match thread.pointer("/threadContext/filePath") {
+        Some(Value::String(path)) => {
+            text.push_str(&format!("  Thread {id} [{status}] on {path}\n"))
+        }
+        _ => text.push_str(&format!("  Thread {id} [{status}]\n")),
+    }
+
+    for comment in comments_of(thread) {
+        let comment_id = text_of(comment.get("id").unwrap_or(&Value::Null));
+        let author = comment_author(comment);
+        let parent_id = comment
+            .get("parentCommentId")
+            .and_then(Value::as_i64)
+            .unwrap_or(0);
+
+        if parent_id > 0 {
+            text.push_str(&format!(
+                "    [{comment_id}] (reply to {parent_id}) {author}:\n"
+            ));
+        } else {
+            text.push_str(&format!("    [{comment_id}] {author}:\n"));
+        }
+
+        for line in text_of(comment.get("content").unwrap_or(&Value::Null)).split('\n') {
+            if line.is_empty() {
+                text.push('\n');
+            } else {
+                text.push_str(&format!("      {line}\n"));
+            }
+        }
+    }
+
+    text.push('\n');
+}
+
+fn comments_of(thread: &Value) -> &[Value] {
+    thread
+        .get("comments")
+        .and_then(Value::as_array)
+        .map(Vec::as_slice)
+        .unwrap_or_default()
+}
+
+fn thread_status(thread: &Value) -> String {
+    match thread.get("status") {
+        None | Some(Value::Null) => "unknown".to_owned(),
+        Some(status) => text_of(status),
+    }
+}
+
+fn comment_author(comment: &Value) -> String {
+    match comment.pointer("/author/displayName") {
+        None | Some(Value::Null) => "unknown".to_owned(),
+        Some(name) => text_of(name),
+    }
+}
+
+/// The frozen `String.slice(content, 0, 80)`.
+fn truncate_chars(content: &str, limit: usize) -> String {
+    content.chars().take(limit).collect()
+}
+
+fn text_of(value: &Value) -> String {
+    match value {
+        Value::String(text) => text.clone(),
+        Value::Number(number) => number.to_string(),
+        Value::Bool(flag) => flag.to_string(),
+        _ => String::new(),
     }
 }
 

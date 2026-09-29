@@ -300,6 +300,120 @@ fn main() -> ExitCode {
                         unified: diff.get_flag("unified"),
                     },
                 ),
+                Some(("comments", comments)) => match comments.subcommand() {
+                    Some(("list", list)) => commands::pull_requests::comments_list(
+                        &mut context,
+                        list.get_one::<String>("project")
+                            .expect("the positional is required")
+                            .as_str(),
+                        list.get_one::<String>("repo_id")
+                            .expect("the positional is required")
+                            .as_str(),
+                        list.get_one::<i64>("pr_id")
+                            .copied()
+                            .expect("the positional is required"),
+                        list.get_flag("all"),
+                    ),
+                    Some(("add", add)) => commands::pull_requests::comments_add(
+                        &mut context,
+                        add.get_one::<String>("project")
+                            .expect("the positional is required")
+                            .as_str(),
+                        add.get_one::<String>("repo_id")
+                            .expect("the positional is required")
+                            .as_str(),
+                        add.get_one::<i64>("pr_id")
+                            .copied()
+                            .expect("the positional is required"),
+                        commands::pull_requests::CommentAddOptions {
+                            content: add
+                                .get_one::<String>("content")
+                                .expect("the option is required")
+                                .clone(),
+                            file_path: add.get_one::<String>("file-path").cloned(),
+                            line: add.get_one::<i64>("line").copied(),
+                            end_line: add.get_one::<i64>("end-line").copied(),
+                            thread_id: add.get_one::<i64>("thread-id").copied(),
+                            comment_id: add.get_one::<i64>("comment-id").copied(),
+                            status: add.get_one::<String>("status").cloned(),
+                        },
+                    ),
+                    Some(("update", update)) => commands::pull_requests::comments_update(
+                        &mut context,
+                        update
+                            .get_one::<String>("project")
+                            .expect("the positional is required")
+                            .as_str(),
+                        update
+                            .get_one::<String>("repo_id")
+                            .expect("the positional is required")
+                            .as_str(),
+                        update
+                            .get_one::<i64>("pr_id")
+                            .copied()
+                            .expect("the positional is required"),
+                        update
+                            .get_one::<i64>("thread_id")
+                            .copied()
+                            .expect("the positional is required"),
+                        update
+                            .get_one::<i64>("comment_id")
+                            .copied()
+                            .expect("the positional is required"),
+                        commands::pull_requests::CommentUpdateOptions {
+                            content: update.get_one::<String>("content").cloned(),
+                            status: update.get_one::<String>("status").cloned(),
+                            resolved_by_me: update.get_flag("resolved-by-me"),
+                            dry_run: update.get_flag("dry-run"),
+                        },
+                    ),
+                    Some(("delete", delete)) => commands::pull_requests::comments_delete(
+                        &mut context,
+                        delete
+                            .get_one::<String>("project")
+                            .expect("the positional is required")
+                            .as_str(),
+                        delete
+                            .get_one::<String>("repo_id")
+                            .expect("the positional is required")
+                            .as_str(),
+                        delete
+                            .get_one::<i64>("pr_id")
+                            .copied()
+                            .expect("the positional is required"),
+                        delete
+                            .get_one::<i64>("thread_id")
+                            .copied()
+                            .expect("the positional is required"),
+                        delete.get_one::<i64>("comment-id").copied(),
+                        delete.get_flag("force"),
+                    ),
+                    Some(("resolve", resolve)) => commands::pull_requests::comments_resolve(
+                        &mut context,
+                        resolve
+                            .get_one::<String>("project")
+                            .expect("the positional is required")
+                            .as_str(),
+                        resolve
+                            .get_one::<String>("repo_id")
+                            .expect("the positional is required")
+                            .as_str(),
+                        resolve
+                            .get_one::<i64>("pr_id")
+                            .copied()
+                            .expect("the positional is required"),
+                        resolve
+                            .get_one::<i64>("thread_id")
+                            .copied()
+                            .expect("the positional is required"),
+                        resolve
+                            .get_one::<String>("status")
+                            .expect("the default is set")
+                            .as_str(),
+                        resolve.get_flag("resolved-by-me"),
+                    ),
+                    _ => Err(AdoError::validation(MISSING_SUBCOMMAND)),
+                },
                 _ => Err(AdoError::validation(MISSING_SUBCOMMAND)),
             }
         }
