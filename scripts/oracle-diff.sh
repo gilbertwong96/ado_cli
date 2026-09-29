@@ -909,6 +909,115 @@ run_mock_cases() {
     mock_case pipelines-vars-delete-missing "pipelines vars delete (404)" \
         pipelines vars delete Alpha 999 --json
 
+    # ── Wave 2: pipelines variables and secure files (Task 5) ──
+    #
+    # Both deletes were re-run with `n` on stdin against the mock, which serves
+    # the GETs: `variables delete` sends both requests (no prompt, R5) and
+    # `secure_files delete --force` sends the DELETE. `secure_files delete`
+    # without `--force` is the message guard, not a prompt: the oracle prints it
+    # on stdout and exits 0 having sent nothing, this build refuses on stderr
+    # with exit 1 and sends nothing (R6, D32). The upload posts raw bytes, not
+    # JSON; its route's `request_body` is the UTF-8 fixture's exact text — the
+    # log's lossy decode is exact for it (the pin cannot prove bytes that are not
+    # valid UTF-8, which is why the fixture is text).
+
+    mock_case pipelines-variables-list "pipelines variables list" \
+        pipelines variables list Alpha 13 --json
+
+    mock_case pipelines-variables-list-none "pipelines variables list (no variables)" \
+        pipelines variables list Alpha 7 --json
+
+    envelope_rule='D4: the frozen CLI writes the 404 to stderr with no envelope under --json where this build emits the error envelope'
+    mock_case pipelines-variables-list-404 "pipelines variables list (404)" \
+        pipelines variables list Alpha 999 --json
+
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the message envelope'
+    mock_case pipelines-variables-create "pipelines variables create" \
+        pipelines variables create Alpha 13 --key ENV --value staging --json
+
+    status_rule='D5/D23 (R4): a required option the oracle never validates is a silent exit 0 there; this build makes it a loud usage error'
+    stdout_mode=text
+    mock_case pipelines-variables-create-no-key "pipelines variables create (no --key)" \
+        pipelines variables create Alpha 13 --json
+
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the message envelope'
+    mock_case pipelines-variables-create-empty "pipelines variables create (no variables map)" \
+        pipelines variables create Alpha 7 --key ENV --value staging --json
+
+    case_stdin=$'n\n'
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the message envelope'
+    mock_case pipelines-variables-delete "pipelines variables delete (stdin n — no prompt)" \
+        pipelines variables delete Alpha 14 --key DEBUG --json
+
+    status_rule='D5/D23 (R4): a required option the oracle never validates is a silent exit 0 there; this build makes it a loud usage error'
+    stdout_mode=text
+    mock_case pipelines-variables-delete-no-key "pipelines variables delete (no --key)" \
+        pipelines variables delete Alpha 14 --json
+
+    envelope_rule='D5: the oracle prints the command help on stdout before its usage error; this build writes clap’s message to stderr alone'
+    stdout_mode=text
+    mock_case pipelines-variables-delete-force "pipelines variables delete --force (unknown flag)" \
+        pipelines variables delete Alpha 14 --key DEBUG --force
+
+    envelope_rule='D4: the frozen CLI writes the 404 to stderr with no envelope under --json where this build emits the error envelope'
+    mock_case pipelines-variables-delete-404 "pipelines variables delete (404)" \
+        pipelines variables delete Alpha 999 --key DEBUG --json
+
+    mock_case pipelines-secure-files-list "pipelines secure_files list" \
+        pipelines secure_files list Alpha --top 10 --json
+
+    mock_case pipelines-secure-files-list-empty "pipelines secure_files list (empty)" \
+        pipelines secure_files list Beta --json
+
+    mock_case pipelines-secure-files-show "pipelines secure_files show" \
+        pipelines secure_files show Alpha f47ac10b-58cc-4372-a567-0e02b2c3d479 --json
+
+    envelope_rule='D4: the frozen CLI writes the 404 to stderr with no envelope under --json where this build emits the error envelope'
+    mock_case pipelines-secure-files-show-404 "pipelines secure_files show (404)" \
+        pipelines secure_files show Alpha 00000000-0000-4000-8000-000000000999 --json
+
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the message envelope'
+    mock_case pipelines-secure-files-upload "pipelines secure_files upload" \
+        pipelines secure_files upload Alpha cert.pem \
+        --file "$root/crates/ado-testkit/fixtures/secure_file_upload.pem" --json
+
+    status_rule='D5/D23 (R4): a required option the oracle never validates is a silent exit 0 there; this build makes it a loud usage error'
+    stdout_mode=text
+    mock_case pipelines-secure-files-upload-no-file "pipelines secure_files upload (no --file)" \
+        pipelines secure_files upload Alpha cert.pem --json
+
+    envelope_rule='D4: the frozen CLI writes the local error to stderr with no envelope under --json where this build emits the error envelope'
+    mock_case pipelines-secure-files-upload-absent-file "pipelines secure_files upload (missing file)" \
+        pipelines secure_files upload Alpha cert.pem \
+        --file "$root/crates/ado-testkit/fixtures/absent.pem" --json
+
+    case_stdin=$'n\n'
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the message envelope'
+    mock_case pipelines-secure-files-upload-allow-exists "pipelines secure_files upload --allow-exists (stdin n — no prompt)" \
+        pipelines secure_files upload Alpha prod-cert.pem \
+        --file "$root/crates/ado-testkit/fixtures/secure_file_upload.pem" --allow-exists --json
+
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the message envelope'
+    mock_case pipelines-secure-files-upload-allow-exists-miss "pipelines secure_files upload --allow-exists (lookup miss)" \
+        pipelines secure_files upload Alpha new-cert.pem \
+        --file "$root/crates/ado-testkit/fixtures/secure_file_upload.pem" --allow-exists --json
+
+    case_stdin=$'n\n'
+    status_rule='D32: the oracle prints its guard on stdout and exits 0 having sent nothing; this build refuses with exit 1 and sends nothing'
+    envelope_rule='D32: the oracle prints its guard on stdout and exits 0; this build writes the refusal to stderr with no document'
+    stdout_mode=text
+    mock_case pipelines-secure-files-delete-guard "pipelines secure_files delete (stdin n — no prompt, no --force)" \
+        pipelines secure_files delete Alpha f47ac10b-58cc-4372-a567-0e02b2c3d479 --json
+
+    case_stdin=$'n\n'
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the message envelope'
+    mock_case pipelines-secure-files-delete-force "pipelines secure_files delete --force (stdin n — no prompt)" \
+        pipelines secure_files delete Alpha f47ac10b-58cc-4372-a567-0e02b2c3d479 --force --json
+
+    envelope_rule='D4: the frozen CLI writes the 404 to stderr with no envelope under --json where this build emits the error envelope'
+    mock_case pipelines-secure-files-delete-404 "pipelines secure_files delete (404)" \
+        pipelines secure_files delete Alpha 00000000-0000-4000-8000-000000000999 --force --json
+
     mock_scenario_check
 }
 
@@ -1026,8 +1135,10 @@ if exits_ok schema-json &&
     # that everything else — types, defaults, arguments, option spelling, the tree
     # shape — is still compared exactly:
     #
-    #   * D18 hyphenates the two group nodes the oracle spells with spaces, at the
-    #     root and in their descendants' names;
+    #   * D18/R3: the group nodes this build reports in the spelling argv accepts
+    #     differ from the oracle's display names — `pipelines builds` and `pipelines
+    #     artifacts` gain a hyphen, `pipelines secure-files` loses the hyphen for the
+    #     underscore — at the root and in every descendant's name;
     #   * doc values are §8 regenerated surface, and the nodes this wave wrote or
     #     rewrote carry this build's wording. Their option and argument docs are
     #     blanked here; their node docs are reported by the doc check further down.
@@ -1036,6 +1147,7 @@ if exits_ok schema-json &&
     d18_and_s8="walk(if type == \"object\" and (.name? | type) == \"string\"
         then .name |= gsub(\" pipelines builds\"; \" pipelines-builds\")
                    | .name |= gsub(\" pipelines artifacts\"; \" pipelines-artifacts\")
+                   | .name |= gsub(\" pipelines secure_files\"; \" pipelines secure-files\")
         else . end)
       | (.schema.subcommands[] | select(.name as \$node | $s8_nodes | index(\$node))
          | .options[]? | select(.name as \$o | $globals_names | index(\$o) | not) | .doc) |= \"\"
@@ -1047,14 +1159,15 @@ if exits_ok schema-json &&
     schema_el="$work/schema.elixir"
     schema_rs="$work/schema.rust"
 
-    # D18's premise: the oracle spells the two group nodes with spaces. If that
-    # changed, this is not the frozen oracle and the normalisation above is stale.
-    d18_renamed=$(jq -r '[.schema | recurse(.subcommands[]?) | .name | select(test(" pipelines (builds|artifacts)"))] | length' "$work/schema-json.elixir")
+    # D18/R3's premise: the oracle spells these group nodes differently from the
+    # spelling argv accepts. If that changed, this is not the frozen oracle and the
+    # normalisation above is stale.
+    d18_renamed=$(jq -r '[.schema | recurse(.subcommands[]?) | .name | select(test(" pipelines (builds|artifacts|secure-files)"))] | length' "$work/schema-json.elixir")
 
     if (( d18_renamed > 0 )); then
-        note "D18: $d18_renamed oracle node names read as the hyphenated spelling this build reports"
+        note "D18/R3: $d18_renamed oracle node names differ from the runnable spelling this build reports"
     else
-        fail "the oracle no longer spells the two group nodes with spaces (D18)"
+        fail "the oracle no longer spells these group nodes differently from argv (D18/R3)"
     fi
 
     # Node shape (§1.1): the returned node carries `version`, the rest do not.
