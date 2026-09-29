@@ -1386,6 +1386,172 @@ run_mock_cases() {
     mock_case workitems-attachments-download-no-attachment-id "workitems attachments download (no attachment_id)" \
         workitems attachments download 42 --json
 
+    # ── Wave 2: the pull request lifecycle mutations (Task 9) ──
+    #
+    # The five commands' captured shapes: `create` one POST (the four keys always,
+    # `description` only when given), `complete` a GET for
+    # `lastMergeSourceCommit.commitId` then a PATCH whose `mergeStrategy` key is
+    # absent when the option is absent and maps squash→squashMerge,
+    # rebase→rebaseMerge (an unknown value passes through), `abandon` one PATCH,
+    # and `approve`/`vote` a `GET /_apis/connectionData` **with no api-version at
+    # all** then a `PUT …/reviewers/{authenticatedUser.id}`. Every write route pins
+    # the captured body, and each create case uses its own project (the collection
+    # path is otherwise identical) so the pins cannot be shared by accident; the
+    # five vote values and the approve case use per-id reviewer routes for the same
+    # reason. R5: none of the five prompts — every one was re-run against the mock
+    # with `n` on stdin and, for the state changes, on EOF, and the requests went
+    # out; the stdin cases below are that evidence. The oracle's `create` without
+    # `--description` (or `--title`/`--source`/`--target`) dies on the missing map
+    # key and exits 0 silently, sending nothing — D35 for the absent optional
+    # option (this build sends the body without the key), D34 for the required ones
+    # (this build's clap is loud) — and `vote` without `--vote` is D34's row too.
+    # The table's `--delete_source` is the schema's name, not an invocation (D17):
+    # the frozen parser rejects it, as the unknown-flag case shows. The four write
+    # commands' success lines are D33's envelope here; their error paths are D4/D24.
+
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the value envelope'
+    mock_case prs-create "prs create" prs create Create Alpha.Core \
+        --title 'Add checkout retries' --description 'Retries soft declines.' \
+        --source feature/payments --target main --draft --json
+
+    case_stdin=$'n\n'
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the value envelope'
+    mock_case prs-create-stdin-n "prs create (stdin n — no prompt)" prs create Create Alpha.Core \
+        --title 'Add checkout retries' --description 'Retries soft declines.' \
+        --source feature/payments --target main --draft --json
+
+    rest_rule='D35: the oracle dies on the absent --description before any request (exit 0, no output); this build sends the body without the key'
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the value envelope'
+    mock_case prs-create-minimal "prs create (no --description)" prs create CreateMin Alpha.Core \
+        --title 'Add checkout retries' --source feature/payments --target main --json
+
+    status_rule='D34: a missing required option is a silent exit 0 in the oracle; this build is a loud usage error'
+    stdout_mode=text
+    mock_case prs-create-no-title "prs create (no --title)" prs create CreateMin Alpha.Core \
+        --source feature/payments --target main --json
+
+    envelope_rule='D24: the error body stays the upstream bytes here, where the oracle re-renders the decoded map with inspect/2'
+    mock_case prs-create-400 "prs create (400)" prs create Broken Alpha.Core \
+        --title T --description D --source s --target t --json
+
+    envelope_rule='D5: the oracle prints the command help on stdout before its usage error; this build writes clap’s message to stderr alone'
+    stdout_mode=text
+    mock_case prs-create-unknown-flag "prs create --force (unknown flag)" prs create Create Alpha.Core \
+        --title T --description D --source s --target t --force
+
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the value envelope'
+    mock_case prs-complete "prs complete" prs complete Alpha Alpha.Core 137 --json
+
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the value envelope'
+    mock_case prs-complete-options "prs complete (--delete-source --merge-strategy squash)" \
+        prs complete Alpha Alpha.Core 151 --delete-source --merge-strategy squash --json
+
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the value envelope'
+    mock_case prs-complete-empty-strategy "prs complete (--merge-strategy '')" \
+        prs complete Alpha Alpha.Core 152 --merge-strategy '' --json
+
+    case_stdin=$'n\n'
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the value envelope'
+    mock_case prs-complete-stdin-n "prs complete (stdin n — no prompt)" \
+        prs complete Alpha Alpha.Core 137 --json
+
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the value envelope'
+    mock_case prs-complete-eof "prs complete (EOF — no prompt)" \
+        prs complete Alpha Alpha.Core 137 --json
+
+    envelope_rule='D24: the error body stays the upstream bytes here, where the oracle re-renders the decoded map with inspect/2'
+    mock_case prs-complete-get-404 "prs complete (GET 404)" prs complete Alpha Alpha.Core 999 --json
+
+    envelope_rule='D4: the frozen CLI writes the guard to stderr with no envelope under --json where this build emits the error envelope'
+    mock_case prs-complete-no-commit "prs complete (no lastMergeSourceCommit)" \
+        prs complete Alpha Alpha.Core 140 --json
+
+    envelope_rule='D4: the frozen CLI writes the 404 to stderr with no envelope under --json where this build emits the error envelope'
+    mock_case prs-complete-patch-404 "prs complete (PATCH 404)" prs complete Alpha Alpha.Core 141 --json
+
+    envelope_rule='D4: the frozen CLI writes the 409 to stderr with no envelope under --json where this build emits the error envelope'
+    mock_case prs-complete-patch-409 "prs complete (PATCH 409)" prs complete Alpha Alpha.Core 142 --json
+
+    envelope_rule='D5: the oracle prints the command help on stdout before its usage error; this build writes clap’s message to stderr alone'
+    stdout_mode=text
+    mock_case prs-complete-underscore "prs complete --delete_source (unknown flag)" \
+        prs complete Alpha Alpha.Core 137 --delete_source
+
+    envelope_rule='D5: the oracle prints the command help on stdout before its usage error; this build writes clap’s message to stderr alone'
+    stdout_mode=text
+    mock_case prs-complete-no-id "prs complete (no pr_id)" prs complete Alpha Alpha.Core
+
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the value envelope'
+    mock_case prs-abandon "prs abandon" prs abandon Alpha Alpha.Core 138 --json
+
+    case_stdin=$'n\n'
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the value envelope'
+    mock_case prs-abandon-stdin-n "prs abandon (stdin n — no prompt)" \
+        prs abandon Alpha Alpha.Core 138 --json
+
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the value envelope'
+    mock_case prs-abandon-eof "prs abandon (EOF — no prompt)" prs abandon Alpha Alpha.Core 138 --json
+
+    envelope_rule='D4: the frozen CLI writes the 404 to stderr with no envelope under --json where this build emits the error envelope'
+    mock_case prs-abandon-404 "prs abandon (404)" prs abandon Alpha Alpha.Core 999 --json
+
+    envelope_rule='D4: the frozen CLI writes the 409 to stderr with no envelope under --json where this build emits the error envelope'
+    mock_case prs-abandon-409 "prs abandon (409)" prs abandon Alpha Alpha.Core 144 --json
+
+    envelope_rule='D5: the oracle prints the command help on stdout before its usage error; this build writes clap’s message to stderr alone'
+    stdout_mode=text
+    mock_case prs-abandon-no-id "prs abandon (no pr_id)" prs abandon Alpha Alpha.Core
+
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the value envelope'
+    mock_case prs-approve "prs approve" prs approve Alpha Alpha.Core 137 --json
+
+    envelope_rule='D4: the frozen CLI writes the 404 to stderr with no envelope under --json where this build emits the error envelope'
+    mock_case prs-approve-put-404 "prs approve (PUT 404)" prs approve Alpha Alpha.Core 999 --json
+
+    envelope_rule='D4: the frozen CLI writes the 400 to stderr with no envelope under --json where this build emits the error envelope'
+    mock_case prs-approve-put-400 "prs approve (PUT 400)" prs approve Alpha Alpha.Core 143 --json
+
+    case_org=conn-broken
+    envelope_rule='D4: the frozen CLI writes the guard to stderr with no envelope under --json where this build emits the error envelope'
+    mock_case prs-approve-conn-broken "prs approve (connectionData 404)" \
+        prs approve Alpha Alpha.Core 137 --json
+
+    case_org=conn-no-id
+    envelope_rule='D4: the frozen CLI writes the guard to stderr with no envelope under --json where this build emits the error envelope'
+    mock_case prs-approve-conn-no-id "prs approve (connectionData without an id)" \
+        prs approve Alpha Alpha.Core 137 --json
+
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the value envelope'
+    mock_case prs-vote-10 "prs vote --vote 10" prs vote Alpha Alpha.Core 137 --vote 10 --json
+
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the value envelope'
+    mock_case prs-vote-5 "prs vote --vote 5" prs vote Alpha Alpha.Core 145 --vote 5 --json
+
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the value envelope'
+    mock_case prs-vote-0 "prs vote --vote 0" prs vote Alpha Alpha.Core 146 --vote 0 --json
+
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the value envelope'
+    mock_case prs-vote-minus5 "prs vote --vote -5" prs vote Alpha Alpha.Core 147 --vote -5 --json
+
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the value envelope'
+    mock_case prs-vote-minus10 "prs vote --vote -10" prs vote Alpha Alpha.Core 148 --vote -10 --json
+
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the value envelope'
+    mock_case prs-vote-unknown "prs vote --vote 7" prs vote Alpha Alpha.Core 149 --vote 7 --json
+
+    case_stdin=$'n\n'
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the value envelope'
+    mock_case prs-vote-stdin-n "prs vote (stdin n — no prompt)" \
+        prs vote Alpha Alpha.Core 137 --vote 10 --json
+
+    status_rule='D34: a missing required option is a silent exit 0 in the oracle; this build is a loud usage error'
+    stdout_mode=text
+    mock_case prs-vote-no-option "prs vote (no --vote)" prs vote Alpha Alpha.Core 137 --json
+
+    envelope_rule='D5: the oracle prints the command help on stdout before its usage error; this build writes clap’s message to stderr alone'
+    stdout_mode=text
+    mock_case prs-vote-non-integer "prs vote (--vote abc)" prs vote Alpha Alpha.Core 137 --vote abc
+
     mock_scenario_check
 }
 

@@ -594,6 +594,140 @@
     {"method": "GET", "path": "/ado-harness/_apis/wit/attachments/att-2", "json": {"id": "att-2", "attributes": {"name": "notes.txt"}, "url": "https://dev.azure.com/ado-harness/_apis/wit/attachments/att-2"}},
     {"method": "GET", "path": "/ado-harness/_apis/wit/attachments/att-3", "json": {"id": "att-3", "attributes": {}}},
     {"method": "GET", "path": "/ado-harness/_apis/wit/attachments/att-404", "status": 404, "json": {"message": "TF401232: Attachment att-404 does not exist."}},
-    {"method": "GET", "path": "/ado-harness/_apis/wit/attachments/att-redirect", "status": 302, "json": {"message": "sign in"}}
+    {"method": "GET", "path": "/ado-harness/_apis/wit/attachments/att-redirect", "status": 302, "json": {"message": "sign in"}},
+
+    {"method": "GET", "path": "/ado-harness/_apis/connectionData", "json": {"authenticatedUser": {"id": "c1d2e3f4-0002-0002-0002-000000000002", "displayName": "Ada Example", "uniqueName": "ada@example.test"}}},
+    {"method": "GET", "path": "/conn-broken/_apis/connectionData", "status": 404, "json": {"message": "Not found."}},
+    {"method": "GET", "path": "/conn-no-id/_apis/connectionData", "json": {"authenticatedUser": {"displayName": "Ada Example"}}},
+
+    {
+      "method": "POST",
+      "path": "/ado-harness/Create/_apis/git/repositories/Alpha.Core/pullrequests",
+      "request_body": {"title": "Add checkout retries", "description": "Retries soft declines.", "sourceRefName": "refs/heads/feature/payments", "targetRefName": "refs/heads/main", "isDraft": true},
+      "json": {"pullRequestId": 145, "title": "Add checkout retries", "status": "active", "sourceRefName": "refs/heads/feature/payments", "targetRefName": "refs/heads/main", "creationDate": "2026-09-27T10:00:00.000Z", "_links": {"web": {"href": "https://dev.azure.com/ado-harness/Create/_git/Alpha.Core/pullrequest/145"}}}
+    },
+    {
+      "method": "POST",
+      "path": "/ado-harness/CreateMin/_apis/git/repositories/Alpha.Core/pullrequests",
+      "request_body": {"title": "Add checkout retries", "sourceRefName": "refs/heads/feature/payments", "targetRefName": "refs/heads/main", "isDraft": false},
+      "json": {"pullRequestId": 146, "title": "Add checkout retries", "status": "active", "sourceRefName": "refs/heads/feature/payments", "targetRefName": "refs/heads/main", "creationDate": "2026-09-27T10:00:00.000Z", "_links": {"web": {"href": "https://dev.azure.com/ado-harness/CreateMin/_git/Alpha.Core/pullrequest/146"}}}
+    },
+    {
+      "method": "POST",
+      "path": "/ado-harness/Broken/_apis/git/repositories/Alpha.Core/pullrequests",
+      "request_body": {"title": "T", "description": "D", "sourceRefName": "refs/heads/s", "targetRefName": "refs/heads/t", "isDraft": false},
+      "status": 400,
+      "json": {"message": "TF401179: The source branch does not exist."}
+    },
+
+    {
+      "method": "PATCH",
+      "path": "/ado-harness/Alpha/_apis/git/repositories/Alpha.Core/pullrequests/137",
+      "request_body": {"status": "completed", "lastMergeSourceCommit": {"commitId": "1111111111111111111111111111111111111111"}, "deleteSourceBranch": false},
+      "json": {"pullRequestId": 137, "status": "completed"}
+    },
+    {"method": "GET", "path": "/ado-harness/Alpha/_apis/git/repositories/Alpha.Core/pullrequests/140", "json": {"pullRequestId": 140, "status": "active"}},
+    {"method": "GET", "path": "/ado-harness/Alpha/_apis/git/repositories/Alpha.Core/pullrequests/141", "json": {"pullRequestId": 141, "lastMergeSourceCommit": {"commitId": "4444444444444444444444444444444444444444"}}},
+    {
+      "method": "PATCH",
+      "path": "/ado-harness/Alpha/_apis/git/repositories/Alpha.Core/pullrequests/141",
+      "request_body": {"status": "completed", "lastMergeSourceCommit": {"commitId": "4444444444444444444444444444444444444444"}, "deleteSourceBranch": false},
+      "status": 404,
+      "json": {"message": "Pull request 141 does not exist."}
+    },
+    {"method": "GET", "path": "/ado-harness/Alpha/_apis/git/repositories/Alpha.Core/pullrequests/142", "json": {"pullRequestId": 142, "lastMergeSourceCommit": {"commitId": "6666666666666666666666666666666666666666"}}},
+    {
+      "method": "PATCH",
+      "path": "/ado-harness/Alpha/_apis/git/repositories/Alpha.Core/pullrequests/142",
+      "request_body": {"status": "completed", "lastMergeSourceCommit": {"commitId": "6666666666666666666666666666666666666666"}, "deleteSourceBranch": false},
+      "status": 409,
+      "json": {"message": "TF401181: The pull request cannot be completed because it has merge conflicts."}
+    },
+    {"method": "GET", "path": "/ado-harness/Alpha/_apis/git/repositories/Alpha.Core/pullrequests/151", "json": {"pullRequestId": 151, "lastMergeSourceCommit": {"commitId": "7777777777777777777777777777777777777777"}}},
+    {
+      "method": "PATCH",
+      "path": "/ado-harness/Alpha/_apis/git/repositories/Alpha.Core/pullrequests/151",
+      "request_body": {"status": "completed", "lastMergeSourceCommit": {"commitId": "7777777777777777777777777777777777777777"}, "deleteSourceBranch": true, "mergeStrategy": "squashMerge"},
+      "json": {"pullRequestId": 151, "status": "completed"}
+    },
+    {"method": "GET", "path": "/ado-harness/Alpha/_apis/git/repositories/Alpha.Core/pullrequests/152", "json": {"pullRequestId": 152, "lastMergeSourceCommit": {"commitId": "8888888888888888888888888888888888888888"}}},
+    {
+      "method": "PATCH",
+      "path": "/ado-harness/Alpha/_apis/git/repositories/Alpha.Core/pullrequests/152",
+      "request_body": {"status": "completed", "lastMergeSourceCommit": {"commitId": "8888888888888888888888888888888888888888"}, "deleteSourceBranch": false, "mergeStrategy": ""},
+      "json": {"pullRequestId": 152, "status": "completed"}
+    },
+
+    {
+      "method": "PATCH",
+      "path": "/ado-harness/Alpha/_apis/git/repositories/Alpha.Core/pullrequests/138",
+      "request_body": {"status": "abandoned"},
+      "json": {"pullRequestId": 138, "status": "abandoned"}
+    },
+    {
+      "method": "PATCH",
+      "path": "/ado-harness/Alpha/_apis/git/repositories/Alpha.Core/pullrequests/999",
+      "request_body": {"status": "abandoned"},
+      "status": 404,
+      "json": {"message": "Pull request 999 does not exist."}
+    },
+    {
+      "method": "PATCH",
+      "path": "/ado-harness/Alpha/_apis/git/repositories/Alpha.Core/pullrequests/144",
+      "request_body": {"status": "abandoned"},
+      "status": 409,
+      "json": {"message": "TF401181: The pull request cannot be abandoned because it is not active."}
+    },
+
+    {
+      "method": "PUT",
+      "path": "/ado-harness/Alpha/_apis/git/repositories/Alpha.Core/pullrequests/137/reviewers/c1d2e3f4-0002-0002-0002-000000000002",
+      "request_body": {"vote": 10},
+      "json": {"id": "c1d2e3f4-0002-0002-0002-000000000002", "vote": 10, "displayName": "Ada Example"}
+    },
+    {
+      "method": "PUT",
+      "path": "/ado-harness/Alpha/_apis/git/repositories/Alpha.Core/pullrequests/145/reviewers/c1d2e3f4-0002-0002-0002-000000000002",
+      "request_body": {"vote": 5},
+      "json": {"id": "c1d2e3f4-0002-0002-0002-000000000002", "vote": 5, "displayName": "Ada Example"}
+    },
+    {
+      "method": "PUT",
+      "path": "/ado-harness/Alpha/_apis/git/repositories/Alpha.Core/pullrequests/146/reviewers/c1d2e3f4-0002-0002-0002-000000000002",
+      "request_body": {"vote": 0},
+      "json": {"id": "c1d2e3f4-0002-0002-0002-000000000002", "vote": 0, "displayName": "Ada Example"}
+    },
+    {
+      "method": "PUT",
+      "path": "/ado-harness/Alpha/_apis/git/repositories/Alpha.Core/pullrequests/147/reviewers/c1d2e3f4-0002-0002-0002-000000000002",
+      "request_body": {"vote": -5},
+      "json": {"id": "c1d2e3f4-0002-0002-0002-000000000002", "vote": -5, "displayName": "Ada Example"}
+    },
+    {
+      "method": "PUT",
+      "path": "/ado-harness/Alpha/_apis/git/repositories/Alpha.Core/pullrequests/148/reviewers/c1d2e3f4-0002-0002-0002-000000000002",
+      "request_body": {"vote": -10},
+      "json": {"id": "c1d2e3f4-0002-0002-0002-000000000002", "vote": -10, "displayName": "Ada Example"}
+    },
+    {
+      "method": "PUT",
+      "path": "/ado-harness/Alpha/_apis/git/repositories/Alpha.Core/pullrequests/149/reviewers/c1d2e3f4-0002-0002-0002-000000000002",
+      "request_body": {"vote": 7},
+      "json": {"id": "c1d2e3f4-0002-0002-0002-000000000002", "vote": 7, "displayName": "Ada Example"}
+    },
+    {
+      "method": "PUT",
+      "path": "/ado-harness/Alpha/_apis/git/repositories/Alpha.Core/pullrequests/999/reviewers/c1d2e3f4-0002-0002-0002-000000000002",
+      "request_body": {"vote": 10},
+      "status": 404,
+      "json": {"message": "Pull request 999 does not exist."}
+    },
+    {
+      "method": "PUT",
+      "path": "/ado-harness/Alpha/_apis/git/repositories/Alpha.Core/pullrequests/143/reviewers/c1d2e3f4-0002-0002-0002-000000000002",
+      "request_body": {"vote": 10},
+      "status": 400,
+      "json": {"message": "You cannot record a vote for someone else."}
+    }
   ]
 }
