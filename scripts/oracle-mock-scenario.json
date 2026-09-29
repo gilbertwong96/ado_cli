@@ -593,6 +593,9 @@
     {"method": "GET", "path": "/ado-harness/_apis/wit/attachments/att-1", "json": {"id": "att-1", "fileName": "report.pdf", "size": 1234, "url": "https://dev.azure.com/ado-harness/_apis/wit/attachments/att-1", "attributes": {"name": "report.pdf"}}},
     {"method": "GET", "path": "/ado-harness/_apis/wit/attachments/att-2", "json": {"id": "att-2", "attributes": {"name": "notes.txt"}, "url": "https://dev.azure.com/ado-harness/_apis/wit/attachments/att-2"}},
     {"method": "GET", "path": "/ado-harness/_apis/wit/attachments/att-3", "json": {"id": "att-3", "attributes": {}}},
+    {"method": "GET", "path": "/ado-harness/_apis/wit/attachments/att-1", "query": {"fileName": "*"}, "fixture": "attachment_raw.bin"},
+    {"method": "GET", "path": "/ado-harness/_apis/wit/attachments/att-2", "query": {"fileName": "*"}, "fixture": "attachment_raw.bin"},
+    {"method": "GET", "path": "/ado-harness/_apis/wit/attachments/att-3", "query": {"fileName": "*"}, "fixture": "attachment_raw.bin"},
     {"method": "GET", "path": "/ado-harness/_apis/wit/attachments/att-404", "status": 404, "json": {"message": "TF401232: Attachment att-404 does not exist."}},
     {"method": "GET", "path": "/ado-harness/_apis/wit/attachments/att-redirect", "status": 302, "json": {"message": "sign in"}},
 

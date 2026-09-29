@@ -257,16 +257,22 @@ parse_check() {
 # download`'s success line, the prompt cases), with the oracle's ANSI colour
 # stripped first (§8, D11).
 #
-# A mutation case has three additions:
+# A mutation case has four additions:
 #
 #   * **Bodies are contract, and a route can pin one.** A scenario route may carry
 #     `request_body` (a string compares the bytes as sent; an object or array
 #     compares structurally, so key order and whitespace cannot fail a body the
-#     two sides send identically). The mock still routes by method and path and
-#     records `body_matched` on the request line, so a body no route pins is still
-#     compared between the two sides — and a body a route pins is checked against
-#     that pin even when both sides send the same wrong bytes. Either mismatch
-#     fails the case.
+#     two sides send identically). The mock records `body_matched` on the request
+#     line, so a body no route pins is still compared between the two sides — and a
+#     body a route pins is checked against that pin even when both sides send the
+#     same wrong bytes. Either mismatch fails the case.
+#   * **A route can require query pairs.** A scenario route may carry `query` (an
+#     object of pairs, compared as sent, with `*` matching any value). A route that
+#     requires pairs is tried before one that does not, so two GETs on one path —
+#     the attachment download's metadata and raw fetches — can be answered with
+#     different bodies, and the case can discriminate the chain it claims to. The
+#     `scenario coverage` case checks the requirement too, so a route whose pairs no
+#     request ever carries cannot be dead.
 #   * **stdin is scripted, never inherited.** Every run reads `case_stdin`; unset
 #     means an empty file (EOF), so no case can block on a terminal or read the
 #     developer's stdin. A prompt case sets it to the exact bytes to feed, e.g.
@@ -280,11 +286,25 @@ parse_check() {
 #     `Aborted.` are §8 surface; the exit status and the recorded requests carry
 #     the refusal/proceed contract.
 #
-# A case may set `rest_rule`, `envelope_rule`, `status_rule`, `stdout_mode`,
-# `case_org`, `case_pat`, `case_extra`, `case_stdin` or `compare_files` immediately
-# before it; `mock_case` clears them afterwards, so a rule cannot leak into the next
-# case. A case that meets a difference no rule covers is a finding, not a row to
-# invent.
+# A case may set `rest_rule`, `rest_norm`, `envelope_rule`, `status_rule`,
+# `expect_statuses`, `stdout_mode`, `case_org`, `case_pat`, `case_extra`, `case_stdin`
+# or `compare_files` immediately before it; `mock_case` clears them afterwards, so a
+# rule cannot leak into the next case. A case that meets a difference no rule covers
+# is a finding, not a row to invent.
+#
+# Two of those mechanisms make a case assert a *direction* rather than record an
+# expected difference:
+#
+#   * `expect_statuses='<oracle> <rust>'` pins the exact pair of exit statuses. A
+#     `status_rule` only fires when the two statuses differ, so a case whose point
+#     is "ours refuses where the oracle does not" would read MATCH if this build
+#     regressed to the oracle's shape. With the pair asserted, that regression
+#     fails the case by name.
+#   * `rest_norm` names the jq filter that mechanically expresses a `rest_rule`
+#     (a query spelling, say). When it is set, the raw request lists may differ
+#     only in that way: the filter is applied to both sides' projections and
+#     anything still different — a missing or extra request included — fails the
+#     case, where a bare `rest_rule` rules the whole request list away.
 
 mock_bin=${ADO_ORACLE_MOCK:-$root/target/debug/mock}
 mock_scenario=${ADO_ORACLE_SCENARIO:-$root/scripts/oracle-mock-scenario.json}
@@ -295,8 +315,10 @@ mock_org=ado-harness
 mock_pat=harness-pat
 
 rest_rule=
+rest_norm=
 envelope_rule=
 status_rule=
+expect_statuses=
 stdout_mode=json
 case_org=$mock_org
 case_pat=$mock_pat
@@ -399,8 +421,10 @@ mock_case() {
     mock_files_check "$slug"
 
     rest_rule=
+    rest_norm=
     envelope_rule=
     status_rule=
+    expect_statuses=
     stdout_mode=json
     case_org=$mock_org
     case_pat=$mock_pat
@@ -415,6 +439,23 @@ mock_exit_check() { # the status is contract: 0 success, 1 every error (§6.3)
     local slug=$1 elixir_status rust_status
     elixir_status=$(cat "$work/$slug.elixir.status")
     rust_status=$(cat "$work/$slug.rust.status")
+
+    # The asserted pair first: a case that names the direction of a ruled status
+    # difference fails when the pair moves, even when the two sides agree again.
+    if [[ -n $expect_statuses ]]; then
+        local expected_elixir expected_rust
+        read -r expected_elixir expected_rust <<<"$expect_statuses"
+
+        if [[ $elixir_status != "$expected_elixir" || $rust_status != "$expected_rust" ]]; then
+            fail "the expected statuses are oracle $expected_elixir, rust $expected_rust; got oracle $elixir_status, rust $rust_status"
+        elif [[ $elixir_status == "$rust_status" ]]; then
+            note "exit $rust_status on both"
+        else
+            ruled "${status_rule:-the expected status pair: oracle $elixir_status, rust $rust_status}"
+        fi
+
+        return
+    fi
 
     if [[ $elixir_status == "$rust_status" ]]; then
         note "exit $rust_status on both"
@@ -439,6 +480,16 @@ requests_filter="map({
     body: (if .body == null then null else (.body | fromjson? // .) end),
     matched
 })"
+
+# D25's query difference, mechanically: the frozen `get_raw/2` glues
+# `?api-version=7.1` onto a path that already carries `?fileName=…`, so its one
+# pair's value swallows the version, where this build sends the two pairs. Splitting
+# that pair reproduces this build's spelling; a case that sets
+# `rest_norm=$d25_query_norm` still fails on any other request difference.
+d25_query_norm='map(.query |= ([.[] | if startswith("fileName=") and (index("?api-version=") != null)
+    then (. | split("?api-version=")) as $parts
+       | ("fileName=" + ($parts[0][9:])), ("api-version=" + ($parts[1]))
+    else . end] | sort))'
 
 mock_requests_check() {
     local slug=$1 unmatched body_mismatch
@@ -478,6 +529,22 @@ mock_requests_check() {
         else
             note "requests identical ($requests)"
         fi
+        return
+    fi
+
+    # A rule with a mechanical form asserts more than it forgives: the normaliser
+    # is applied to both sides and anything it does not account for fails the case,
+    # so a rule can no longer absorb a difference it does not describe.
+    if [[ -n $rest_norm ]]; then
+        jq -c "$rest_norm" "$work/$slug.requests.elixir" >"$work/$slug.requests.norm.elixir"
+        jq -c "$rest_norm" "$work/$slug.requests.rust" >"$work/$slug.requests.norm.rust"
+
+        if same "$work/$slug.requests.norm.elixir" "$work/$slug.requests.norm.rust"; then
+            ruled "$rest_rule"
+        else
+            fail "the recorded requests differ beyond the rule's normalisation: $(first_difference "$work/$slug.requests.norm.elixir" "$work/$slug.requests.norm.rust")"
+        fi
+
         return
     fi
 
@@ -625,19 +692,43 @@ mock_files_check() {
 }
 
 # The scenario's own coverage: every route it declares was requested at least once,
-# so a route no case exercises cannot hide a missing case.
+# so a route no case exercises cannot hide a missing case. A route's identity includes
+# its query requirement — a query-requiring route is tried before a query-blind one,
+# so a dead requirement would otherwise be invisible: its path is exercised by the
+# neighbour.
 mock_scenario_check() {
     local missing total
 
     start_case "scenario coverage"
 
-    jq -r '.responses[] | "\(.method) \(.path)"' "$mock_scenario" | sort -u >"$work/scenario.declared"
-    jq -r 'select(.matched) | "\(.method) \(.path)"' "$mock_requests" |
-        sed "s|$mock_url|{base}|g" | sort -u >"$work/scenario.exercised"
+    total=$(jq '[.responses[]] | length' "$mock_scenario")
 
-    total=$(wc -l <"$work/scenario.declared" | tr -d ' ')
-    missing=$(comm -13 "$work/scenario.exercised" "$work/scenario.declared" | tr '\n' ' ')
-    missing=${missing% }
+    missing=$(jq -n -r --arg base "$mock_url" --slurpfile scenario "$mock_scenario" \
+        --slurpfile requests "$mock_requests" '
+        def sent_pairs($q): [ $q | split("&")[] | select(. != "")
+            | (split("=")) as $p | {key: $p[0], value: ($p[1:] | join("="))} ];
+        def carries($request; $required):
+            all($required[];
+                . as $want
+                | (sent_pairs($request.query)
+                   | any(. as $sent
+                       | $sent.key == $want.key
+                         and ($want.value == "*" or $sent.value == $want.value))));
+        def route_label($route):
+            "\($route.method) \($route.path)"
+            + (($route.query // {} | to_entries | map("\(.key)=\(.value)") | sort) as $pairs
+               | if ($pairs | length) == 0 then "" else " [\($pairs | join(","))]" end);
+
+        [ $scenario[0].responses[]
+          | . as $route
+          | select(
+              ([ $requests[]
+                 | select((.method | ascii_downcase) == ($route.method | ascii_downcase)
+                          and (.path | sub($base; "{base}")) == $route.path
+                          and carries(.; ($route.query // {} | to_entries))) ]
+               | length) == 0)
+          | route_label($route) ]
+        | join("; ")')
 
     if [[ -n $missing ]]; then
         fail "routes no case exercised: $missing"
@@ -1237,26 +1328,31 @@ run_mock_cases() {
     #
     # The two path spellings are captured, not assumed: the comments read uses
     # `workItems` (capital I), every other path `workitems`. Both comment writes
-    # are one-operation `System.History` JSON patches under
-    # `application/json-patch+json`, pinned byte-for-byte by their routes. None of
+    # are one-operation `System.History` JSON patches whose **bodies** are pinned
+    # byte-for-byte by their routes; the `application/json-patch+json` content type
+    # is pinned by the integration tests and the captured request bytes, not by the
+    # routes — the request log carries no headers. None of
     # the five commands prompts: the two writes and the download were run against
     # the mock with `n` on stdin (and on EOF in the captures), and the requests
     # went out. A missing `--text` is D34's class — the oracle's schema marks it
     # required and CliMate never enforces it, so it writes nothing and exits 0,
     # where this build is a loud usage error. The download's metadata GET and
     # raw-content GET share a path (the module asks for both under
-    # `/_apis/wit/attachments/{id}`), so one route answers each twice, exactly as
-    # the mock routes method+path; its `fileName` query is this wave's second
-    # **D25** difference: the frozen `get_raw/2` glues `?api-version=7.1` onto a
-    # path that already carries `?fileName=…` (one query pair whose value swallows
-    # the version), and this build sends the two pairs properly. The success line
+    # `/_apis/wit/attachments/{id}`): the metadata route is query-blind and the raw
+    # route requires the `fileName` pair, so the two GETs get different bodies — the
+    # raw one the captured bytes — and a candidate that drops either GET fails on
+    # the request count or on the file's bytes. The raw GET's `fileName` query is
+    # this wave's second **D25** difference: the frozen `get_raw/2` glues
+    # `?api-version=7.1` onto a path that already carries `?fileName=…` (one query
+    # pair whose value swallows the version), and this build sends the two pairs
+    # properly — so those cases set `rest_norm=$d25_query_norm`, which rules exactly
+    # that spelling difference and nothing else. The success line
     # is the whole stdout on both sides, so the download cases are `text`-mode
     # with the module's line compared; the oracle appends its
     # `halt_success("Done.")` marker, which this build does not print (§8
     # regenerated surface), and that lone difference is the case's rule. A 302 is
     # refused with its true status on both sides (D8), the raw GET's status is
-    # D25's classification, and the two missing-positional rows are D5's usage
-    # error.
+    # D25's classification, and the missing-positional rows are D5's usage error.
 
     mock_case workitems-comments-list "workitems comments list" \
         workitems comments list 42 --json
@@ -1351,6 +1447,7 @@ run_mock_cases() {
         workitems attachments list --json
 
     rest_rule='D25: the frozen get_raw appends api-version onto a path that already carries ?fileName=… (one query pair whose value swallows the version); this build sends fileName and api-version as separate pairs'
+    rest_norm=$d25_query_norm
     envelope_rule='§8: the frozen download prints its success line plus the halt_success "Done." marker; this build prints the line alone'
     stdout_mode=text
     compare_files=(out.bin)
@@ -1358,6 +1455,7 @@ run_mock_cases() {
         workitems attachments download 42 att-1 --output out.bin
 
     rest_rule='D25: the frozen get_raw appends api-version onto a path that already carries ?fileName=… (one query pair whose value swallows the version); this build sends fileName and api-version as separate pairs'
+    rest_norm=$d25_query_norm
     envelope_rule='§8: the frozen download prints its success line plus the halt_success "Done." marker; this build prints the line alone'
     stdout_mode=text
     compare_files=(out.bin)
@@ -1365,6 +1463,7 @@ run_mock_cases() {
         workitems attachments download 42 att-1 --output out.bin --json
 
     rest_rule='D25: the frozen get_raw appends api-version onto a path that already carries ?fileName=… (one query pair whose value swallows the version); this build sends fileName and api-version as separate pairs'
+    rest_norm=$d25_query_norm
     envelope_rule='§8: the frozen download prints its success line plus the halt_success "Done." marker; this build prints the line alone'
     stdout_mode=text
     compare_files=(notes.txt)
@@ -1372,6 +1471,7 @@ run_mock_cases() {
         workitems attachments download 42 att-2
 
     rest_rule='D25: the frozen get_raw appends api-version onto a path that already carries ?fileName=… (one query pair whose value swallows the version); this build sends fileName and api-version as separate pairs'
+    rest_norm=$d25_query_norm
     envelope_rule='§8: the frozen download prints its success line plus the halt_success "Done." marker; this build prints the line alone'
     stdout_mode=text
     compare_files=(attachment_att-3)
@@ -1380,6 +1480,7 @@ run_mock_cases() {
 
     case_stdin=$'n\n'
     rest_rule='D25: the frozen get_raw appends api-version onto a path that already carries ?fileName=… (one query pair whose value swallows the version); this build sends fileName and api-version as separate pairs'
+    rest_norm=$d25_query_norm
     envelope_rule='§8: the frozen download prints its success line plus the halt_success "Done." marker; this build prints the line alone'
     stdout_mode=text
     compare_files=(out.bin)
