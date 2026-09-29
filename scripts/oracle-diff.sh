@@ -527,12 +527,21 @@ mock_stdout_check() {
     local slug=$1 elixir_out=$work/$slug.elixir
 
     case $stdout_mode in
+        json)
+            # The oracle's halt_success/1 artefact is a coloured empty line after
+            # its document, even under --json; strip it (as the text modes already
+            # do) so the document is what jq parses and compares.
+            strip_colour "$work/$slug.elixir" >"$work/$slug.stdout.elixir"
+            elixir_out=$work/$slug.stdout.elixir
+            ;;
         text)
             strip_colour "$work/$slug.elixir" >"$work/$slug.stdout.elixir"
             ;;
         prompt-text | prompt-json)
             mock_prompt_check "$slug" || return
             prompt_strip "$work/$slug.elixir" "$work/$slug.stdout.elixir"
+            strip_colour "$work/$slug.stdout.elixir" >"$work/$slug.stdout.elixir.plain"
+            mv "$work/$slug.stdout.elixir.plain" "$work/$slug.stdout.elixir"
             elixir_out=$work/$slug.stdout.elixir
             ;;
     esac
@@ -650,6 +659,10 @@ run_mock_cases() {
     start_mock
     printf 'oracle-diff: --mock: %s serving %s\n' "$mock_url" "$mock_scenario"
     printf 'oracle-diff: oracle %s, candidate %s\n\n' "$elixir_bin" "$rust_bin"
+
+    # `prs comments update --content @<file>` reads this: both binaries run from
+    # their own temp cwd, so the path is absolute and shared.
+    printf 'File body\n\n' >"$work/comments-body.md"
 
     # ── projects ──
 
@@ -1647,6 +1660,208 @@ run_mock_cases() {
     envelope_rule='D36: the frozen Helpers.bail/2 catch-all classifies a local guard as network_error (`Request failed: "…"`); this build classifies by meaning — api_error for a malformed iteration, not_found for a file absent in a commit'
     mock_case prs-diff-missing-commit "prs diff (iteration without a source commit)" \
         prs diff Alpha Alpha.Core 139 --file /src/app.ex --json
+
+    # ── Wave 2: the pull request comment threads (Task 11a) ──
+    #
+    # Captured shapes: `list`/`update` spell the path `pullRequests` (capital R),
+    # `add`/`delete`/`resolve` spell it `pullrequests`; `update` PATCHes the
+    # thread and/or the comment (the thread first when both), `add` replies when
+    # `--thread-id` is given and attaches a file/line when `--file-path` and
+    # `--line` are, `delete` closes the thread or DELETEs the comment, and
+    # `resolve` PATCHes the status unvalidated (captured: `--status bogus` goes to
+    # the wire). The writes' `--json` documents are the frozen ones and are
+    # mirrored (D38) — the frozen CLI already emits a document there, unlike
+    # D33's prose paths — and `update --dry-run` prints its actions document even
+    # without `--json`, sending nothing. `delete` is the wave's third prompting
+    # command: its question is `Close thread N? [y/N] ` / `Close comment N in
+    # thread N? [y/N] `, and the oracle answers a refusal with `Cancelled.` on
+    # stdout and exit 0 (R2/D30/D32): this build refuses on stderr with exit 1.
+    # The invocations table's underscore spellings are rejected by the frozen
+    # parser (D17); `add` without `--content` proceeds with an empty body there
+    # where this build's clap is loud (D34's class).
+
+    mock_case prs-comments-list "prs comments list" \
+        prs comments list Alpha Alpha.Core 137 --json
+
+    stdout_mode=text
+    mock_case prs-comments-list-human "prs comments list (human)" \
+        prs comments list Alpha Alpha.Core 137
+
+    stdout_mode=text
+    mock_case prs-comments-list-all-human "prs comments list --all (human)" \
+        prs comments list Alpha Alpha.Core 137 --all
+
+    mock_case prs-comments-list-empty "prs comments list (empty)" \
+        prs comments list Alpha Alpha.Core 8 --json
+
+    envelope_rule='D24: the error body stays the upstream bytes here, where the oracle re-renders the decoded map with inspect/2'
+    mock_case prs-comments-list-404 "prs comments list (404)" \
+        prs comments list Alpha Alpha.Core 999 --json
+
+    envelope_rule='D24: the error body stays the upstream bytes here, where the oracle re-renders the decoded map with inspect/2 (C2: the list-error row)'
+    mock_case prs-comments-list-500 "prs comments list (500)" \
+        prs comments list Alpha Alpha.Core 500 --json
+
+    mock_case prs-comments-add "prs comments add" \
+        prs comments add Alpha Alpha.Core 137 --content 'Looks good' --json
+
+    mock_case prs-comments-add-inline "prs comments add --file-path --line --end-line" \
+        prs comments add Alpha Alpha.Core 140 --content 'Range note' --file-path src/foo.ex \
+        --line 3 --end-line 5 --json
+
+    mock_case prs-comments-add-reply "prs comments add --thread-id" \
+        prs comments add Alpha Alpha.Core 137 --content 'Reply here.' --thread-id 7 --json
+
+    mock_case prs-comments-add-reply-comment-id "prs comments add --thread-id --comment-id" \
+        prs comments add Alpha Alpha.Core 137 --content 'Reply to 3' --thread-id 8 --comment-id 3 --json
+
+    mock_case prs-comments-add-inline-single "prs comments add --file-path --line" \
+        prs comments add Alpha Alpha.Core 139 --content 'Inline note' --file-path src/foo.ex \
+        --line 3 --json
+
+    mock_case prs-comments-add-inline-leading-slash "prs comments add --file-path with a leading slash" \
+        prs comments add Alpha Alpha.Core 141 --content 'Slash note' --file-path /src/bar.ex \
+        --line 1 --json
+
+    mock_case prs-comments-add-status "prs comments add --status wontFix" \
+        prs comments add Alpha Alpha.Core 142 --content 'By design' --status wontFix --json
+
+    stdout_mode=text
+    mock_case prs-comments-add-human "prs comments add (human)" \
+        prs comments add Alpha Alpha.Core 137 --content 'Looks good'
+
+    status_rule='D34: the oracle proceeds with an empty body when --content is absent; this build is a loud usage error'
+    rest_rule='D34: the oracle sends the empty-content thread where this build refuses before the request'
+    envelope_rule='D34: the oracle sends an empty comment where this build refuses before the request'
+    stdout_mode=text
+    mock_case prs-comments-add-no-content "prs comments add (no --content)" \
+        prs comments add Alpha Alpha.Core 138 --json
+
+    envelope_rule='D4: the frozen CLI writes the guard to stderr with no envelope under --json where this build emits the error envelope'
+    mock_case prs-comments-add-invalid-status "prs comments add (--status bogus)" \
+        prs comments add Alpha Alpha.Core 137 --content X --status bogus --json
+
+    envelope_rule='D4: the frozen CLI writes the guard to stderr with no envelope under --json where this build emits the error envelope'
+    mock_case prs-comments-add-missing-file "prs comments add (missing @file)" \
+        prs comments add Alpha Alpha.Core 137 --content @/nonexistent/file.md --json
+
+    envelope_rule='D24: the error body stays the upstream bytes here, where the oracle re-renders the decoded map with inspect/2'
+    mock_case prs-comments-add-404 "prs comments add (404)" \
+        prs comments add Alpha Alpha.Core 999 --content X --json
+
+    envelope_rule='D24: the error body stays the upstream bytes here, where the oracle re-renders the decoded map with inspect/2'
+    mock_case prs-comments-add-400 "prs comments add (400)" \
+        prs comments add Broken Alpha.Core 137 --content X --json
+
+    mock_case prs-comments-update-content "prs comments update --content" \
+        prs comments update Alpha Alpha.Core 137 7 3 --content 'Edited text' --json
+
+    mock_case prs-comments-update-status "prs comments update --status" \
+        prs comments update Alpha Alpha.Core 137 8 3 --status fixed --json
+
+    mock_case prs-comments-update-both "prs comments update --content --status" \
+        prs comments update Alpha Alpha.Core 137 9 4 --content 'Both edited' --status fixed --json
+
+    stdout_mode=text
+    mock_case prs-comments-update-both-human "prs comments update --content --status (human)" \
+        prs comments update Alpha Alpha.Core 137 9 4 --content 'Both edited' --status fixed
+
+    mock_case prs-comments-update-resolved-by-me "prs comments update --resolved-by-me" \
+        prs comments update Alpha Alpha.Core 137 10 3 --status fixed --resolved-by-me --json
+
+    mock_case prs-comments-update-file "prs comments update --content @file" \
+        prs comments update Alpha Alpha.Core 137 11 5 --content "@$work/comments-body.md" --json
+
+    case_stdin=$'Stdin body\n\n'
+    mock_case prs-comments-update-stdin "prs comments update --content -" \
+        prs comments update Alpha Alpha.Core 137 12 6 --content - --json
+
+    envelope_rule='D24: the error body stays the upstream bytes here, where the oracle re-renders the decoded map with inspect/2'
+    mock_case prs-comments-update-404 "prs comments update (404)" \
+        prs comments update Alpha Alpha.Core 137 13 99 --content X --json
+
+    mock_case prs-comments-update-dry-run "prs comments update --dry-run" \
+        prs comments update Alpha Alpha.Core 137 9 4 --content 'Both edited' --status fixed --dry-run
+
+    envelope_rule='D4: the frozen CLI writes the guard to stderr with no envelope under --json where this build emits the error envelope'
+    mock_case prs-comments-update-no-flags "prs comments update (no --content/--status)" \
+        prs comments update Alpha Alpha.Core 137 7 3 --json
+
+    envelope_rule='D4: the frozen CLI writes the guard to stderr with no envelope under --json where this build emits the error envelope'
+    mock_case prs-comments-update-invalid-status "prs comments update (--status bogus)" \
+        prs comments update Alpha Alpha.Core 137 7 3 --status bogus --json
+
+    envelope_rule='D5: the oracle prints the command help on stdout before its usage error; this build writes clap’s message to stderr alone'
+    stdout_mode=text
+    mock_case prs-comments-update-underscore "prs comments update --dry_run (unknown flag)" \
+        prs comments update Alpha Alpha.Core 137 7 3 --content X --dry_run
+
+    envelope_rule='D5: the oracle prints the command help on stdout before its usage error; this build writes clap’s message to stderr alone'
+    stdout_mode=text
+    mock_case prs-comments-update-no-comment-id "prs comments update (no comment_id)" \
+        prs comments update Alpha Alpha.Core 137 7 --content X --json
+
+    mock_case prs-comments-delete-force "prs comments delete --force" \
+        prs comments delete Alpha Alpha.Core 137 21 --force --json
+
+    mock_case prs-comments-delete-comment "prs comments delete --comment-id --force" \
+        prs comments delete Alpha Alpha.Core 137 25 --comment-id 4 --force --json
+
+    case_stdin=$'y\n'
+    stdout_mode=prompt-text
+    mock_case prs-comments-delete-comment-confirmed "prs comments delete --comment-id (confirmed)" \
+        prs comments delete Alpha Alpha.Core 137 24 --comment-id 3
+
+    case_stdin=$'y\n'
+    stdout_mode=prompt-json
+    mock_case prs-comments-delete-confirmed "prs comments delete (confirmed)" \
+        prs comments delete Alpha Alpha.Core 137 20 --json
+
+    case_stdin=$'y\n'
+    stdout_mode=prompt-text
+    mock_case prs-comments-delete-confirmed-human "prs comments delete (confirmed, human)" \
+        prs comments delete Alpha Alpha.Core 137 20
+
+    case_stdin=$'n\n'
+    status_rule='D32: the oracle answers a refusal with `Cancelled.` on stdout and exit 0; this build refuses on stderr with exit 1'
+    envelope_rule='D32: the oracle prints its refusal on stdout even under --json; this build writes the refusal to stderr and leaves stdout empty'
+    stdout_mode=prompt-text
+    mock_case prs-comments-delete-refused "prs comments delete (refused)" \
+        prs comments delete Alpha Alpha.Core 137 26 --json
+
+    status_rule='D30/D32: the oracle exits 0 on an unanswered prompt; this build refuses on stderr with exit 1'
+    stdout_mode=prompt-text
+    mock_case prs-comments-delete-eof "prs comments delete (EOF)" \
+        prs comments delete Alpha Alpha.Core 137 26
+
+    envelope_rule='D24: the error body stays the upstream bytes here, where the oracle re-renders the decoded map with inspect/2'
+    mock_case prs-comments-delete-404 "prs comments delete (404)" \
+        prs comments delete Alpha Alpha.Core 137 23 --force --json
+
+    mock_case prs-comments-resolve "prs comments resolve" \
+        prs comments resolve Alpha Alpha.Core 137 5 --json
+
+    stdout_mode=text
+    mock_case prs-comments-resolve-human "prs comments resolve (human)" \
+        prs comments resolve Alpha Alpha.Core 137 5
+
+    mock_case prs-comments-resolve-status "prs comments resolve --status wontFix" \
+        prs comments resolve Alpha Alpha.Core 137 6 --status wontFix --json
+
+    mock_case prs-comments-resolve-active "prs comments resolve --status active" \
+        prs comments resolve Alpha Alpha.Core 137 14 --status active --json
+
+    mock_case prs-comments-resolve-resolved-by-me "prs comments resolve --resolved-by-me" \
+        prs comments resolve Alpha Alpha.Core 137 4 --resolved-by-me --json
+
+    envelope_rule='D24: the error body stays the upstream bytes here, where the oracle re-renders the decoded map with inspect/2'
+    mock_case prs-comments-resolve-404 "prs comments resolve (404)" \
+        prs comments resolve Alpha Alpha.Core 137 15 --json
+
+    case_org=conn-broken
+    envelope_rule='D4: the frozen CLI writes the guard to stderr with no envelope under --json where this build emits the error envelope'
+    mock_case prs-comments-resolve-conn-broken "prs comments resolve (connectionData 404)" \
+        prs comments resolve Alpha Alpha.Core 137 5 --resolved-by-me --json
 
     mock_scenario_check
 }
