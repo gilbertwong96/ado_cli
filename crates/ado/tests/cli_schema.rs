@@ -99,7 +99,9 @@ fn schema_root_lists_exactly_the_shipped_subcommands() {
     assert_eq!(
         names,
         [
+            "ado areas",
             "ado completion",
+            "ado iterations",
             "ado login",
             "ado logout",
             "ado pipelines",
@@ -191,6 +193,87 @@ fn schema_prs_reviewers_node_marks_the_reviewer_required() {
         option_names(&add)
     );
     assert_eq!(argument(&add, "pr_id")["required"], json!(true));
+}
+
+/// The two Task 12 trees: five leaves each, the required `--name` on the three
+/// writes (D34's loud half), and the hyphenated date options the frozen parser
+/// accepts where the schema spells them with underscores (D17).
+#[test]
+fn schema_areas_and_iterations_nodes_list_every_shipped_subcommand() {
+    let areas = find_node("areas").expect("the areas node");
+
+    assert_eq!(
+        subcommands(&areas)
+            .iter()
+            .map(|sub| sub["name"].as_str().expect("a subcommand name"))
+            .collect::<Vec<_>>(),
+        [
+            "ado areas list",
+            "ado areas show",
+            "ado areas create",
+            "ado areas update",
+            "ado areas delete"
+        ]
+    );
+
+    let iterations = find_node("iterations").expect("the iterations node");
+
+    assert_eq!(
+        subcommands(&iterations)
+            .iter()
+            .map(|sub| sub["name"].as_str().expect("a subcommand name"))
+            .collect::<Vec<_>>(),
+        [
+            "ado iterations list",
+            "ado iterations show",
+            "ado iterations create",
+            "ado iterations update",
+            "ado iterations delete"
+        ]
+    );
+
+    for leaf in ["areas create", "areas update", "iterations create"] {
+        let node = find_node(leaf).expect("the leaf node");
+
+        assert_eq!(
+            option(&node, "name")["required"],
+            json!(true),
+            "{leaf} marks --name required (the oracle does too; it never enforces it, D34)"
+        );
+    }
+
+    let depth = find_node("areas list").expect("the areas list node");
+    assert!(
+        option_names(&depth).contains(&"depth"),
+        "--depth is a real flag: {:?}",
+        option_names(&depth)
+    );
+    assert_eq!(
+        option(&depth, "depth")["type"],
+        json!("string"),
+        "this build's schema reports every value-taking option as a string (D23)"
+    );
+
+    let update = find_node("iterations update").expect("the iterations update node");
+    for name in ["name", "start_date", "finish_date"] {
+        assert!(
+            option_names(&update).contains(&name),
+            "{name} is an option of iterations update: {:?}",
+            option_names(&update)
+        );
+        assert_eq!(
+            option(&update, name)["required"],
+            json!(false),
+            "iterations update requires none of its options; the module's guard is D4"
+        );
+    }
+
+    let list = find_node("iterations list").expect("the iterations list node");
+    assert!(
+        option_names(&list).contains(&"current"),
+        "--current is a real flag: {:?}",
+        option_names(&list)
+    );
 }
 
 /// `login` has one option of its own, `--method`; the Elixir's four local options
