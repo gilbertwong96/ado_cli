@@ -481,14 +481,16 @@ requests_filter="map({
     matched
 })"
 
-# D25's query difference, mechanically: the frozen `get_raw/2` glues
-# `?api-version=7.1` onto a path that already carries `?fileName=…`, so its one
-# pair's value swallows the version, where this build sends the two pairs. Splitting
-# that pair reproduces this build's spelling; a case that sets
+# D25's query difference, mechanically: the frozen client glues
+# `?api-version=7.1` onto a path that already carries a query — `get_raw/2`'s
+# `?fileName=…`, or the current-only iterations list's inline `?$timeframe=current`
+# — so its one pair's value swallows the version, where this build sends the two
+# pairs. Splitting that pair reproduces this build's spelling; a case that sets
 # `rest_norm=$d25_query_norm` still fails on any other request difference.
-d25_query_norm='map(.query |= ([.[] | if startswith("fileName=") and (index("?api-version=") != null)
+d25_query_norm='map(.query |= ([.[] | if (index("?api-version=") != null)
     then (. | split("?api-version=")) as $parts
-       | ("fileName=" + ($parts[0][9:])), ("api-version=" + ($parts[1]))
+       | ($parts[0] | split("=")) as $kv
+       | (($kv[0]) + "=" + ($kv[1:] | join("="))), ("api-version=" + ($parts[1]))
     else . end] | sort))'
 
 mock_requests_check() {
@@ -2131,6 +2133,214 @@ run_mock_cases() {
     stdout_mode=text
     mock_case prs-reviewers-remove-no-reviewer "prs reviewers remove (no --reviewer)" \
         prs reviewers remove Alpha Alpha.Core 137 --json
+
+    # ── Wave 2: the area paths and the team iterations (Task 12) ──
+    #
+    # Captured shapes: areas hang off `wit/classificationNodes/areas`; the whole
+    # area path is one segment (`Alpha\Team` → `Alpha%5CTeam`) but the frozen
+    # `URI.encode/1` leaves `/` alone, so a slash in the path changes the URL's
+    # structure (D22 — the `areas show` slash case). `list` and `show` emit the
+    # value envelope; the writes' `--json` output is this build's value/message
+    # envelope where the oracle prints its human line in both modes (D33), while
+    # `areas show`'s 404 is the module's `Area path '…' not found` on stderr with
+    # no envelope (D4). `--depth` is sent as `$depth`, `[--current]` as
+    # `$timeframe` (D25's second site: the frozen path glue swallows the version).
+    # The two areas' list error cases are carried here (C2): 404 and 500, both
+    # D24's body rendering. `--start_date`/`--finish_date` are schema names the
+    # frozen parser rejects; `--start-date`/`--finish-date` parse — and then crash
+    # the command (D39, the `put_in/3` on a nil parent), which this build repairs.
+
+    mock_case areas-list "areas list" \
+        areas list Alpha --json
+
+    mock_case areas-list-depth "areas list --depth 2" \
+        areas list Alpha --depth 2 --json
+
+    stdout_mode=text
+    mock_case areas-list-human "areas list (human)" \
+        areas list Alpha
+
+    stdout_mode=text
+    mock_case areas-list-empty-human "areas list (empty children, human)" \
+        areas list Empty
+
+    envelope_rule='D24: the error body stays the upstream bytes here, where the oracle re-renders the decoded map with inspect/2 (C2: the list-error row)'
+    mock_case areas-list-404 "areas list (404)" \
+        areas list Missing --json
+
+    envelope_rule='D24: the error body stays the upstream bytes here, where the oracle re-renders the decoded map with inspect/2 (C2: the list-error row)'
+    mock_case areas-list-500 "areas list (500)" \
+        areas list Broken --json
+
+    mock_case areas-show "areas show" \
+        areas show Alpha 'Alpha\Team' --json
+
+    stdout_mode=text
+    mock_case areas-show-human "areas show (human)" \
+        areas show Alpha 'Alpha\Team'
+
+    rest_rule='D22: the whole area path is one path segment here, percent-encoded more strictly than the frozen URI.encode/1 (which left the / alone), so the request paths differ and the envelopes do not'
+    mock_case areas-show-slash "areas show (slash in the path)" \
+        areas show Alpha 'Alpha/Team' --json
+
+    envelope_rule='D4: the frozen CLI writes the guard to stderr with no envelope under --json where this build emits the error envelope'
+    mock_case areas-show-404 "areas show (404)" \
+        areas show Alpha 'Alpha\Missing' --json
+
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the value envelope'
+    mock_case areas-create "areas create" \
+        areas create Alpha --name Team --json
+
+    stdout_mode=text
+    mock_case areas-create-human "areas create (human)" \
+        areas create Alpha --name Team
+
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the value envelope'
+    mock_case areas-create-parent "areas create --parent" \
+        areas create Alpha --name Nested --parent 'Alpha\Team' --json
+
+    envelope_rule='D24: the error body stays the upstream bytes here, where the oracle re-renders the decoded map with inspect/2'
+    mock_case areas-create-409 "areas create (409)" \
+        areas create Conflict --name Duplicate --json
+
+    status_rule='D34: a missing required option is a silent exit 0 in the oracle; this build is a loud usage error'
+    expect_statuses='0 1'
+    stdout_mode=text
+    mock_case areas-create-no-name "areas create (no --name)" \
+        areas create Alpha --json
+
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the value envelope'
+    mock_case areas-update "areas update" \
+        areas update Alpha 'Alpha\Team' --name Renamed --json
+
+    stdout_mode=text
+    mock_case areas-update-human "areas update (human)" \
+        areas update Alpha 'Alpha\Team' --name Renamed
+
+    envelope_rule='D24: the error body stays the upstream bytes here, where the oracle re-renders the decoded map with inspect/2'
+    mock_case areas-update-404 "areas update (404)" \
+        areas update Alpha 'Alpha\Missing' --name Renamed --json
+
+    status_rule='D34: a missing required option is a silent exit 0 in the oracle; this build is a loud usage error'
+    expect_statuses='0 1'
+    stdout_mode=text
+    mock_case areas-update-no-name "areas update (no --name)" \
+        areas update Alpha 'Alpha\Team' --json
+
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the message envelope'
+    mock_case areas-delete "areas delete" \
+        areas delete Alpha 'Alpha\Old' --json
+
+    stdout_mode=text
+    mock_case areas-delete-human "areas delete (human)" \
+        areas delete Alpha 'Alpha\Old'
+
+    envelope_rule='D24: the error body stays the upstream bytes here, where the oracle re-renders the decoded map with inspect/2'
+    mock_case areas-delete-404 "areas delete (404)" \
+        areas delete Alpha 'Alpha\Missing' --json
+
+    envelope_rule='D5: the oracle prints the command help on stdout before its usage error; this build writes clap’s message to stderr alone'
+    stdout_mode=text
+    mock_case areas-list-no-project "areas list (no project)" \
+        areas list --json
+
+    # ── iterations ──
+
+    mock_case iterations-list "iterations list" \
+        iterations list Alpha Team --json
+
+    rest_rule='D25 (second site): the frozen list path carries an inline ?$timeframe=current and build_url appends ?api-version=7.1, so its one query pair swallows the version; this build sends $timeframe and api-version as separate pairs'
+    rest_norm=$d25_query_norm
+    mock_case iterations-list-current "iterations list --current" \
+        iterations list Alpha Team --current --json
+
+    stdout_mode=text
+    mock_case iterations-list-empty-human "iterations list (empty, human)" \
+        iterations list Empty Team
+
+    envelope_rule='D24: the error body stays the upstream bytes here, where the oracle re-renders the decoded map with inspect/2 (C2: the list-error row)'
+    mock_case iterations-list-404 "iterations list (404)" \
+        iterations list Missing Team --json
+
+    envelope_rule='D24: the error body stays the upstream bytes here, where the oracle re-renders the decoded map with inspect/2 (C2: the list-error row)'
+    mock_case iterations-list-500 "iterations list (500)" \
+        iterations list Broken Team --json
+
+    mock_case iterations-show "iterations show" \
+        iterations show Alpha Team aaaaaaaa-0001-0001-0001-000000000001 --json
+
+    stdout_mode=text
+    mock_case iterations-show-human "iterations show (human)" \
+        iterations show Alpha Team aaaaaaaa-0001-0001-0001-000000000001
+
+    envelope_rule='D4: the frozen CLI writes the guard to stderr with no envelope under --json where this build emits the error envelope'
+    mock_case iterations-show-404 "iterations show (404)" \
+        iterations show Alpha Team missing-id --json
+
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the value envelope'
+    mock_case iterations-create "iterations create" \
+        iterations create Alpha Team --name 'Sprint 24' --json
+
+    stdout_mode=text
+    mock_case iterations-create-human "iterations create (human)" \
+        iterations create Alpha Team --name 'Sprint 24'
+
+    status_rule='D39: the frozen body builder raises ArgumentError before sending (put_in on a nil attributes parent) and CLI.run/1 catches it into exit 1 with both streams empty; this build sends the intended attributes body'
+    expect_statuses='1 0'
+    rest_rule='D39: the oracle never sends the dated create (the put_in/3 crash); this build sends the intended {"name": …, "attributes": {"startDate": …, "finishDate": …}} body'
+    envelope_rule='D39: the oracle crashes before any output; this build emits the created iteration under the value envelope'
+    mock_case iterations-create-dates "iterations create --start-date --finish-date (D39)" \
+        iterations create Dated Team --name 'Sprint 26' --start-date 2026-03-01 --finish-date 2026-03-14 --json
+
+    status_rule='D34: a missing required option is a silent exit 0 in the oracle; this build is a loud usage error'
+    expect_statuses='0 1'
+    stdout_mode=text
+    mock_case iterations-create-no-name "iterations create (no --name)" \
+        iterations create Alpha Team --json
+
+    envelope_rule='D24: the error body stays the upstream bytes here, where the oracle re-renders the decoded map with inspect/2'
+    mock_case iterations-create-409 "iterations create (409)" \
+        iterations create Conflict Team --name Duplicate --json
+
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the value envelope'
+    mock_case iterations-update "iterations update" \
+        iterations update Alpha Team aaaaaaaa-0001-0001-0001-000000000001 --name 'Sprint 24 renamed' --json
+
+    stdout_mode=text
+    mock_case iterations-update-human "iterations update (human)" \
+        iterations update Alpha Team aaaaaaaa-0001-0001-0001-000000000001 --name 'Sprint 24 renamed'
+
+    status_rule='D39: the frozen body builder raises ArgumentError before sending (put_in on a nil attributes parent) and CLI.run/1 catches it into exit 1 with both streams empty; this build sends the intended attributes body'
+    expect_statuses='1 0'
+    rest_rule='D39: the oracle never sends the dated update (the put_in/3 crash); this build sends the intended {"attributes": {"startDate": …, "finishDate": …}} body'
+    envelope_rule='D39: the oracle crashes before any output; this build emits the updated iteration under the value envelope'
+    mock_case iterations-update-dates "iterations update --start-date --finish-date (D39)" \
+        iterations update Dated Team dated-id --start-date 2026-03-01 --finish-date 2026-03-14 --json
+
+    envelope_rule='D4: the frozen CLI writes the guard to stderr with no envelope under --json where this build emits the error envelope'
+    mock_case iterations-update-no-options "iterations update (no options)" \
+        iterations update Alpha Team aaaaaaaa-0001-0001-0001-000000000001 --json
+
+    envelope_rule='D4: the frozen CLI writes the guard to stderr with no envelope under --json where this build emits the error envelope'
+    mock_case iterations-update-404 "iterations update (404)" \
+        iterations update Alpha Team missing-id --name Renamed --json
+
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the message envelope'
+    mock_case iterations-delete "iterations delete" \
+        iterations delete Alpha Team bbbbbbbb-0002-0002-0002-000000000002 --json
+
+    stdout_mode=text
+    mock_case iterations-delete-human "iterations delete (human)" \
+        iterations delete Alpha Team bbbbbbbb-0002-0002-0002-000000000002
+
+    envelope_rule='D4: the frozen CLI writes the guard to stderr with no envelope under --json where this build emits the error envelope'
+    mock_case iterations-delete-404 "iterations delete (404)" \
+        iterations delete Alpha Team missing-id --json
+
+    envelope_rule='D5: the oracle prints the command help on stdout before its usage error; this build writes clap’s message to stderr alone'
+    stdout_mode=text
+    mock_case iterations-list-no-team "iterations list (no team)" \
+        iterations list Alpha --json
 
     mock_scenario_check
 }

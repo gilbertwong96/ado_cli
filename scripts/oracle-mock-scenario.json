@@ -852,6 +852,37 @@
     {"method": "PUT", "path": "/ado-harness/Alpha/_apis/git/repositories/Alpha.Core/pullrequests/137/reviewers/ada%40example.com", "request_body": {"id": "ada@example.com"}, "json": {"id": "aaaaaaaa-0001-0001-0001-000000000001", "displayName": "Ada Example", "uniqueName": "ada@example.com"}},
     {"method": "DELETE", "path": "/ado-harness/Alpha/_apis/git/repositories/Alpha.Core/pullrequests/137/reviewers/aaaaaaaa-0001-0001-0001-000000000001", "json": {}},
     {"method": "DELETE", "path": "/ado-harness/Alpha/_apis/git/repositories/Alpha.Core/pullrequests/999/reviewers/aaaaaaaa-0001-0001-0001-000000000001", "status": 404, "json": {"message": "The pull request 999 does not exist."}},
-    {"method": "DELETE", "path": "/ado-harness/Alpha/_apis/git/repositories/Alpha.Core/pullrequests/137/reviewers/bbbbbbbb-0002-0002-0002-000000000002", "status": 500, "json": {"message": "TF400813: The user is not authorized to access this resource."}}
+    {"method": "DELETE", "path": "/ado-harness/Alpha/_apis/git/repositories/Alpha.Core/pullrequests/137/reviewers/bbbbbbbb-0002-0002-0002-000000000002", "status": 500, "json": {"message": "TF400813: The user is not authorized to access this resource."}},
+
+    {"method": "GET", "path": "/ado-harness/Alpha/_apis/wit/classificationNodes/areas", "fixture": "areas_root.json"},
+    {"method": "GET", "path": "/ado-harness/Empty/_apis/wit/classificationNodes/areas", "json": {"id": 10, "name": "Empty", "structureType": "hierarchy", "hasChildren": false, "path": "\\Empty", "children": []}},
+    {"method": "GET", "path": "/ado-harness/Missing/_apis/wit/classificationNodes/areas", "status": 404, "json": {"message": "The area path was not found."}},
+    {"method": "GET", "path": "/ado-harness/Broken/_apis/wit/classificationNodes/areas", "status": 500, "json": {"message": "TF400813: The user is not authorized."}},
+    {"method": "GET", "path": "/ado-harness/Alpha/_apis/wit/classificationNodes/areas/Alpha%5CTeam", "fixture": "areas_node.json"},
+    {"method": "GET", "path": "/ado-harness/Alpha/_apis/wit/classificationNodes/areas/Alpha%5CMissing", "status": 404, "json": {"message": "The area path was not found."}},
+    {"method": "GET", "path": "/ado-harness/Alpha/_apis/wit/classificationNodes/areas/Alpha/Team", "fixture": "areas_node.json"},
+    {"method": "GET", "path": "/ado-harness/Alpha/_apis/wit/classificationNodes/areas/Alpha%2FTeam", "fixture": "areas_node.json"},
+    {"method": "POST", "path": "/ado-harness/Alpha/_apis/wit/classificationNodes/areas", "request_body": {"name": "Team"}, "fixture": "areas_node.json"},
+    {"method": "POST", "path": "/ado-harness/Alpha/_apis/wit/classificationNodes/areas/Alpha%5CTeam", "request_body": {"name": "Nested"}, "json": {"id": 6, "name": "Nested", "structureType": "hierarchy", "hasChildren": false, "path": "\\Alpha\\Team\\Nested"}},
+    {"method": "POST", "path": "/ado-harness/Conflict/_apis/wit/classificationNodes/areas", "request_body": {"name": "Duplicate"}, "status": 409, "json": {"message": "TF400899: The area already exists."}},
+    {"method": "PATCH", "path": "/ado-harness/Alpha/_apis/wit/classificationNodes/areas/Alpha%5CTeam", "request_body": {"name": "Renamed"}, "fixture": "areas_node.json"},
+    {"method": "PATCH", "path": "/ado-harness/Alpha/_apis/wit/classificationNodes/areas/Alpha%5CMissing", "request_body": {"name": "Renamed"}, "status": 404, "json": {"message": "The area path was not found."}},
+    {"method": "DELETE", "path": "/ado-harness/Alpha/_apis/wit/classificationNodes/areas/Alpha%5COld", "json": {}},
+    {"method": "DELETE", "path": "/ado-harness/Alpha/_apis/wit/classificationNodes/areas/Alpha%5CMissing", "status": 404, "json": {"message": "The area path was not found."}},
+
+    {"method": "GET", "path": "/ado-harness/Alpha/Team/_apis/work/teamsettings/iterations", "fixture": "iterations_list.json"},
+    {"method": "GET", "path": "/ado-harness/Empty/Team/_apis/work/teamsettings/iterations", "json": {"count": 0, "value": []}},
+    {"method": "GET", "path": "/ado-harness/Missing/Team/_apis/work/teamsettings/iterations", "status": 404, "json": {"message": "The team was not found."}},
+    {"method": "GET", "path": "/ado-harness/Broken/Team/_apis/work/teamsettings/iterations", "status": 500, "json": {"message": "TF400813: The user is not authorized."}},
+    {"method": "GET", "path": "/ado-harness/Alpha/Team/_apis/work/teamsettings/iterations/aaaaaaaa-0001-0001-0001-000000000001", "fixture": "iterations_show.json"},
+    {"method": "GET", "path": "/ado-harness/Alpha/Team/_apis/work/teamsettings/iterations/missing-id", "status": 404, "json": {"message": "The iteration was not found."}},
+    {"method": "POST", "path": "/ado-harness/Alpha/Team/_apis/work/teamsettings/iterations", "request_body": {"name": "Sprint 24"}, "fixture": "iterations_show.json"},
+    {"method": "POST", "path": "/ado-harness/Dated/Team/_apis/work/teamsettings/iterations", "request_body": {"name": "Sprint 26", "attributes": {"startDate": "2026-03-01", "finishDate": "2026-03-14"}}, "json": {"id": "cccccccc-0003-0003-0003-000000000003", "name": "Sprint 26", "path": "Dated\\Sprint 26", "attributes": {"startDate": "2026-03-01", "finishDate": "2026-03-14"}}},
+    {"method": "POST", "path": "/ado-harness/Conflict/Team/_apis/work/teamsettings/iterations", "request_body": {"name": "Duplicate"}, "status": 409, "json": {"message": "TF400899: The iteration already exists."}},
+    {"method": "PATCH", "path": "/ado-harness/Alpha/Team/_apis/work/teamsettings/iterations/aaaaaaaa-0001-0001-0001-000000000001", "request_body": {"name": "Sprint 24 renamed"}, "json": {"id": "aaaaaaaa-0001-0001-0001-000000000001", "name": "Sprint 24 renamed", "path": "Alpha\\Sprint 24 renamed", "attributes": {"startDate": "2026-01-15T00:00:00Z", "finishDate": "2026-01-29T00:00:00Z"}}},
+    {"method": "PATCH", "path": "/ado-harness/Dated/Team/_apis/work/teamsettings/iterations/dated-id", "request_body": {"attributes": {"startDate": "2026-03-01", "finishDate": "2026-03-14"}}, "json": {"id": "dated-id", "name": "Sprint 26", "path": "Dated\\Sprint 26", "attributes": {"startDate": "2026-03-01", "finishDate": "2026-03-14"}}},
+    {"method": "PATCH", "path": "/ado-harness/Alpha/Team/_apis/work/teamsettings/iterations/missing-id", "request_body": {"name": "Renamed"}, "status": 404, "json": {"message": "The iteration was not found."}},
+    {"method": "DELETE", "path": "/ado-harness/Alpha/Team/_apis/work/teamsettings/iterations/bbbbbbbb-0002-0002-0002-000000000002", "json": {}},
+    {"method": "DELETE", "path": "/ado-harness/Alpha/Team/_apis/work/teamsettings/iterations/missing-id", "status": 404, "json": {"message": "The iteration was not found."}}
   ]
 }
