@@ -2863,6 +2863,46 @@ fn attachments_download_keeps_a_pre_existing_tmp_file_when_the_stream_breaks() {
 }
 
 #[test]
+fn attachments_download_to_an_unwritable_path_reports_the_attachment_noun() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    let target = home.path().join("no-such-dir").join("out.bin");
+    expect_download(
+        &server,
+        ATTACHMENT_1_PATH,
+        attachment_metadata("att-1", Some("out.bin")),
+        b"bytes".to_vec(),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "workitems",
+            "attachments",
+            "download",
+            "42",
+            "att-1",
+            "--output",
+            target.to_str().expect("a utf-8 path"),
+        ],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        stdout_of(&output).is_empty(),
+        "no success line on a failed write: {}",
+        stdout_of(&output)
+    );
+    assert!(
+        stderr_of(&output).contains("Could not write the attachment to"),
+        "stderr: {}",
+        stderr_of(&output)
+    );
+    assert!(!target.exists(), "no file at the unwritable path");
+}
+
+#[test]
 fn attachments_download_404_on_the_metadata_is_the_not_found_envelope() {
     let home = TempHome::new();
     let server = MockServer::start();
