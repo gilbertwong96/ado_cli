@@ -1,8 +1,10 @@
+pub mod areas;
 pub mod artifacts;
 pub mod builds;
 pub mod completion;
 pub mod download;
 pub mod items;
+pub mod iterations;
 pub mod login;
 pub mod logout;
 pub mod pipelines;

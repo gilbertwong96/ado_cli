@@ -59,6 +59,146 @@ fn main() -> ExitCode {
             )
         }
         Some(("logout", _)) => commands::logout::run(&mut Context::load(globals)),
+        Some(("areas", sub)) => {
+            let mut context = Context::load(globals);
+
+            match sub.subcommand() {
+                Some(("list", list)) => commands::areas::list(
+                    &mut context,
+                    list.get_one::<String>("project")
+                        .expect("the positional is required")
+                        .as_str(),
+                    list.get_one::<i64>("depth").copied(),
+                ),
+                Some(("show", show)) => commands::areas::show(
+                    &mut context,
+                    show.get_one::<String>("project")
+                        .expect("the positional is required")
+                        .as_str(),
+                    show.get_one::<String>("area_path")
+                        .expect("the positional is required")
+                        .as_str(),
+                ),
+                Some(("create", create)) => commands::areas::create(
+                    &mut context,
+                    create
+                        .get_one::<String>("project")
+                        .expect("the positional is required")
+                        .as_str(),
+                    create
+                        .get_one::<String>("name")
+                        .expect("the option is required")
+                        .as_str(),
+                    create.get_one::<String>("parent").cloned(),
+                ),
+                Some(("update", update)) => commands::areas::update(
+                    &mut context,
+                    update
+                        .get_one::<String>("project")
+                        .expect("the positional is required")
+                        .as_str(),
+                    update
+                        .get_one::<String>("area_path")
+                        .expect("the positional is required")
+                        .as_str(),
+                    update
+                        .get_one::<String>("name")
+                        .expect("the option is required")
+                        .as_str(),
+                ),
+                Some(("delete", delete)) => commands::areas::delete(
+                    &mut context,
+                    delete
+                        .get_one::<String>("project")
+                        .expect("the positional is required")
+                        .as_str(),
+                    delete
+                        .get_one::<String>("area_path")
+                        .expect("the positional is required")
+                        .as_str(),
+                ),
+                _ => Err(AdoError::validation(MISSING_SUBCOMMAND)),
+            }
+        }
+        Some(("iterations", sub)) => {
+            let mut context = Context::load(globals);
+
+            match sub.subcommand() {
+                Some(("list", list)) => commands::iterations::list(
+                    &mut context,
+                    list.get_one::<String>("project")
+                        .expect("the positional is required")
+                        .as_str(),
+                    list.get_one::<String>("team")
+                        .expect("the positional is required")
+                        .as_str(),
+                    list.get_flag("current"),
+                ),
+                Some(("show", show)) => commands::iterations::show(
+                    &mut context,
+                    show.get_one::<String>("project")
+                        .expect("the positional is required")
+                        .as_str(),
+                    show.get_one::<String>("team")
+                        .expect("the positional is required")
+                        .as_str(),
+                    show.get_one::<String>("iteration_id")
+                        .expect("the positional is required")
+                        .as_str(),
+                ),
+                Some(("create", create)) => commands::iterations::create(
+                    &mut context,
+                    create
+                        .get_one::<String>("project")
+                        .expect("the positional is required")
+                        .as_str(),
+                    create
+                        .get_one::<String>("team")
+                        .expect("the positional is required")
+                        .as_str(),
+                    create
+                        .get_one::<String>("name")
+                        .expect("the option is required")
+                        .as_str(),
+                    create.get_one::<String>("start_date").cloned(),
+                    create.get_one::<String>("finish_date").cloned(),
+                ),
+                Some(("update", update)) => commands::iterations::update(
+                    &mut context,
+                    update
+                        .get_one::<String>("project")
+                        .expect("the positional is required")
+                        .as_str(),
+                    update
+                        .get_one::<String>("team")
+                        .expect("the positional is required")
+                        .as_str(),
+                    update
+                        .get_one::<String>("iteration_id")
+                        .expect("the positional is required")
+                        .as_str(),
+                    update.get_one::<String>("name").cloned(),
+                    update.get_one::<String>("start_date").cloned(),
+                    update.get_one::<String>("finish_date").cloned(),
+                ),
+                Some(("delete", delete)) => commands::iterations::delete(
+                    &mut context,
+                    delete
+                        .get_one::<String>("project")
+                        .expect("the positional is required")
+                        .as_str(),
+                    delete
+                        .get_one::<String>("team")
+                        .expect("the positional is required")
+                        .as_str(),
+                    delete
+                        .get_one::<String>("iteration_id")
+                        .expect("the positional is required")
+                        .as_str(),
+                ),
+                _ => Err(AdoError::validation(MISSING_SUBCOMMAND)),
+            }
+        }
         Some(("projects", sub)) => {
             let mut context = Context::load(globals);
 

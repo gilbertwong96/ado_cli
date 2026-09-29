@@ -62,6 +62,287 @@ pub fn command() -> Command {
         )
         .subcommand(Command::new("logout").about("Remove stored credentials."))
         .subcommand(
+            Command::new("areas")
+                .about(
+                    "Manage Azure DevOps area paths (classification nodes). Areas organize work items into a hierarchy (e.g. 'Project\\Team\\Feature') for filtering and reporting.",
+                )
+                .subcommand(
+                    Command::new("list")
+                        .about(
+                            "List area paths in a project as a tree (default: only top-level; use --depth for children). Output is a hierarchical tree by default; pass --json for the raw root node with nested children.",
+                        )
+                        .arg(
+                            Arg::new("project")
+                                .value_name("PROJECT")
+                                .required(true)
+                                .help("Project name or ID"),
+                        )
+                        .arg(
+                            Arg::new("depth")
+                                .long("depth")
+                                .value_name("N")
+                                .value_parser(clap::value_parser!(i64))
+                                .allow_negative_numbers(true)
+                                .help(
+                                    "Depth of children to retrieve (1 = top-level only, 2 = includes sub-areas)",
+                                ),
+                        ),
+                )
+                .subcommand(
+                    Command::new("show")
+                        .about(
+                            "Show details of a single area path (ID, name, full path, structure type). Returns 404 if the path does not exist.",
+                        )
+                        .arg(
+                            Arg::new("project")
+                                .value_name("PROJECT")
+                                .required(true)
+                                .help("Project name or ID"),
+                        )
+                        .arg(
+                            Arg::new("area_path")
+                                .value_name("AREA_PATH")
+                                .required(true)
+                                .help(
+                                    "Area path using backslashes (e.g. MyProject\\Area\\SubArea). Escape the backslash in shells or wrap in single quotes.",
+                                ),
+                        ),
+                )
+                .subcommand(
+                    Command::new("create")
+                        .about(
+                            "Create a new area path. Omit --parent to create at the project root, or pass --parent to nest under an existing area.",
+                        )
+                        .arg(
+                            Arg::new("project")
+                                .value_name("PROJECT")
+                                .required(true)
+                                .help("Project name or ID"),
+                        )
+                        .arg(
+                            Arg::new("name")
+                                .long("name")
+                                .value_name("NAME")
+                                .required(true)
+                                .help("Name for the new area path (no backslashes)"),
+                        )
+                        .arg(
+                            Arg::new("parent")
+                                .long("parent")
+                                .value_name("PATH")
+                                .help(
+                                    "Parent area path to nest under (e.g. MyProject\\Team). Omit to create at the root.",
+                                ),
+                        ),
+                )
+                .subcommand(
+                    Command::new("update")
+                        .about(
+                            "Rename an existing area path. Only the leaf name is changed; the path prefix is preserved.",
+                        )
+                        .arg(
+                            Arg::new("project")
+                                .value_name("PROJECT")
+                                .required(true)
+                                .help("Project name or ID"),
+                        )
+                        .arg(
+                            Arg::new("area_path")
+                                .value_name("AREA_PATH")
+                                .required(true)
+                                .help("Current area path (e.g. MyProject\\OldName)"),
+                        )
+                        .arg(
+                            Arg::new("name")
+                                .long("name")
+                                .value_name("NAME")
+                                .required(true)
+                                .help("New name (no backslashes)"),
+                        ),
+                )
+                .subcommand(
+                    Command::new("delete")
+                        .about(
+                            "Delete an area path. Fails if the area has child areas or work items still assigned to it; reassign or remove those first.",
+                        )
+                        .arg(
+                            Arg::new("project")
+                                .value_name("PROJECT")
+                                .required(true)
+                                .help("Project name or ID"),
+                        )
+                        .arg(
+                            Arg::new("area_path")
+                                .value_name("AREA_PATH")
+                                .required(true)
+                                .help("Area path to delete (e.g. MyProject\\OldArea)"),
+                        ),
+                ),
+        )
+        .subcommand(
+            Command::new("iterations")
+                .about(
+                    "Manage Azure DevOps iterations (sprints). Iterations are time-boxed containers for work items used in Scrum-like workflows. They belong to a specific team (a project can have multiple teams with different sprint cadences).",
+                )
+                .subcommand(
+                    Command::new("list")
+                        .about(
+                            "List all iterations (sprints) for a team. Output is a table (ID, Name, Start, Finish). Use --current to show only the active sprint.",
+                        )
+                        .arg(
+                            Arg::new("project")
+                                .value_name("PROJECT")
+                                .required(true)
+                                .help("Project name or ID"),
+                        )
+                        .arg(
+                            Arg::new("team")
+                                .value_name("TEAM")
+                                .required(true)
+                                .help(
+                                    "Team name or ID. Iterations are team-scoped — each team can have different sprint cadences.",
+                                ),
+                        )
+                        .arg(
+                            Arg::new("current")
+                                .long("current")
+                                .action(ArgAction::SetTrue)
+                                .help(
+                                    "If true, only return the iteration that is currently in-progress (matches today's date).",
+                                ),
+                        ),
+                )
+                .subcommand(
+                    Command::new("show")
+                        .about(
+                            "Show details of a single iteration: ID, name, full path, start date, finish date.",
+                        )
+                        .arg(
+                            Arg::new("project")
+                                .value_name("PROJECT")
+                                .required(true)
+                                .help("Project name or ID"),
+                        )
+                        .arg(
+                            Arg::new("team")
+                                .value_name("TEAM")
+                                .required(true)
+                                .help("Team name or ID"),
+                        )
+                        .arg(
+                            Arg::new("iteration_id")
+                                .value_name("ITERATION_ID")
+                                .required(true)
+                                .help("Iteration identifier (UUID)"),
+                        ),
+                )
+                .subcommand(
+                    Command::new("create")
+                        .about(
+                            "Create a new iteration (sprint) for a team. Without --start-date and --finish-date, the iteration has no time bounds (acts as a backlog bucket).",
+                        )
+                        .arg(
+                            Arg::new("project")
+                                .value_name("PROJECT")
+                                .required(true)
+                                .help("Project name or ID"),
+                        )
+                        .arg(
+                            Arg::new("team")
+                                .value_name("TEAM")
+                                .required(true)
+                                .help("Team name or ID"),
+                        )
+                        .arg(
+                            Arg::new("name")
+                                .long("name")
+                                .value_name("NAME")
+                                .required(true)
+                                .help("Iteration name (e.g. 'Sprint 23', 'Q1 2026')"),
+                        )
+                        .arg(
+                            Arg::new("start_date")
+                                .long("start-date")
+                                .value_name("DATE")
+                                .help("Sprint start date in ISO 8601 (YYYY-MM-DD, e.g. '2026-01-15')"),
+                        )
+                        .arg(
+                            Arg::new("finish_date")
+                                .long("finish-date")
+                                .value_name("DATE")
+                                .help(
+                                    "Sprint end date in ISO 8601 (YYYY-MM-DD, e.g. '2026-01-29'). Should be after start_date.",
+                                ),
+                        ),
+                )
+                .subcommand(
+                    Command::new("update")
+                        .about(
+                            "Modify an existing iteration's name, start date, or finish date. Pass at least one option. Existing work-item assignments are preserved when the dates change.",
+                        )
+                        .arg(
+                            Arg::new("project")
+                                .value_name("PROJECT")
+                                .required(true)
+                                .help("Project name or ID"),
+                        )
+                        .arg(
+                            Arg::new("team")
+                                .value_name("TEAM")
+                                .required(true)
+                                .help("Team name or ID"),
+                        )
+                        .arg(
+                            Arg::new("iteration_id")
+                                .value_name("ITERATION_ID")
+                                .required(true)
+                                .help("Iteration identifier (UUID)"),
+                        )
+                        .arg(
+                            Arg::new("name")
+                                .long("name")
+                                .value_name("NAME")
+                                .help("New iteration name"),
+                        )
+                        .arg(
+                            Arg::new("start_date")
+                                .long("start-date")
+                                .value_name("DATE")
+                                .help("New start date (YYYY-MM-DD)"),
+                        )
+                        .arg(
+                            Arg::new("finish_date")
+                                .long("finish-date")
+                                .value_name("DATE")
+                                .help("New finish date (YYYY-MM-DD)"),
+                        ),
+                )
+                .subcommand(
+                    Command::new("delete")
+                        .about(
+                            "Delete an iteration. Fails if there are work items still assigned to it; reassign them to a different iteration first (use `ado workitems update --iteration`).",
+                        )
+                        .arg(
+                            Arg::new("project")
+                                .value_name("PROJECT")
+                                .required(true)
+                                .help("Project name or ID"),
+                        )
+                        .arg(
+                            Arg::new("team")
+                                .value_name("TEAM")
+                                .required(true)
+                                .help("Team name or ID"),
+                        )
+                        .arg(
+                            Arg::new("iteration_id")
+                                .value_name("ITERATION_ID")
+                                .required(true)
+                                .help("Iteration identifier (UUID)"),
+                        ),
+                ),
+        )
+        .subcommand(
             Command::new("projects")
                 .about(
                     "Manage Azure DevOps projects. A project is the top-level container for repos, pipelines, work items, and teams. Every Azure DevOps organization has at least one project.",
