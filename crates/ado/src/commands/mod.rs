@@ -12,6 +12,8 @@ pub mod projects;
 pub mod pull_requests;
 pub mod repos;
 pub mod schema;
+pub mod teams;
+pub mod users;
 pub mod version;
 pub mod whoami;
 pub mod workitems;

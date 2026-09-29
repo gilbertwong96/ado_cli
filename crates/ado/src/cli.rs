@@ -1688,6 +1688,208 @@ pub fn command() -> Command {
                 ),
         )
         .subcommand(
+            Command::new("teams")
+                .about(
+                    "Manage Azure DevOps teams (groups of members with shared area paths and iterations). Teams are the unit for sprint planning and work item assignment.",
+                )
+                .subcommand(
+                    Command::new("list")
+                        .about(
+                            "List all teams in a project. Output is a table (ID, Name, Description). Use --top to limit.",
+                        )
+                        .arg(
+                            Arg::new("project")
+                                .value_name("PROJECT")
+                                .required(true)
+                                .help("Project name or ID"),
+                        )
+                        .arg(
+                            Arg::new("top")
+                                .long("top")
+                                .value_name("N")
+                                .value_parser(clap::value_parser!(i64))
+                                .allow_negative_numbers(true)
+                                .help("Maximum number to return"),
+                        ),
+                )
+                .subcommand(
+                    Command::new("show")
+                        .about(
+                            "Show a single team: ID, name, description, identity URL, and project context. Accepts name or GUID.",
+                        )
+                        .arg(
+                            Arg::new("project")
+                                .value_name("PROJECT")
+                                .required(true)
+                                .help("Project name or ID"),
+                        )
+                        .arg(
+                            Arg::new("team_id")
+                                .value_name("TEAM_ID")
+                                .required(true)
+                                .help("Team name or ID"),
+                        ),
+                )
+                .subcommand(
+                    Command::new("create")
+                        .about(
+                            "Create a new team in a project. The team inherits the project default area path and iteration. Members are added separately with the members subcommand.",
+                        )
+                        .arg(
+                            Arg::new("project")
+                                .value_name("PROJECT")
+                                .required(true)
+                                .help("Project name or ID"),
+                        )
+                        .arg(
+                            Arg::new("name")
+                                .long("name")
+                                .value_name("NAME")
+                                .required(true)
+                                .help("Team name"),
+                        )
+                        .arg(
+                            Arg::new("description")
+                                .long("description")
+                                .value_name("DESC")
+                                .help("Team description"),
+                        ),
+                )
+                .subcommand(
+                    Command::new("update")
+                        .about("Update a team.")
+                        .arg(
+                            Arg::new("project")
+                                .value_name("PROJECT")
+                                .required(true)
+                                .help("Project name or ID"),
+                        )
+                        .arg(
+                            Arg::new("team_id")
+                                .value_name("TEAM_ID")
+                                .required(true)
+                                .help("Team name or ID"),
+                        )
+                        .arg(
+                            Arg::new("name")
+                                .long("name")
+                                .value_name("NAME")
+                                .help("New team name"),
+                        )
+                        .arg(
+                            Arg::new("description")
+                                .long("description")
+                                .value_name("DESC")
+                                .help("New description"),
+                        ),
+                )
+                .subcommand(
+                    Command::new("delete")
+                        .about(
+                            "Delete a team. Members are not removed from the org; just the team container is deleted.",
+                        )
+                        .arg(
+                            Arg::new("project")
+                                .value_name("PROJECT")
+                                .required(true)
+                                .help("Project name or ID"),
+                        )
+                        .arg(
+                            Arg::new("team_id")
+                                .value_name("TEAM_ID")
+                                .required(true)
+                                .help("Team name or ID"),
+                        ),
+                )
+                .subcommand(
+                    Command::new("members")
+                        .about(
+                            "Add/remove users to/from a team. Team membership is separate from project membership; users must be in the project first.",
+                        )
+                        .subcommand(
+                            Command::new("list")
+                                .about(
+                                    "List all members of a team. Output shows display name, unique name (email), and member ID.",
+                                )
+                                .arg(
+                                    Arg::new("project")
+                                        .value_name("PROJECT")
+                                        .required(true)
+                                        .help("Project name or ID"),
+                                )
+                                .arg(
+                                    Arg::new("team_id")
+                                        .value_name("TEAM_ID")
+                                        .required(true)
+                                        .help("Team name or ID"),
+                                ),
+                        ),
+                ),
+        )
+        .subcommand(
+            Command::new("users")
+                .about(
+                    "Manage user access levels and entitlements (licenses, extensions, project memberships). Requires Project Collection Administrator permissions.",
+                )
+                .subcommand(
+                    Command::new("list")
+                        .about(
+                            "List all users in the organization with their access level, last login, and project memberships. Output is a table by default; use --json for raw data. Use --top to limit.",
+                        )
+                        .arg(
+                            Arg::new("top")
+                                .long("top")
+                                .value_name("N")
+                                .value_parser(clap::value_parser!(i64))
+                                .allow_negative_numbers(true)
+                                .help("Maximum number to return"),
+                        ),
+                )
+                .subcommand(
+                    Command::new("show")
+                        .about(
+                            "Show details of a single user: email, display name, access level (Stakeholder/Basic/Basic+Test Plans/VS Enterprise), date created, last accessed, and project/group memberships.",
+                        )
+                        .arg(
+                            Arg::new("user_id")
+                                .value_name("USER_ID")
+                                .required(true)
+                                .help("User ID or email"),
+                        ),
+                )
+                .subcommand(
+                    Command::new("add")
+                        .about("Add a user to the organization.")
+                        .arg(
+                            Arg::new("email")
+                                .long("email")
+                                .value_name("EMAIL")
+                                .required(true)
+                                .help("User email address"),
+                        )
+                        .arg(
+                            Arg::new("license")
+                                .long("license")
+                                .value_name("LICENSE")
+                                .help(
+                                    "Access level: express (Basic, 5 free users), professional (Basic, paid), stakeholder (free, limited). Default: express.",
+                                ),
+                        ),
+                )
+                .subcommand(
+                    Command::new("remove")
+                        .about(
+                            "Remove a user from the organization entirely. Revokes all licenses and memberships. The user is immediately blocked from accessing any project.",
+                        )
+                        .arg(
+                            Arg::new("user_id")
+                                .value_name("USER_ID")
+                                .required(true)
+                                .help("User ID or email"),
+                        ),
+                ),
+        )
+        .subcommand(
             Command::new("pipelines")
                 .about(
                     "Manage Azure DevOps YAML pipelines and variable groups. Pipelines define CI/CD workflows as code in azure-pipelines.yml; variable groups are shared sets of KEY=VALUE pairs that pipelines can reference.",

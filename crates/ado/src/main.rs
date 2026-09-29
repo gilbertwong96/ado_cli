@@ -733,6 +733,107 @@ fn main() -> ExitCode {
                 _ => Err(AdoError::validation(MISSING_SUBCOMMAND)),
             }
         }
+        Some(("teams", sub)) => {
+            let mut context = Context::load(globals);
+
+            match sub.subcommand() {
+                Some(("list", list)) => commands::teams::list(
+                    &mut context,
+                    list.get_one::<String>("project")
+                        .expect("the positional is required")
+                        .as_str(),
+                    list.get_one::<i64>("top").copied(),
+                ),
+                Some(("show", show)) => commands::teams::show(
+                    &mut context,
+                    show.get_one::<String>("project")
+                        .expect("the positional is required")
+                        .as_str(),
+                    show.get_one::<String>("team_id")
+                        .expect("the positional is required")
+                        .as_str(),
+                ),
+                Some(("create", create)) => commands::teams::create(
+                    &mut context,
+                    create
+                        .get_one::<String>("project")
+                        .expect("the positional is required")
+                        .as_str(),
+                    create
+                        .get_one::<String>("name")
+                        .expect("the option is required")
+                        .as_str(),
+                    create.get_one::<String>("description").cloned(),
+                ),
+                Some(("update", update)) => commands::teams::update(
+                    &mut context,
+                    update
+                        .get_one::<String>("project")
+                        .expect("the positional is required")
+                        .as_str(),
+                    update
+                        .get_one::<String>("team_id")
+                        .expect("the positional is required")
+                        .as_str(),
+                    update.get_one::<String>("name").cloned(),
+                    update.get_one::<String>("description").cloned(),
+                ),
+                Some(("delete", delete)) => commands::teams::delete(
+                    &mut context,
+                    delete
+                        .get_one::<String>("project")
+                        .expect("the positional is required")
+                        .as_str(),
+                    delete
+                        .get_one::<String>("team_id")
+                        .expect("the positional is required")
+                        .as_str(),
+                ),
+                Some(("members", members)) => match members.subcommand() {
+                    Some(("list", list)) => commands::teams::members_list(
+                        &mut context,
+                        list.get_one::<String>("project")
+                            .expect("the positional is required")
+                            .as_str(),
+                        list.get_one::<String>("team_id")
+                            .expect("the positional is required")
+                            .as_str(),
+                    ),
+                    _ => Err(AdoError::validation(MISSING_SUBCOMMAND)),
+                },
+                _ => Err(AdoError::validation(MISSING_SUBCOMMAND)),
+            }
+        }
+        Some(("users", sub)) => {
+            let mut context = Context::load(globals);
+
+            match sub.subcommand() {
+                Some(("list", list)) => {
+                    commands::users::list(&mut context, list.get_one::<i64>("top").copied())
+                }
+                Some(("show", show)) => commands::users::show(
+                    &mut context,
+                    show.get_one::<String>("user_id")
+                        .expect("the positional is required")
+                        .as_str(),
+                ),
+                Some(("add", add)) => commands::users::add(
+                    &mut context,
+                    add.get_one::<String>("email")
+                        .expect("the option is required")
+                        .as_str(),
+                    add.get_one::<String>("license").cloned(),
+                ),
+                Some(("remove", remove)) => commands::users::remove(
+                    &mut context,
+                    remove
+                        .get_one::<String>("user_id")
+                        .expect("the positional is required")
+                        .as_str(),
+                ),
+                _ => Err(AdoError::validation(MISSING_SUBCOMMAND)),
+            }
+        }
         Some(("pipelines", sub)) => {
             let mut context = Context::load(globals);
 
