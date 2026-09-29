@@ -575,6 +575,25 @@
     {"method": "PATCH", "path": "/ado-harness/Builds/_apis/build/builds/128", "request_body": {"status": "cancelling"}, "json": {"id": 128, "status": "cancelling", "result": null}},
     {"method": "PATCH", "path": "/ado-harness/BuildsMissing/_apis/build/builds/128", "status": 404, "json": {"message": "Build 128 does not exist."}},
     {"method": "PUT", "path": "/ado-harness/Builds/_apis/build/builds/128/tags", "request_body": ["release", "prod", "v1.2.3"], "json": {"count": 3, "value": ["release", "prod", "v1.2.3"]}},
-    {"method": "PUT", "path": "/ado-harness/BuildsTrim/_apis/build/builds/128/tags", "request_body": ["trimmed", "spaced"], "json": {"count": 2, "value": ["trimmed", "spaced"]}}
+    {"method": "PUT", "path": "/ado-harness/BuildsTrim/_apis/build/builds/128/tags", "request_body": ["trimmed", "spaced"], "json": {"count": 2, "value": ["trimmed", "spaced"]}},
+
+    {"method": "GET", "path": "/ado-harness/_apis/wit/workItems/42/comments", "json": {"totalCount": 2, "count": 2, "comments": [{"id": 7, "text": "Looks good", "createdBy": {"displayName": "Alice Example", "id": "u1"}, "createdDate": "2026-09-20T12:00:00.000Z", "url": "https://dev.azure.com/ado-harness/_apis/wit/workItems/42/comments/7"}, {"id": 8, "text": "Second note", "createdBy": {"displayName": "Bob Example"}, "createdDate": "2026-09-21T09:30:00.000Z"}]}},
+    {"method": "GET", "path": "/ado-harness/_apis/wit/workItems/8/comments", "json": {"count": 0, "comments": []}},
+    {"method": "GET", "path": "/ado-harness/_apis/wit/workItems/7/comments", "json": {"count": 0, "value": []}},
+    {"method": "GET", "path": "/ado-harness/_apis/wit/workItems/999/comments", "status": 404, "json": {"message": "TF401232: Work item 999 does not exist, or you do not have permissions to read it."}},
+    {"method": "PATCH", "path": "/ado-harness/_apis/wit/workitems/500", "request_body": [{"op": "add", "path": "/fields/System.History", "value": "Looks good"}], "json": {"id": 500, "rev": 2, "fields": {"System.History": "Looks good"}}},
+    {"method": "PATCH", "path": "/ado-harness/_apis/wit/workitems/501", "request_body": [{"op": "add", "path": "/fields/System.History", "value": "[Edited] Edited text"}], "json": {"id": 501, "rev": 3, "fields": {"System.History": "[Edited] Edited text"}}},
+    {"method": "PATCH", "path": "/ado-harness/_apis/wit/workitems/896", "request_body": [{"op": "add", "path": "/fields/System.History", "value": "Looks good"}], "status": 404, "json": {"message": "TF401232: Work item 896 does not exist."}},
+    {"method": "PATCH", "path": "/ado-harness/_apis/wit/workitems/897", "request_body": [{"op": "add", "path": "/fields/System.History", "value": "[Edited] Edited text"}], "status": 404, "json": {"message": "TF401232: Work item 897 does not exist."}},
+
+    {"method": "GET", "path": "/ado-harness/_apis/wit/workitems/42/attachments", "json": {"count": 2, "attachments": [{"id": "att-1", "url": "https://dev.azure.com/ado-harness/_apis/wit/attachments/att-1", "attributes": {"name": "report.pdf"}}, {"id": "att-2", "url": "https://dev.azure.com/ado-harness/_apis/wit/attachments/att-2", "attributes": {"name": "notes.txt"}}]}},
+    {"method": "GET", "path": "/ado-harness/_apis/wit/workitems/8/attachments", "json": {"count": 0, "attachments": []}},
+    {"method": "GET", "path": "/ado-harness/_apis/wit/workitems/7/attachments", "json": {"count": 0, "value": []}},
+    {"method": "GET", "path": "/ado-harness/_apis/wit/workitems/999/attachments", "status": 404, "json": {"message": "TF401232: Work item 999 does not exist."}},
+    {"method": "GET", "path": "/ado-harness/_apis/wit/attachments/att-1", "json": {"id": "att-1", "fileName": "report.pdf", "size": 1234, "url": "https://dev.azure.com/ado-harness/_apis/wit/attachments/att-1", "attributes": {"name": "report.pdf"}}},
+    {"method": "GET", "path": "/ado-harness/_apis/wit/attachments/att-2", "json": {"id": "att-2", "attributes": {"name": "notes.txt"}, "url": "https://dev.azure.com/ado-harness/_apis/wit/attachments/att-2"}},
+    {"method": "GET", "path": "/ado-harness/_apis/wit/attachments/att-3", "json": {"id": "att-3", "attributes": {}}},
+    {"method": "GET", "path": "/ado-harness/_apis/wit/attachments/att-404", "status": 404, "json": {"message": "TF401232: Attachment att-404 does not exist."}},
+    {"method": "GET", "path": "/ado-harness/_apis/wit/attachments/att-redirect", "status": 302, "json": {"message": "sign in"}}
   ]
 }

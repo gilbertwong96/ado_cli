@@ -1220,6 +1220,172 @@ run_mock_cases() {
     mock_case workitems-delete-force "workitems delete --force (unknown flag)" \
         workitems delete 42 --force
 
+    # ── Wave 2: work item comments and attachments (Task 8) ──
+    #
+    # The two path spellings are captured, not assumed: the comments read uses
+    # `workItems` (capital I), every other path `workitems`. Both comment writes
+    # are one-operation `System.History` JSON patches under
+    # `application/json-patch+json`, pinned byte-for-byte by their routes. None of
+    # the five commands prompts: the two writes and the download were run against
+    # the mock with `n` on stdin (and on EOF in the captures), and the requests
+    # went out. A missing `--text` is D34's class — the oracle's schema marks it
+    # required and CliMate never enforces it, so it writes nothing and exits 0,
+    # where this build is a loud usage error. The download's metadata GET and
+    # raw-content GET share a path (the module asks for both under
+    # `/_apis/wit/attachments/{id}`), so one route answers each twice, exactly as
+    # the mock routes method+path; its `fileName` query is this wave's second
+    # **D25** difference: the frozen `get_raw/2` glues `?api-version=7.1` onto a
+    # path that already carries `?fileName=…` (one query pair whose value swallows
+    # the version), and this build sends the two pairs properly. The success line
+    # is the whole stdout on both sides, so the download cases are `text`-mode
+    # with the module's line compared; the oracle appends its
+    # `halt_success("Done.")` marker, which this build does not print (§8
+    # regenerated surface), and that lone difference is the case's rule. A 302 is
+    # refused with its true status on both sides (D8), the raw GET's status is
+    # D25's classification, and the two missing-positional rows are D5's usage
+    # error.
+
+    mock_case workitems-comments-list "workitems comments list" \
+        workitems comments list 42 --json
+
+    stdout_mode=text
+    mock_case workitems-comments-list-human "workitems comments list (human)" \
+        workitems comments list 42
+
+    mock_case workitems-comments-list-empty-array "workitems comments list (empty array)" \
+        workitems comments list 8 --json
+
+    envelope_rule='D21: the frozen CLI prints "No comments found." even under --json on a body without the comments key; this build emits the empty value envelope'
+    mock_case workitems-comments-list-missing-key "workitems comments list (no comments key)" \
+        workitems comments list 7 --json
+
+    envelope_rule='D24: the error body stays the upstream bytes here, where the oracle re-renders the decoded map with inspect/2'
+    mock_case workitems-comments-list-404 "workitems comments list (404)" \
+        workitems comments list 999 --json
+
+    envelope_rule='D5: the oracle prints the command help on stdout before its usage error; this build writes clap’s message to stderr alone'
+    stdout_mode=text
+    mock_case workitems-comments-list-no-id "workitems comments list (no id)" \
+        workitems comments list --json
+
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the message envelope'
+    mock_case workitems-comments-add "workitems comments add" \
+        workitems comments add 500 --text 'Looks good' --json
+
+    case_stdin=$'n\n'
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the message envelope'
+    mock_case workitems-comments-add-stdin-n "workitems comments add (stdin n — no prompt)" \
+        workitems comments add 500 --text 'Looks good' --json
+
+    status_rule='D5/D23 (D34): a required option the oracle never validates is a silent exit 0 there; this build makes it a loud usage error'
+    stdout_mode=text
+    mock_case workitems-comments-add-no-text "workitems comments add (no --text)" \
+        workitems comments add 500 --json
+
+    envelope_rule='D24: the error body stays the upstream bytes here, where the oracle re-renders the decoded map with inspect/2'
+    mock_case workitems-comments-add-404 "workitems comments add (404)" \
+        workitems comments add 896 --text 'Looks good' --json
+
+    envelope_rule='D5: the oracle prints the command help on stdout before its usage error; this build writes clap’s message to stderr alone'
+    stdout_mode=text
+    mock_case workitems-comments-add-no-id "workitems comments add (no id)" \
+        workitems comments add --text 'Looks good'
+
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the message envelope'
+    mock_case workitems-comments-update "workitems comments update" \
+        workitems comments update 501 7 --text 'Edited text' --json
+
+    case_stdin=$'n\n'
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the message envelope'
+    mock_case workitems-comments-update-stdin-n "workitems comments update (stdin n — no prompt)" \
+        workitems comments update 501 7 --text 'Edited text' --json
+
+    status_rule='D5/D23 (D34): a required option the oracle never validates is a silent exit 0 there; this build makes it a loud usage error'
+    stdout_mode=text
+    mock_case workitems-comments-update-no-text "workitems comments update (no --text)" \
+        workitems comments update 501 7 --json
+
+    envelope_rule='D24: the error body stays the upstream bytes here, where the oracle re-renders the decoded map with inspect/2'
+    mock_case workitems-comments-update-404 "workitems comments update (404)" \
+        workitems comments update 897 7 --text 'Edited text' --json
+
+    envelope_rule='D5: the oracle prints the command help on stdout before its usage error; this build writes clap’s message to stderr alone'
+    stdout_mode=text
+    mock_case workitems-comments-update-no-comment-id "workitems comments update (no comment_id)" \
+        workitems comments update 501 --text 'Edited text'
+
+    mock_case workitems-attachments-list "workitems attachments list" \
+        workitems attachments list 42 --json
+
+    stdout_mode=text
+    mock_case workitems-attachments-list-human "workitems attachments list (human)" \
+        workitems attachments list 42
+
+    mock_case workitems-attachments-list-empty-array "workitems attachments list (empty array)" \
+        workitems attachments list 8 --json
+
+    envelope_rule='D21: the frozen CLI prints "No attachments found." even under --json on a body without the attachments key; this build emits the empty value envelope'
+    mock_case workitems-attachments-list-missing-key "workitems attachments list (no attachments key)" \
+        workitems attachments list 7 --json
+
+    envelope_rule='D24: the error body stays the upstream bytes here, where the oracle re-renders the decoded map with inspect/2'
+    mock_case workitems-attachments-list-404 "workitems attachments list (404)" \
+        workitems attachments list 999 --json
+
+    envelope_rule='D5: the oracle prints the command help on stdout before its usage error; this build writes clap’s message to stderr alone'
+    stdout_mode=text
+    mock_case workitems-attachments-list-no-id "workitems attachments list (no id)" \
+        workitems attachments list --json
+
+    rest_rule='D25: the frozen get_raw appends api-version onto a path that already carries ?fileName=… (one query pair whose value swallows the version); this build sends fileName and api-version as separate pairs'
+    envelope_rule='§8: the frozen download prints its success line plus the halt_success "Done." marker; this build prints the line alone'
+    stdout_mode=text
+    compare_files=(out.bin)
+    mock_case workitems-attachments-download-output "workitems attachments download" \
+        workitems attachments download 42 att-1 --output out.bin
+
+    rest_rule='D25: the frozen get_raw appends api-version onto a path that already carries ?fileName=… (one query pair whose value swallows the version); this build sends fileName and api-version as separate pairs'
+    envelope_rule='§8: the frozen download prints its success line plus the halt_success "Done." marker; this build prints the line alone'
+    stdout_mode=text
+    compare_files=(out.bin)
+    mock_case workitems-attachments-download-output-json "workitems attachments download (--json)" \
+        workitems attachments download 42 att-1 --output out.bin --json
+
+    rest_rule='D25: the frozen get_raw appends api-version onto a path that already carries ?fileName=… (one query pair whose value swallows the version); this build sends fileName and api-version as separate pairs'
+    envelope_rule='§8: the frozen download prints its success line plus the halt_success "Done." marker; this build prints the line alone'
+    stdout_mode=text
+    compare_files=(notes.txt)
+    mock_case workitems-attachments-download-default "workitems attachments download (default name)" \
+        workitems attachments download 42 att-2
+
+    rest_rule='D25: the frozen get_raw appends api-version onto a path that already carries ?fileName=… (one query pair whose value swallows the version); this build sends fileName and api-version as separate pairs'
+    envelope_rule='§8: the frozen download prints its success line plus the halt_success "Done." marker; this build prints the line alone'
+    stdout_mode=text
+    compare_files=(attachment_att-3)
+    mock_case workitems-attachments-download-no-name "workitems attachments download (no attributes.name)" \
+        workitems attachments download 42 att-3
+
+    case_stdin=$'n\n'
+    rest_rule='D25: the frozen get_raw appends api-version onto a path that already carries ?fileName=… (one query pair whose value swallows the version); this build sends fileName and api-version as separate pairs'
+    envelope_rule='§8: the frozen download prints its success line plus the halt_success "Done." marker; this build prints the line alone'
+    stdout_mode=text
+    compare_files=(out.bin)
+    mock_case workitems-attachments-download-stdin-n "workitems attachments download (stdin n — no prompt)" \
+        workitems attachments download 42 att-1 --output out.bin
+
+    envelope_rule='D24: the error body stays the upstream bytes here, where the oracle re-renders the decoded map with inspect/2'
+    mock_case workitems-attachments-download-404 "workitems attachments download (404)" \
+        workitems attachments download 42 att-404 --json
+
+    envelope_rule='D8: the redirect is refused with its true status on both sides; the oracle’s message is the sign-in wording and this build names the missing Location header'
+    mock_case workitems-attachments-download-redirect "workitems attachments download (302)" \
+        workitems attachments download 42 att-redirect --json
+
+    envelope_rule='D5: the oracle prints the command help on stdout before its usage error; this build writes clap’s message to stderr alone'
+    stdout_mode=text
+    mock_case workitems-attachments-download-no-attachment-id "workitems attachments download (no attachment_id)" \
+        workitems attachments download 42 --json
+
     mock_scenario_check
 }
 
