@@ -9,6 +9,17 @@
 //! (D19) both reach the same route, and the difference is read from the request
 //! log instead. Routes repeat: a case may hit the same path as often as it likes.
 //!
+//! A route may also declare the `query` pairs a request must carry. That is what
+//! makes two GETs on one path distinguishable — the attachment download's metadata
+//! GET and its raw-content GET, or the base and target fetches of one file — so a
+//! route can answer each with the body it deserves. The pairs are compared **as
+//! sent on the wire, undecoded** (like
+//! [`MockServer::expect_query`](crate::MockServer::expect_query)), a value written
+//! `*` matches any value, and a route that requires pairs is tried **before** one
+//! that does not, whatever their order in the file: the specific route wins and the
+//! query-blind route stays the fallback. A request that carries none of a route's
+//! pairs falls through to the next route, and if none matches it is the usual 404.
+//!
 //! A route may also declare the `request_body` it expects a request to carry. That
 //! is an **assertion, not part of the match**: the route still answers, and the
 //! log line records `body_matched` (`true`/`false`, `null` when no expectation was
@@ -43,6 +54,11 @@ use crate::{MockResponse, RecordedRequest, headers_of, lock, respond};
 pub struct Route {
     pub method: String,
     pub path: String,
+    /// The query pairs the request must carry when the route declares any: the
+    /// pairs as sent on the wire (undecoded, like `MockServer::expect_query`),
+    /// with `*` as a value matching any value. Empty means the route is
+    /// query-blind. See the module docs for the matching and precedence rules.
+    pub query: Vec<(String, String)>,
     pub response: MockResponse,
     /// The body the request must carry, when the route declares one: a string
     /// compares the bytes as sent, any other JSON value parses the request body
@@ -52,9 +68,36 @@ pub struct Route {
 }
 
 impl Route {
-    fn matches(&self, method: &str, path: &str) -> bool {
-        self.method.eq_ignore_ascii_case(method) && self.path == path
+    fn matches(&self, method: &str, path: &str, query: &[(String, String)]) -> bool {
+        self.method.eq_ignore_ascii_case(method) && self.path == path && self.query_matches(query)
     }
+
+    fn query_matches(&self, query: &[(String, String)]) -> bool {
+        self.query
+            .iter()
+            .all(|(key, value)| required_pair_matches(query, key, value))
+    }
+}
+
+/// Whether the request's pairs carry `key`, equal to `value` or to anything when
+/// `value` is `*`.
+fn required_pair_matches(query: &[(String, String)], key: &str, value: &str) -> bool {
+    query
+        .iter()
+        .any(|(sent_key, sent_value)| sent_key == key && (value == "*" || sent_value == value))
+}
+
+/// The request's query as `(key, value)` pairs, exactly as sent: the same split
+/// `MockServer::expect_query` matches against.
+fn sent_pairs(query: &str) -> Vec<(String, String)> {
+    query
+        .split('&')
+        .filter(|pair| !pair.is_empty())
+        .map(|pair| match pair.split_once('=') {
+            Some((key, value)) => (key.to_owned(), value.to_owned()),
+            None => (pair.to_owned(), String::new()),
+        })
+        .collect()
 }
 
 /// The route table a standalone mock serves, parsed from a scenario file.
@@ -73,9 +116,10 @@ impl Scenario {
     /// response carries `status` (default 200) and either `fixture` (a file under
     /// `crates/ado-testkit/fixtures/`) or `json` (an inline body), plus optional
     /// `set` edits — `[{"pointer": "/value/0/resource/downloadUrl", "value": …}]` —
-    /// applied to the body before it is served, and an optional `request_body`
-    /// the request must carry (a string compares as sent; an object or array
-    /// compares structurally).
+    /// applied to the body before it is served, an optional `query` object of the
+    /// pairs the request must carry (a `"*"` value matches any value), and an
+    /// optional `request_body` the request must carry (a string compares as sent;
+    /// an object or array compares structurally).
     pub fn from_json(text: &str) -> Result<Scenario, String> {
         let document: Value = serde_json::from_str(text)
             .map_err(|error| format!("the scenario is not JSON: {error}"))?;
@@ -118,6 +162,7 @@ impl Scenario {
                 .map(|route| Route {
                     method: route.method.clone(),
                     path: route.path.replace(BASE_PLACEHOLDER, base),
+                    query: route.query.clone(),
                     response: MockResponse {
                         status: route.response.status,
                         body: substitute_body(&route.response.body, base),
@@ -222,9 +267,28 @@ fn parse_route(value: &Value) -> Result<Route, String> {
         None => None,
     };
 
+    let query = match value.get("query") {
+        Some(Value::Object(entries)) => entries
+            .iter()
+            .map(|(key, value)| match value.as_str() {
+                Some(value) => Ok((key.clone(), value.to_owned())),
+                None => Err(format!(
+                    "the {method} {path} route's `query` value for '{key}' must be a string: {value}"
+                )),
+            })
+            .collect::<Result<Vec<(String, String)>, String>>()?,
+        Some(other) => {
+            return Err(format!(
+                "the {method} {path} route's `query` must be an object of pairs: {other}"
+            ));
+        }
+        None => Vec::new(),
+    };
+
     Ok(Route {
         method,
         path,
+        query,
         response: MockResponse {
             status,
             body,
@@ -420,10 +484,22 @@ async fn handle(State(state): State<Arc<StandaloneState>>, request: Request) -> 
         body: (!bytes.is_empty()).then(|| String::from_utf8_lossy(&bytes).into_owned()),
     };
 
-    let matched_route = state
-        .routes
-        .iter()
-        .find(|route| route.matches(&recorded.method, &recorded.path));
+    let matched_route = {
+        let pairs = sent_pairs(&recorded.query);
+
+        state
+            .routes
+            .iter()
+            .find(|route| {
+                !route.query.is_empty() && route.matches(&recorded.method, &recorded.path, &pairs)
+            })
+            .or_else(|| {
+                state.routes.iter().find(|route| {
+                    route.query.is_empty()
+                        && route.matches(&recorded.method, &recorded.path, &pairs)
+                })
+            })
+    };
 
     let body_matched = matched_route.and_then(|route| {
         route
@@ -826,6 +902,78 @@ mod tests {
         assert_eq!(http_get(&mock, "/x").0, 200);
         assert_eq!(http_get(&mock, "/x").0, 200);
         assert_eq!(mock.received().len(), 2);
+    }
+
+    #[test]
+    fn a_route_can_require_query_pairs() {
+        let mock = StandaloneMock::start(
+            scenario(
+                r#"{"responses": [
+                    {"method": "GET", "path": "/items", "query": {"version": "aaaa1111"}, "json": {"rev": "base"}},
+                    {"method": "GET", "path": "/items", "query": {"version": "cccc3333"}, "json": {"rev": "target"}}
+                ]}"#,
+            ),
+            None,
+            0,
+        );
+
+        let (status, body) = http_get(
+            &mock,
+            "/items?api-version=7.1&path=%2Fa.ex&version=aaaa1111&versionType=commit",
+        );
+        assert_eq!(status, 200);
+        assert_eq!(body, r#"{"rev":"base"}"#);
+
+        let (status, body) = http_get(&mock, "/items?version=cccc3333");
+        assert_eq!(status, 200);
+        assert_eq!(body, r#"{"rev":"target"}"#);
+
+        let (status, body) = http_get(&mock, "/items?version=dddd4444");
+        assert_eq!(status, 404, "a version no route declares has no route");
+        assert!(body.contains("no route for GET /items"), "body: {body}");
+    }
+
+    #[test]
+    fn a_query_requiring_route_is_tried_before_a_query_blind_one() {
+        // The blind route is declared first: the specific one still wins, so one
+        // path can answer the metadata GET and the raw GET differently.
+        let mock = StandaloneMock::start(
+            scenario(
+                r#"{"responses": [
+                    {"method": "GET", "path": "/attachments/att-1", "json": {"id": "att-1"}},
+                    {"method": "GET", "path": "/attachments/att-1", "query": {"fileName": "*"}, "json": {"raw": true}}
+                ]}"#,
+            ),
+            None,
+            0,
+        );
+
+        let (status, body) = http_get(&mock, "/attachments/att-1?api-version=7.1");
+        assert_eq!(status, 200);
+        assert_eq!(body, r#"{"id":"att-1"}"#);
+
+        let (status, body) = http_get(&mock, "/attachments/att-1?api-version=7.1&fileName=out.bin");
+        assert_eq!(status, 200);
+        assert_eq!(body, r#"{"raw":true}"#);
+
+        // The frozen CLI's spelling of the same pair: the version glued into the
+        // name's value, one pair, compared as sent.
+        let (status, body) = http_get(&mock, "/attachments/att-1?fileName=out.bin?api-version=7.1");
+        assert_eq!(status, 200);
+        assert_eq!(body, r#"{"raw":true}"#);
+    }
+
+    #[test]
+    fn a_scenario_rejects_a_non_string_query_value() {
+        let error = Scenario::from_json(
+            r#"{"responses": [{"method": "GET", "path": "/x", "json": {}, "query": {"version": 12}}]}"#,
+        )
+        .expect_err("a numeric query value is invalid");
+
+        assert!(
+            error.contains("`query` value for 'version'"),
+            "error: {error}"
+        );
     }
 
     #[test]
