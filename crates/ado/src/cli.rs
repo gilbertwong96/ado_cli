@@ -510,7 +510,7 @@ pub fn command() -> Command {
                 .subcommand(
                     Command::new("create")
                         .about(
-                            "Create a new work item. Requires --type and --title. Optional: --description, --assigned_to, --state, --priority (1-4), --tags (comma-separated).",
+                            "Create a new work item. Requires --type and --title. Optional: --description, --assigned-to, --state, --priority (1-4), --tags (comma-separated).",
                         )
                         .arg(
                             Arg::new("project")

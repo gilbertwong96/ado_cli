@@ -1511,7 +1511,7 @@ if exits_ok schema-json &&
     #   * doc values are §8 regenerated surface, and the nodes this wave wrote or
     #     rewrote carry this build's wording. Their option and argument docs are
     #     blanked here; their node docs are reported by the doc check further down.
-    s8_nodes='["ado login", "ado prs"]'
+    s8_nodes='["ado login", "ado prs", "ado workitems create"]'
     globals_names=$(jq -c '[.schema.options[].name]' "$schema_rs")
     d18_and_s8="walk(if type == \"object\" and (.name? | type) == \"string\"
         then .name |= gsub(\" pipelines builds\"; \" pipelines-builds\")
