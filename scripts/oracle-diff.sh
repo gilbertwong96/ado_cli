@@ -1693,9 +1693,14 @@ run_mock_cases() {
     # The captured chain: `--iteration N` is used as given (no list GET), the
     # default is the iteration list's last entry, `GET …/iterations/{n}/changes`
     # is the second request, and only the two content modes re-read the list and
-    # fetch the revisions from `…/items` (the mock ignores the query, so both
-    # sides read the same body — an edit renders header-only, while the
-    # `/diffs/commits` add/delete entries render real hunks). The four `--json`
+    # fetch the revisions from `…/items`. The scenario's three `items` routes match
+    # on the `version` pair, so the base (`aaaa1111`) and target (`cccc3333`)
+    # revisions carry the listener capture's own bytes (`prs_item.txt` and
+    # `prs_item_target.txt`) and the `--file`/`--unified` cases render real hunks
+    # instead of an empty edit; `bbbb2222` (iteration 1's source) is served the base
+    # bytes, so the iteration-1 case keeps its deliberately empty hunk. The
+    # `/diffs/commits` add/delete entries are whole-file diffs either way. The four
+    # `--json`
     # documents are the frozen `render_file_list`/`emit_diff_or_json`/
     # `render_unified` shapes and MATCH, as do the human diff bytes (the listener
     # capture's). Ruled here: the default view's human table is this build's own

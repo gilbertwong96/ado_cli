@@ -756,6 +756,19 @@
     {
       "method": "GET",
       "path": "/ado-harness/Alpha/_apis/git/repositories/Alpha.Core/items",
+      "query": {"version": "aaaa1111"},
+      "fixture": "prs_item.txt"
+    },
+    {
+      "method": "GET",
+      "path": "/ado-harness/Alpha/_apis/git/repositories/Alpha.Core/items",
+      "query": {"version": "cccc3333"},
+      "fixture": "prs_item_target.txt"
+    },
+    {
+      "method": "GET",
+      "path": "/ado-harness/Alpha/_apis/git/repositories/Alpha.Core/items",
+      "query": {"version": "bbbb2222"},
       "fixture": "prs_item.txt"
     },
     {
