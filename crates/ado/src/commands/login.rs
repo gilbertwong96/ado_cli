@@ -1199,10 +1199,10 @@ mod tests {
         let message: Value = serde_json::from_str(announced.trim_end()).expect("one JSON line");
         assert_eq!(message["ok"], json!(true));
         let message = message["message"].as_str().expect("a message");
-        assert!(message.contains("USER-CODE"), "message: {message}");
-        assert!(
-            message.contains("https://microsoft.com/devicelogin"),
-            "the oracle's `verification_url`, not the RFC fallback: {message}"
+        assert_eq!(
+            message,
+            "To sign in, use a web browser to open: https://microsoft.com/devicelogin and enter the code: USER-CODE",
+            "the oracle's `verification_url`, not the RFC fallback (`-rfc`)"
         );
 
         assert_eq!(
