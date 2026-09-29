@@ -2868,3 +2868,1183 @@ fn diff_without_a_positional_is_a_usage_error() {
     );
     assert!(server.received().is_empty());
 }
+
+// ── Wave 2: the `prs comments` commands (Task 11a) ──────────────────────────
+//
+// Captured against the standalone mock before porting (`captures/task11a/`).
+// `list` and `update` spell the path `pullRequests` (capital R); `add`, `delete`
+// and `resolve` spell it `pullrequests` — captured, both kept. The write paths'
+// `--json` documents are the frozen ones and are mirrored (D38), not rewritten
+// into the `{ok,result}` envelope: `update --dry-run` prints its actions document
+// even without `--json`, `resolve --status bogus` passes the value through
+// unvalidated (captured), and a missing `--content` on `add` is a silent empty
+// body in the oracle where this build's clap is loud (D34's class). The delete
+// prompt is the wave's third: `Close thread N? [y/N] ` (or `Close comment N in
+// thread N? [y/N] `), the oracle refuses with `Cancelled.` on stdout and exit 0,
+// and this build refuses on stderr with exit 1 (R2/D31/D32). The invocations
+// table's underscore spellings (`--file_path`, `--thread_id`, `--comment_id`,
+// `--end_line`, `--resolved_by_me`, `--dry_run`) are rejected by the frozen
+// parser; the hyphenated ones are runnable (D17).
+
+/// `…/pullRequests/{pr_id}` — `list` and `update` spell it with a capital R.
+fn comments_route(pr_id: i64) -> String {
+    format!("/{ORG}/Alpha/_apis/git/repositories/Alpha.Core/pullRequests/{pr_id}")
+}
+
+/// `…/pullrequests/{pr_id}` — `add`, `delete` and `resolve` spell it lower case.
+fn comments_route_lower(pr_id: i64) -> String {
+    format!("/{ORG}/Alpha/_apis/git/repositories/Alpha.Core/pullrequests/{pr_id}")
+}
+
+fn threads_route(pr_id: i64) -> String {
+    format!("{}/threads", comments_route(pr_id))
+}
+
+fn thread_route(pr_id: i64, thread_id: i64) -> String {
+    format!("{}/threads/{thread_id}", comments_route(pr_id))
+}
+
+fn thread_comment_route(pr_id: i64, thread_id: i64, comment_id: i64) -> String {
+    format!("{}/comments/{comment_id}", thread_route(pr_id, thread_id))
+}
+
+/// `…/pullRequests/{pr_id}` without the org — the shape the `--dry-run` document
+/// prints, because the oracle names the path its client will prefix.
+fn comments_local_route(pr_id: i64) -> String {
+    format!("/Alpha/_apis/git/repositories/Alpha.Core/pullRequests/{pr_id}")
+}
+
+fn lower_thread_route(pr_id: i64, thread_id: i64) -> String {
+    format!("{}/threads/{thread_id}", comments_route_lower(pr_id))
+}
+
+fn lower_thread_comment_route(pr_id: i64, thread_id: i64, comment_id: i64) -> String {
+    format!(
+        "{}/comments/{comment_id}",
+        lower_thread_route(pr_id, thread_id)
+    )
+}
+
+fn lower_threads_route(pr_id: i64) -> String {
+    format!("{}/threads", comments_route_lower(pr_id))
+}
+
+/// The captured `GET …/threads` answer: an inline thread with a reply and a
+/// resolved thread.
+fn review_threads() -> Value {
+    json!([
+        {
+            "id": 7,
+            "status": "active",
+            "threadContext": {"filePath": "/src/app.ex"},
+            "comments": [
+                {"id": 21, "author": {"displayName": "Alice"}, "content": "Please add a retry here.", "parentCommentId": 0},
+                {"id": 22, "author": {"displayName": "Bob"}, "content": "Good catch, fixing.", "parentCommentId": 21}
+            ]
+        },
+        {
+            "id": 8,
+            "status": "fixed",
+            "comments": [
+                {"id": 23, "author": {"displayName": "Carol"}, "content": "Nit: rename this.", "parentCommentId": 0}
+            ]
+        }
+    ])
+}
+
+fn expect_threads(server: &MockServer, pr_id: i64, body: Value) {
+    server.expect("GET", &threads_route(pr_id), MockResponse::json(200, body));
+}
+
+#[test]
+fn comments_list_emits_the_oracle_value_envelope() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    expect_threads(&server, 137, review_threads());
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "prs",
+            "comments",
+            "list",
+            "Alpha",
+            "Alpha.Core",
+            "137",
+            "--json",
+        ],
+    );
+
+    assert_success(&output);
+    assert_eq!(
+        stdout_of(&output),
+        format!("{}\n", json!({"ok": true, "result": review_threads()})),
+        "the value envelope (W1-R12); the oracle's captured line is the same document"
+    );
+
+    let received = server.received();
+    assert_eq!(received.len(), 1);
+    assert_eq!(received[0].method, "GET");
+    assert_eq!(received[0].path, threads_route(137));
+    assert_eq!(received[0].query_pairs(), vec![api_version()]);
+}
+
+#[test]
+fn comments_list_human_is_the_modules_thread_listing() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    expect_threads(&server, 137, review_threads());
+
+    let output = run(
+        &home,
+        &server,
+        &["prs", "comments", "list", "Alpha", "Alpha.Core", "137"],
+    );
+
+    assert_success(&output);
+    assert_eq!(
+        stdout_of(&output),
+        "\n  Thread 7 [active]\n    [21] Alice: Please add a retry here.\n    [22] Bob: Good catch, fixing.\n\n  Thread 8 [fixed]\n    [23] Carol: Nit: rename this.\n\n",
+        "the module's compact listing, byte for byte"
+    );
+}
+
+#[test]
+fn comments_list_all_human_expands_comments_and_reply_markers() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    expect_threads(&server, 137, review_threads());
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "prs",
+            "comments",
+            "list",
+            "Alpha",
+            "Alpha.Core",
+            "137",
+            "--all",
+        ],
+    );
+
+    assert_success(&output);
+    assert_eq!(
+        stdout_of(&output),
+        "\n  Thread 7 [active] on /src/app.ex\n    [21] Alice:\n      Please add a retry here.\n    [22] (reply to 21) Bob:\n      Good catch, fixing.\n\n  Thread 8 [fixed]\n    [23] Carol:\n      Nit: rename this.\n\n",
+        "the expanded listing, byte for byte"
+    );
+}
+
+#[test]
+fn comments_list_empty_human_is_a_lone_blank_line() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    expect_threads(&server, 8, json!([]));
+
+    let output = run(
+        &home,
+        &server,
+        &["prs", "comments", "list", "Alpha", "Alpha.Core", "8"],
+    );
+
+    assert_success(&output);
+    assert_eq!(stdout_of(&output), "\n");
+}
+
+#[test]
+fn comments_list_404_is_the_not_found_envelope() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "GET",
+        &threads_route(999),
+        MockResponse::json(
+            404,
+            json!({"message": "The pull request 999 does not exist."}),
+        ),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "prs",
+            "comments",
+            "list",
+            "Alpha",
+            "Alpha.Core",
+            "999",
+            "--json",
+        ],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    let envelope: Value = serde_json::from_str(&stdout_of(&output)).expect("the error envelope");
+    assert_eq!(envelope["ok"], json!(false));
+    assert_eq!(envelope["error"]["code"], json!("not_found"));
+    assert_eq!(envelope["error"]["status"], json!(404));
+}
+
+#[test]
+fn comments_list_500_is_the_api_error_envelope() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "GET",
+        &threads_route(500),
+        MockResponse::json(
+            500,
+            json!({"message": "TF400898: An Internal Error Occurred."}),
+        ),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "prs",
+            "comments",
+            "list",
+            "Alpha",
+            "Alpha.Core",
+            "500",
+            "--json",
+        ],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    let envelope: Value = serde_json::from_str(&stdout_of(&output)).expect("the error envelope");
+    assert_eq!(envelope["error"]["code"], json!("api_error"));
+    assert_eq!(envelope["error"]["status"], json!(500));
+}
+
+#[test]
+fn comments_add_posts_the_general_thread_body_and_the_json_document() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "POST",
+        &lower_threads_route(137),
+        MockResponse::json(
+            200,
+            json!({"id": 11, "comments": [{"id": 21, "content": "Looks good"}]}),
+        ),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "prs",
+            "comments",
+            "add",
+            "Alpha",
+            "Alpha.Core",
+            "137",
+            "--content",
+            "Looks good",
+            "--json",
+        ],
+    );
+
+    assert_success(&output);
+    assert_eq!(
+        stdout_of(&output),
+        format!(
+            "{}\n",
+            json!({"ok": true, "thread_id": 11, "comment_id": 21, "message": "Comment added."})
+        )
+    );
+
+    let received = server.received();
+    assert_eq!(received.len(), 1, "one POST");
+    assert_eq!(received[0].method, "POST");
+    assert_eq!(received[0].path, lower_threads_route(137));
+    assert_eq!(
+        sent_body(&received[0]),
+        json!({
+            "comments": [{"commentType": "text", "content": "Looks good", "parentCommentId": 0}],
+            "status": "active"
+        })
+    );
+}
+
+#[test]
+fn comments_add_inline_posts_the_canonical_path_and_range() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "POST",
+        &lower_threads_route(140),
+        MockResponse::json(200, json!({"id": 14, "comments": [{"id": 24}]})),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "prs",
+            "comments",
+            "add",
+            "Alpha",
+            "Alpha.Core",
+            "140",
+            "--content",
+            "Range note",
+            "--file-path",
+            "src/foo.ex",
+            "--line",
+            "3",
+            "--end-line",
+            "5",
+            "--json",
+        ],
+    );
+
+    assert_success(&output);
+    assert_eq!(
+        stdout_of(&output),
+        format!(
+            "{}\n",
+            json!({"ok": true, "thread_id": 14, "comment_id": 24, "message": "Comment added to /src/foo.ex:3-5."})
+        )
+    );
+
+    let received = server.received();
+    assert_eq!(
+        sent_body(&received[0]),
+        json!({
+            "comments": [{"commentType": "text", "content": "Range note", "parentCommentId": 0}],
+            "status": "active",
+            "threadContext": {
+                "filePath": "/src/foo.ex",
+                "rightFileStart": {"line": 3, "offset": 1},
+                "rightFileEnd": {"line": 5, "offset": 1}
+            }
+        })
+    );
+}
+
+#[test]
+fn comments_add_reply_posts_to_the_thread_comments_path() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "POST",
+        &format!("{}/comments", lower_thread_route(137, 8)),
+        MockResponse::json(200, json!({"id": 27, "content": "Reply to 3"})),
+    );
+
+    // No --comment-id: the captured default is 0. The response has no `comments`
+    // array, so the oracle's document carries `comment_id: null`.
+    let output = run(
+        &home,
+        &server,
+        &[
+            "prs",
+            "comments",
+            "add",
+            "Alpha",
+            "Alpha.Core",
+            "137",
+            "--content",
+            "Reply to 3",
+            "--thread-id",
+            "8",
+            "--json",
+        ],
+    );
+
+    assert_success(&output);
+    assert_eq!(
+        stdout_of(&output),
+        format!(
+            "{}\n",
+            json!({"ok": true, "thread_id": 27, "comment_id": null, "message": "Reply added to thread 8."})
+        )
+    );
+
+    let received = server.received();
+    assert_eq!(received[0].method, "POST");
+    assert_eq!(
+        received[0].path,
+        format!("{}/comments", lower_thread_route(137, 8))
+    );
+    assert_eq!(
+        sent_body(&received[0]),
+        json!({"commentType": "text", "content": "Reply to 3", "parentCommentId": 0})
+    );
+}
+
+#[test]
+fn comments_add_reads_stdin_content() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "POST",
+        &lower_threads_route(137),
+        MockResponse::json(200, json!({"id": 11, "comments": [{"id": 21}]})),
+    );
+
+    let output = run_with_stdin(
+        &home,
+        &server,
+        &[
+            "prs",
+            "comments",
+            "add",
+            "Alpha",
+            "Alpha.Core",
+            "137",
+            "--content",
+            "-",
+            "--json",
+        ],
+        b"Stdin add\n\n",
+    );
+
+    assert_success(&output);
+    assert_eq!(
+        sent_body(&server.received()[0])["comments"][0]["content"],
+        json!("Stdin add"),
+        "the trailing newlines the module strips"
+    );
+}
+
+#[test]
+fn comments_add_missing_content_is_a_loud_usage_error() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "prs",
+            "comments",
+            "add",
+            "Alpha",
+            "Alpha.Core",
+            "137",
+            "--json",
+        ],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        stderr_of(&output).contains("--content"),
+        "the missing required option is named: {}",
+        stderr_of(&output)
+    );
+    assert!(server.received().is_empty(), "nothing is sent");
+}
+
+#[test]
+fn comments_add_invalid_status_is_a_validation_error() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "prs",
+            "comments",
+            "add",
+            "Alpha",
+            "Alpha.Core",
+            "137",
+            "--content",
+            "X",
+            "--status",
+            "bogus",
+            "--json",
+        ],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    let envelope: Value = serde_json::from_str(&stdout_of(&output)).expect("the error envelope");
+    assert_eq!(envelope["error"]["code"], json!("validation_error"));
+    assert_eq!(
+        envelope["error"]["message"],
+        json!(
+            "Invalid --status 'bogus'. Must be one of: active, fixed, wontFix, closed, byDesign."
+        )
+    );
+    assert!(server.received().is_empty(), "nothing is sent");
+}
+
+#[test]
+fn comments_add_missing_file_is_a_validation_error() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "prs",
+            "comments",
+            "add",
+            "Alpha",
+            "Alpha.Core",
+            "137",
+            "--content",
+            "@/nonexistent/file.md",
+            "--json",
+        ],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    let envelope: Value = serde_json::from_str(&stdout_of(&output)).expect("the error envelope");
+    assert_eq!(envelope["error"]["code"], json!("validation_error"));
+    assert!(
+        envelope["error"]["message"]
+            .as_str()
+            .expect("a message")
+            .contains("/nonexistent/file.md"),
+        "the message names the file: {}",
+        envelope["error"]["message"]
+    );
+    assert!(server.received().is_empty(), "nothing is sent");
+}
+
+#[test]
+fn comments_update_content_patches_the_comment() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "PATCH",
+        &thread_comment_route(137, 7, 3),
+        MockResponse::json(200, json!({"id": 3, "content": "Edited text"})),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "prs",
+            "comments",
+            "update",
+            "Alpha",
+            "Alpha.Core",
+            "137",
+            "7",
+            "3",
+            "--content",
+            "Edited text",
+            "--json",
+        ],
+    );
+
+    assert_success(&output);
+    assert_eq!(
+        stdout_of(&output),
+        format!(
+            "{}\n",
+            json!({"ok": true, "thread_id": 7, "comment_id": 3, "status": null, "message": "Comment updated."})
+        ),
+        "the captured document: the response's id and the positional thread id"
+    );
+    assert_eq!(
+        sent_body(&server.received()[0]),
+        json!({"content": "Edited text"})
+    );
+}
+
+#[test]
+fn comments_update_status_patches_the_thread_and_keeps_the_arg_ids() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "PATCH",
+        &thread_route(137, 8),
+        MockResponse::json(200, json!({"id": 8, "status": "fixed"})),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "prs",
+            "comments",
+            "update",
+            "Alpha",
+            "Alpha.Core",
+            "137",
+            "8",
+            "3",
+            "--status",
+            "fixed",
+            "--json",
+        ],
+    );
+
+    assert_success(&output);
+    assert_eq!(
+        stdout_of(&output),
+        format!(
+            "{}\n",
+            json!({"ok": true, "thread_id": 8, "comment_id": 3, "status": null, "message": "Thread status updated."})
+        ),
+        "captured: the status-only path reports the argument ids and a null status"
+    );
+    assert_eq!(sent_body(&server.received()[0]), json!({"status": "fixed"}));
+}
+
+#[test]
+fn comments_update_both_patches_the_thread_then_the_comment() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "PATCH",
+        &thread_route(137, 9),
+        MockResponse::json(200, json!({"id": 9, "status": "fixed"})),
+    );
+    server.expect(
+        "PATCH",
+        &thread_comment_route(137, 9, 4),
+        MockResponse::json(200, json!({"id": 4, "content": "Both edited"})),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "prs",
+            "comments",
+            "update",
+            "Alpha",
+            "Alpha.Core",
+            "137",
+            "9",
+            "4",
+            "--content",
+            "Both edited",
+            "--status",
+            "fixed",
+            "--json",
+        ],
+    );
+
+    assert_success(&output);
+    assert_eq!(
+        stdout_of(&output),
+        format!(
+            "{}\n",
+            json!({"ok": true, "thread_id": 9, "comment_id": 4, "status": "fixed", "message": "Comment and thread status updated."})
+        )
+    );
+
+    let received = server.received();
+    assert_eq!(
+        received.len(),
+        2,
+        "the thread PATCH, then the comment PATCH"
+    );
+    assert_eq!(received[0].path, thread_route(137, 9));
+    assert_eq!(sent_body(&received[0]), json!({"status": "fixed"}));
+    assert_eq!(received[1].path, thread_comment_route(137, 9, 4));
+    assert_eq!(sent_body(&received[1]), json!({"content": "Both edited"}));
+}
+
+#[test]
+fn comments_update_resolved_by_me_uses_connection_data() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    expect_connection_data(&server);
+    server.expect(
+        "PATCH",
+        &thread_route(137, 10),
+        MockResponse::json(200, json!({"id": 10, "status": "fixed"})),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "prs",
+            "comments",
+            "update",
+            "Alpha",
+            "Alpha.Core",
+            "137",
+            "10",
+            "3",
+            "--status",
+            "fixed",
+            "--resolved-by-me",
+            "--json",
+        ],
+    );
+
+    assert_success(&output);
+    let received = server.received();
+    assert_eq!(received.len(), 2, "connectionData, then the thread PATCH");
+    assert_eq!(received[0].path, CONNECTION_DATA_PATH);
+    assert_eq!(
+        sent_body(&received[1]),
+        json!({"status": "fixed", "resolvedBy": {"id": REVIEWER_ID}})
+    );
+}
+
+#[test]
+fn comments_update_dry_run_prints_the_actions_document_and_sends_nothing() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "prs",
+            "comments",
+            "update",
+            "Alpha",
+            "Alpha.Core",
+            "137",
+            "9",
+            "4",
+            "--content",
+            "Both edited",
+            "--status",
+            "fixed",
+            "--dry-run",
+        ],
+    );
+
+    assert_success(&output);
+    assert_eq!(
+        stdout_of(&output),
+        format!(
+            "{}\n",
+            json!({
+                "ok": true,
+                "dry_run": true,
+                "actions": [
+                    {"method": "PATCH", "path": format!("{}/threads/9", comments_local_route(137)), "body": {"status": "fixed"}},
+                    {"method": "PATCH", "path": format!("{}/threads/9/comments/4", comments_local_route(137)), "body": {"content": "Both edited"}}
+                ]
+            })
+        ),
+        "the captured actions document, compact and even without --json"
+    );
+    assert!(server.received().is_empty(), "a dry run sends nothing");
+}
+
+#[test]
+fn comments_update_without_content_or_status_is_a_validation_error() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "prs",
+            "comments",
+            "update",
+            "Alpha",
+            "Alpha.Core",
+            "137",
+            "7",
+            "3",
+            "--json",
+        ],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    let envelope: Value = serde_json::from_str(&stdout_of(&output)).expect("the error envelope");
+    assert_eq!(envelope["error"]["code"], json!("validation_error"));
+    assert_eq!(
+        envelope["error"]["message"],
+        json!(
+            "Must pass --content and/or --status. Pass --content to edit a comment, --status to change a thread's resolution state, or both."
+        )
+    );
+    assert!(server.received().is_empty());
+}
+
+#[test]
+fn comments_update_rejects_the_underscore_spelling() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "prs",
+            "comments",
+            "update",
+            "Alpha",
+            "Alpha.Core",
+            "137",
+            "7",
+            "3",
+            "--content",
+            "X",
+            "--resolved_by_me",
+        ],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        stderr_of(&output).contains("--resolved_by_me"),
+        "the rejected spelling is named: {}",
+        stderr_of(&output)
+    );
+    assert!(server.received().is_empty());
+}
+
+#[test]
+fn comments_delete_with_force_closes_the_thread() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "PATCH",
+        &lower_thread_route(137, 21),
+        MockResponse::json(200, json!({"id": 21, "status": "closed"})),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "prs",
+            "comments",
+            "delete",
+            "Alpha",
+            "Alpha.Core",
+            "137",
+            "21",
+            "--force",
+            "--json",
+        ],
+    );
+
+    assert_success(&output);
+    assert_eq!(
+        stdout_of(&output),
+        format!("{}\n", json!({"ok": true, "closed": "thread 21"}))
+    );
+    assert_eq!(
+        sent_body(&server.received()[0]),
+        json!({"status": "closed"})
+    );
+}
+
+#[test]
+fn comments_delete_with_comment_id_deletes_the_comment() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "DELETE",
+        &lower_thread_comment_route(137, 25, 4),
+        MockResponse::json(200, json!({})),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "prs",
+            "comments",
+            "delete",
+            "Alpha",
+            "Alpha.Core",
+            "137",
+            "25",
+            "--comment-id",
+            "4",
+            "--force",
+            "--json",
+        ],
+    );
+
+    assert_success(&output);
+    assert_eq!(
+        stdout_of(&output),
+        format!(
+            "{}\n",
+            json!({"ok": true, "closed": "comment 4 in thread 25"})
+        )
+    );
+    let received = server.received();
+    assert_eq!(received[0].method, "DELETE");
+    assert_eq!(received[0].path, lower_thread_comment_route(137, 25, 4));
+    assert!(received[0].body.is_none(), "a DELETE carries no body");
+}
+
+#[test]
+fn comments_delete_asks_and_proceeds_on_yes() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "PATCH",
+        &lower_thread_route(137, 20),
+        MockResponse::json(200, json!({"id": 20, "status": "closed"})),
+    );
+
+    let output = run_with_stdin(
+        &home,
+        &server,
+        &[
+            "prs",
+            "comments",
+            "delete",
+            "Alpha",
+            "Alpha.Core",
+            "137",
+            "20",
+            "--json",
+        ],
+        b"y\n",
+    );
+
+    assert_success(&output);
+    assert!(
+        stderr_of(&output).contains("Close thread 20? [y/N] "),
+        "the question is on stderr (D31): {}",
+        stderr_of(&output)
+    );
+    assert_eq!(
+        stdout_of(&output),
+        format!("{}\n", json!({"ok": true, "closed": "thread 20"})),
+        "stdout carries exactly one document"
+    );
+    assert_eq!(server.received().len(), 1, "the confirmed request went out");
+}
+
+#[test]
+fn comments_delete_refuses_on_no_and_exits_1() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+
+    let output = run_with_stdin(
+        &home,
+        &server,
+        &[
+            "prs",
+            "comments",
+            "delete",
+            "Alpha",
+            "Alpha.Core",
+            "137",
+            "26",
+            "--json",
+        ],
+        b"n\n",
+    );
+
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "a refusal is never a success (R2)"
+    );
+    assert!(stdout_of(&output).is_empty(), "no document on stdout");
+    assert!(
+        stderr_of(&output).contains("Cancelled."),
+        "the refusal is on stderr: {}",
+        stderr_of(&output)
+    );
+    assert!(server.received().is_empty(), "nothing was done");
+}
+
+#[test]
+fn comments_delete_treats_eof_as_a_refusal() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+
+    let output = run_with_stdin(
+        &home,
+        &server,
+        &[
+            "prs",
+            "comments",
+            "delete",
+            "Alpha",
+            "Alpha.Core",
+            "137",
+            "26",
+        ],
+        b"",
+    );
+
+    assert_eq!(output.status.code(), Some(1), "EOF is an answered no (D30)");
+    assert!(stdout_of(&output).is_empty());
+    assert!(stderr_of(&output).contains("Cancelled."));
+    assert!(server.received().is_empty());
+}
+
+#[test]
+fn comments_delete_force_skips_the_prompt() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "PATCH",
+        &lower_thread_route(137, 21),
+        MockResponse::json(200, json!({"id": 21, "status": "closed"})),
+    );
+
+    let output = run_with_stdin(
+        &home,
+        &server,
+        &[
+            "prs",
+            "comments",
+            "delete",
+            "Alpha",
+            "Alpha.Core",
+            "137",
+            "21",
+            "--force",
+        ],
+        b"",
+    );
+
+    assert_success(&output);
+    assert!(
+        stderr_of(&output).is_empty(),
+        "--force asks nothing: {}",
+        stderr_of(&output)
+    );
+    assert_eq!(server.received().len(), 1);
+}
+
+#[test]
+fn comments_resolve_patches_the_thread_and_mirrors_the_envelope() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "PATCH",
+        &lower_thread_route(137, 5),
+        MockResponse::json(200, json!({"id": 5, "status": "fixed"})),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "prs",
+            "comments",
+            "resolve",
+            "Alpha",
+            "Alpha.Core",
+            "137",
+            "5",
+            "--json",
+        ],
+    );
+
+    assert_success(&output);
+    assert_eq!(
+        stdout_of(&output),
+        format!("{}\n", json!({"ok": true, "thread": 5, "status": "fixed"})),
+        "the captured document (note the `thread` key)"
+    );
+    assert_eq!(sent_body(&server.received()[0]), json!({"status": "fixed"}));
+}
+
+#[test]
+fn comments_resolve_passes_an_unknown_status_through() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "PATCH",
+        &lower_thread_route(137, 5),
+        MockResponse::json(200, json!({"id": 5, "status": "bogus"})),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "prs",
+            "comments",
+            "resolve",
+            "Alpha",
+            "Alpha.Core",
+            "137",
+            "5",
+            "--status",
+            "bogus",
+            "--json",
+        ],
+    );
+
+    assert_success(&output);
+    assert_eq!(
+        sent_body(&server.received()[0]),
+        json!({"status": "bogus"}),
+        "captured: resolve does not validate the status"
+    );
+}
+
+#[test]
+fn comments_resolve_resolved_by_me_sends_resolved_by() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    expect_connection_data(&server);
+    server.expect(
+        "PATCH",
+        &lower_thread_route(137, 4),
+        MockResponse::json(200, json!({"id": 4, "status": "fixed"})),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "prs",
+            "comments",
+            "resolve",
+            "Alpha",
+            "Alpha.Core",
+            "137",
+            "4",
+            "--resolved-by-me",
+            "--json",
+        ],
+    );
+
+    assert_success(&output);
+    let received = server.received();
+    assert_eq!(received.len(), 2);
+    assert_eq!(received[0].path, CONNECTION_DATA_PATH);
+    assert_eq!(
+        sent_body(&received[1]),
+        json!({"status": "fixed", "resolvedBy": {"id": REVIEWER_ID}})
+    );
+}
+
+#[test]
+fn comments_resolve_without_a_thread_id_is_a_usage_error() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "prs",
+            "comments",
+            "resolve",
+            "Alpha",
+            "Alpha.Core",
+            "137",
+            "--json",
+        ],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        stderr_of(&output).contains("THREAD_ID"),
+        "stderr names the missing positional: {}",
+        stderr_of(&output)
+    );
+    assert!(server.received().is_empty());
+}
