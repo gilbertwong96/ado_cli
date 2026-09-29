@@ -302,7 +302,7 @@ fn show_renders_the_detail() {
     assert_eq!(
         stdout_of(&output),
         concat!(
-            "\nArea Path Details\n",
+            "\nArea Path Details\n\n",
             "------------------------------------------------------------\n",
             "  ID:        2\n",
             "  Name:      Team\n",

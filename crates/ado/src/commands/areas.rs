@@ -151,7 +151,7 @@ fn push_area_node(out: &mut String, node: &Value, depth: usize) {
 /// The module's `print_area_detail/1`: a blank line, the heading, an ASCII rule,
 /// the four labelled fields, and the URL only when the node carries one.
 fn area_detail(area: &Value) -> String {
-    let mut detail = String::from("\nArea Path Details\n");
+    let mut detail = String::from("\nArea Path Details\n\n");
 
     detail.push_str(&"-".repeat(60));
     detail.push('\n');
@@ -246,7 +246,7 @@ mod tests {
         assert_eq!(
             detail,
             format!(
-                "\nArea Path Details\n{}\n  ID:        2\n  Name:      Team\n  Path:      \\Alpha\\Team\n  Structure: hierarchy\n",
+                "\nArea Path Details\n\n{}\n  ID:        2\n  Name:      Team\n  Path:      \\Alpha\\Team\n  Structure: hierarchy\n",
                 "-".repeat(60)
             )
         );

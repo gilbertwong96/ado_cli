@@ -256,7 +256,7 @@ fn iterations_table(iterations: &[Value]) -> Report {
 /// `attrs[key]` reads (a missing attribute prints as the empty string).
 fn iteration_detail(iteration: &Value) -> String {
     let attributes = iteration.get("attributes").and_then(Value::as_object);
-    let mut detail = String::from("\nIteration Details\n");
+    let mut detail = String::from("\nIteration Details\n\n");
 
     detail.push_str(&"─".repeat(60));
     detail.push('\n');
@@ -374,7 +374,7 @@ mod tests {
         assert_eq!(
             detail,
             format!(
-                "\nIteration Details\n{}\n  ID:    i1\n  Name:  Sprint 24\n  Path:  \n  Start: \n  Finish: \n",
+                "\nIteration Details\n\n{}\n  ID:    i1\n  Name:  Sprint 24\n  Path:  \n  Start: \n  Finish: \n",
                 "─".repeat(60)
             ),
             "a missing attribute interpolates as the empty string, trailing space and all"
