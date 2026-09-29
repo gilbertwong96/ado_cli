@@ -1,0 +1,9 @@
+{
+  "id": 2,
+  "identifier": "22222222-0000-0000-0000-000000000002",
+  "name": "Team",
+  "structureType": "hierarchy",
+  "hasChildren": true,
+  "path": "\\Alpha\\Team",
+  "url": "https://dev.azure.com/ado-harness/Alpha/_apis/wit/classificationNodes/Areas/Team"
+}

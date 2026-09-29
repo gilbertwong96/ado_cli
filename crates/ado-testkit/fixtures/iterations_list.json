@@ -1,0 +1,25 @@
+{
+  "count": 2,
+  "value": [
+    {
+      "id": "aaaaaaaa-0001-0001-0001-000000000001",
+      "name": "Sprint 24",
+      "path": "Alpha\\Sprint 24",
+      "attributes": {
+        "startDate": "2026-01-15T00:00:00Z",
+        "finishDate": "2026-01-29T00:00:00Z"
+      },
+      "url": "https://dev.azure.com/ado-harness/Alpha/_apis/work/teamsettings/iterations/aaaaaaaa-0001-0001-0001-000000000001"
+    },
+    {
+      "id": "bbbbbbbb-0002-0002-0002-000000000002",
+      "name": "Sprint 25",
+      "path": "Alpha\\Sprint 25",
+      "attributes": {
+        "startDate": "2026-02-01T00:00:00Z",
+        "finishDate": "2026-02-15T00:00:00Z"
+      },
+      "url": "https://dev.azure.com/ado-harness/Alpha/_apis/work/teamsettings/iterations/bbbbbbbb-0002-0002-0002-000000000002"
+    }
+  ]
+}

@@ -1,0 +1,41 @@
+{
+  "id": 1,
+  "identifier": "11111111-0000-0000-0000-000000000001",
+  "name": "Alpha",
+  "structureType": "hierarchy",
+  "hasChildren": true,
+  "path": "\\Alpha",
+  "url": "https://dev.azure.com/ado-harness/Alpha/_apis/wit/classificationNodes/Areas",
+  "children": [
+    {
+      "id": 2,
+      "identifier": "22222222-0000-0000-0000-000000000002",
+      "name": "Team",
+      "structureType": "hierarchy",
+      "hasChildren": true,
+      "path": "\\Alpha\\Team",
+      "url": "https://dev.azure.com/ado-harness/Alpha/_apis/wit/classificationNodes/Areas/Team",
+      "children": [
+        {
+          "id": 4,
+          "identifier": "44444444-0000-0000-0000-000000000004",
+          "name": "Feature",
+          "structureType": "hierarchy",
+          "hasChildren": false,
+          "path": "\\Alpha\\Team\\Feature",
+          "url": "https://dev.azure.com/ado-harness/Alpha/_apis/wit/classificationNodes/Areas/Team/Feature"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "identifier": "33333333-0000-0000-0000-000000000003",
+      "name": "Sub",
+      "structureType": "hierarchy",
+      "hasChildren": false,
+      "path": "\\Alpha\\Sub",
+      "url": "https://dev.azure.com/ado-harness/Alpha/_apis/wit/classificationNodes/Areas/Sub",
+      "children": []
+    }
+  ]
+}

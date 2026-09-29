@@ -1,0 +1,10 @@
+{
+  "id": "aaaaaaaa-0001-0001-0001-000000000001",
+  "name": "Sprint 24",
+  "path": "Alpha\\Sprint 24",
+  "attributes": {
+    "startDate": "2026-01-15T00:00:00Z",
+    "finishDate": "2026-01-29T00:00:00Z"
+  },
+  "url": "https://dev.azure.com/ado-harness/Alpha/_apis/work/teamsettings/iterations/aaaaaaaa-0001-0001-0001-000000000001"
+}
