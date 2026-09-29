@@ -807,6 +807,7 @@ fn a_closed_stdout_is_a_silent_success() {
     );
 
     let mut child = command(&home, &server, &["prs", "list", "Alpha", "Alpha.Core"])
+        .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()

@@ -1111,6 +1111,7 @@ fn a_closed_stdout_is_a_silent_success() {
     expect_builds(&server, &[("api-version", "7.1")]);
 
     let mut child = command(&home, &server, &["pipelines-builds", "list", "Alpha"])
+        .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()

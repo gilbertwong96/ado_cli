@@ -560,6 +560,7 @@ fn a_closed_stdout_is_a_silent_success() {
     );
 
     let mut child = command(&home, &server, &["projects", "list"])
+        .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()

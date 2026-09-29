@@ -1033,6 +1033,7 @@ fn a_closed_stdout_is_a_silent_success() {
             target.to_str().expect("a utf-8 path"),
         ],
     )
+    .stdin(Stdio::null())
     .stdout(Stdio::piped())
     .stderr(Stdio::piped())
     .spawn()

@@ -958,6 +958,7 @@ fn a_closed_stdout_is_a_silent_success() {
     expect_batch(&server, "workitems_list", "42%2C43");
 
     let mut child = command(&home, &server, &["workitems", "list", "Alpha"])
+        .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
