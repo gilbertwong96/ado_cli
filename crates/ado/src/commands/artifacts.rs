@@ -20,6 +20,7 @@ use ado_core::envelope::ok_value;
 use ado_core::error::AdoError;
 use serde_json::Value;
 
+use crate::commands::items::items;
 use crate::context::Context;
 use crate::output::Report;
 
@@ -248,17 +249,6 @@ fn text(value: &Value) -> String {
     }
 }
 
-/// The Elixir's `Client.list/2` unwraps a `value` key and passes anything else
-/// through — including `null`, which the oracle renders as `"result":null` — while
-/// this envelope always carries an array, so a non-array body becomes its single
-/// element.
-fn items(value: Value) -> Vec<Value> {
-    match value {
-        Value::Array(items) => items,
-        other => vec![other],
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -395,19 +385,5 @@ mod tests {
         assert!(!is_absolute("/blob/drop.zip"));
         assert!(!is_absolute("blob/drop.zip"));
         assert!(!is_absolute(""));
-    }
-
-    #[test]
-    fn items_wraps_a_non_array_body_for_the_human_path() {
-        assert_eq!(
-            items(json!([1, 2])),
-            vec![json!(1), json!(2)],
-            "the value array passes through"
-        );
-        assert_eq!(
-            items(json!(null)),
-            vec![json!(null)],
-            "a non-array body becomes its single element"
-        );
     }
 }

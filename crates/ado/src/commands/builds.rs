@@ -9,6 +9,7 @@ use ado_core::envelope::ok_value;
 use ado_core::error::{AdoError, ErrorCode};
 use serde_json::Value;
 
+use crate::commands::items::items;
 use crate::context::Context;
 use crate::output::Report;
 
@@ -105,16 +106,6 @@ fn list_params(top: Option<i64>, definitions: Option<String>) -> Vec<(String, St
     }
 
     params
-}
-
-/// The Elixir's `Client.list/2` unwraps the `value` array; anything else is
-/// wrapped as a single element, so the value envelope always carries an array —
-/// including a `null` body, which `List.wrap/1` would drop instead.
-fn items(value: Value) -> Vec<Value> {
-    match value {
-        Value::Array(items) => items,
-        other => vec![other],
-    }
 }
 
 /// The module's `print_builds_table/1`: ID, Definition, Status, Result and Branch.
