@@ -465,6 +465,40 @@ fn create_with_one_date_posts_only_that_attribute() {
 }
 
 #[test]
+fn create_with_a_finish_date_posts_only_that_attribute() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "POST",
+        ITERATIONS,
+        MockResponse::from_fixture("iterations_show"),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "iterations",
+            "create",
+            "Alpha",
+            "Team",
+            "--name",
+            "Sprint 24",
+            "--finish-date",
+            "2026-03-14",
+            "--json",
+        ],
+    );
+
+    assert_success(&output);
+    assert_eq!(
+        body_of(&request(&server)),
+        json!({"name": "Sprint 24", "attributes": {"finishDate": "2026-03-14"}}),
+        "the finish-only half of the D39 repair, whose capture T16 added"
+    );
+}
+
+#[test]
 fn create_without_name_is_a_usage_error_with_no_request() {
     let home = TempHome::new();
     let server = MockServer::start();
@@ -549,6 +583,39 @@ fn update_with_dates_posts_the_attributes_body() {
         body_of(&request(&server)),
         json!({"attributes": {"startDate": "2026-03-01", "finishDate": "2026-03-14"}}),
         "the same D39 repair on the update path"
+    );
+}
+
+#[test]
+fn update_with_a_start_date_posts_only_that_attribute() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "PATCH",
+        &format!("{ITERATIONS}/{ITER_ID}"),
+        MockResponse::from_fixture("iterations_show"),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "iterations",
+            "update",
+            "Alpha",
+            "Team",
+            ITER_ID,
+            "--start-date",
+            "2026-03-01",
+            "--json",
+        ],
+    );
+
+    assert_success(&output);
+    assert_eq!(
+        body_of(&request(&server)),
+        json!({"attributes": {"startDate": "2026-03-01"}}),
+        "the start-only half of the D39 repair, whose capture T16 added"
     );
 }
 
