@@ -3105,6 +3105,156 @@ run_mock_cases() {
     mock_case pages-update-no-path "wikis pages update (no --path)" \
         wikis pages update Alpha wiki-update --content new
 
+    # ── Wave 3: the agent pools and the test coverage (Task 2) ──
+    #
+    # `agent-pools` and `test-coverage` are already the runnable spellings the
+    # schema names, so no D17/D18 renaming. `agent-pools show` is the wave’s
+    # first two-request read: the pool, then its agents; the `--json` result is
+    # `{"pool": …, "agents": <the agents body>}` when the agents fetch
+    # succeeds and the bare pool when it fails (any failure, still exit 0 — the
+    # captured 500 route). Nothing in the two areas sends a spelling that
+    # differs between the sides, so no case carries a `rest_rule`; each case
+    # whose point is a request shape states it on both sides with the direction
+    # filters instead.
+    #
+    # The oracle’s `agent-pools show` human detail is broken twice over: the
+    # module wraps its payloads as an atom-keyed map while the formatter reads
+    # the string keys `pool`/`agents` (so its four fields print empty), and
+    # `print_agents_detail/2` needs a **list** `agents` member while the wrapped
+    # value is the endpoint’s body map (so no agents print there either, where
+    # this build prints the pool’s four fields). The success human path
+    # therefore carries no case — the non-empty detail is this build’s §8
+    # surface, like Wave 1/2’s list tables — and the agents-fail human path
+    # matches the oracle byte for byte (its map *is* the pool). The integration
+    # suite pins this build’s fields and layout. `test-coverage show`’s
+    # no-coverage branch is the read whose frozen `--json` is prose (D21’s
+    # class): its human case matches, its json case carries the rule.
+
+    expect_oracle_requests='length == 1 and any_path("/ado-harness/_apis/distributedtask/pools") and qpair("api-version=7.1")'
+    expect_rust_requests='length == 1 and any_path("/ado-harness/_apis/distributedtask/pools") and qpair("api-version=7.1")'
+    mock_case agent-pools-list "agent-pools list" \
+        agent-pools list --json
+
+    case_org=empty-org
+    stdout_mode=text
+    mock_case agent-pools-list-empty-human "agent-pools list (empty org, human)" \
+        agent-pools list
+
+    case_org=missing
+    envelope_rule='D24: the error body stays the upstream bytes here, where the oracle re-renders the decoded map with inspect/2 (C2: the list-error row)'
+    mock_case agent-pools-list-404 "agent-pools list (404)" \
+        agent-pools list --json
+
+    case_org=broken
+    envelope_rule='D24: the error body stays the upstream bytes here, where the oracle re-renders the decoded map with inspect/2 (C2: the list-error row)'
+    mock_case agent-pools-list-500 "agent-pools list (500)" \
+        agent-pools list --json
+
+    expect_oracle_requests='[.[] | .path] == ["/ado-harness/_apis/distributedtask/pools/1", "/ado-harness/_apis/distributedtask/pools/1/agents"]'
+    expect_rust_requests='[.[] | .path] == ["/ado-harness/_apis/distributedtask/pools/1", "/ado-harness/_apis/distributedtask/pools/1/agents"]'
+    mock_case agent-pools-show "agent-pools show (the pool + its agents)" \
+        agent-pools show 1 --json
+
+    expect_oracle_requests='[.[] | .path] == ["/ado-harness/_apis/distributedtask/pools/2", "/ado-harness/_apis/distributedtask/pools/2/agents"]'
+    expect_rust_requests='[.[] | .path] == ["/ado-harness/_apis/distributedtask/pools/2", "/ado-harness/_apis/distributedtask/pools/2/agents"]'
+    mock_case agent-pools-show-agents-fail "agent-pools show (agents 500 — the bare pool)" \
+        agent-pools show 2 --json
+
+    expect_oracle_requests='[.[] | .path] == ["/ado-harness/_apis/distributedtask/pools/2", "/ado-harness/_apis/distributedtask/pools/2/agents"]'
+    expect_rust_requests='[.[] | .path] == ["/ado-harness/_apis/distributedtask/pools/2", "/ado-harness/_apis/distributedtask/pools/2/agents"]'
+    stdout_mode=text
+    mock_case agent-pools-show-agents-fail-human "agent-pools show (agents 500, human)" \
+        agent-pools show 2
+
+    envelope_rule='D4: the frozen CLI writes the guard to stderr with no envelope under --json where this build emits the error envelope'
+    expect_oracle_requests='[.[] | .path] == ["/ado-harness/_apis/distributedtask/pools/999"]'
+    expect_rust_requests='[.[] | .path] == ["/ado-harness/_apis/distributedtask/pools/999"]'
+    mock_case agent-pools-show-404 "agent-pools show (404)" \
+        agent-pools show 999 --json
+
+    envelope_rule='D5: the oracle prints the command help on stdout before its usage error; this build writes clap’s message to stderr alone'
+    stdout_mode=text
+    mock_case agent-pools-show-no-pool-id "agent-pools show (no pool_id)" \
+        agent-pools show --json
+
+    envelope_rule='D5: the oracle prints the command help on stdout before its usage error; this build writes clap’s message to stderr alone'
+    stdout_mode=text
+    mock_case agent-pools-show-noninteger "agent-pools show (non-integer pool_id)" \
+        agent-pools show not-an-integer --json
+
+    expect_oracle_requests='length == 1 and any_path("/ado-harness/Alpha/_apis/distributedtask/queues") and qpair("api-version=7.1")'
+    expect_rust_requests='length == 1 and any_path("/ado-harness/Alpha/_apis/distributedtask/queues") and qpair("api-version=7.1")'
+    mock_case agent-pools-queues-list "agent-pools queues list" \
+        agent-pools queues list Alpha --json
+
+    expect_oracle_requests='length == 1 and any_path("/ado-harness/Alpha/_apis/distributedtask/queues") and qpair("api-version=7.1") and qpair("poolId=1")'
+    expect_rust_requests='length == 1 and any_path("/ado-harness/Alpha/_apis/distributedtask/queues") and qpair("api-version=7.1") and qpair("poolId=1")'
+    mock_case agent-pools-queues-list-pool "agent-pools queues list --pool" \
+        agent-pools queues list Alpha --pool 1 --json
+
+    stdout_mode=text
+    mock_case agent-pools-queues-list-empty-human "agent-pools queues list (empty, human)" \
+        agent-pools queues list Empty
+
+    envelope_rule='D24: the error body stays the upstream bytes here, where the oracle re-renders the decoded map with inspect/2 (C2: the list-error row)'
+    mock_case agent-pools-queues-list-404 "agent-pools queues list (404)" \
+        agent-pools queues list Missing --json
+
+    envelope_rule='D24: the error body stays the upstream bytes here, where the oracle re-renders the decoded map with inspect/2 (C2: the list-error row)'
+    mock_case agent-pools-queues-list-500 "agent-pools queues list (500)" \
+        agent-pools queues list Broken --json
+
+    envelope_rule='D5: the oracle prints the command help on stdout before its usage error; this build writes clap’s message to stderr alone'
+    stdout_mode=text
+    mock_case agent-pools-queues-list-pool-noninteger "agent-pools queues list --pool abc (not an integer)" \
+        agent-pools queues list Alpha --pool abc --json
+
+    envelope_rule='D5: the oracle prints the command help on stdout before its usage error; this build writes clap’s message to stderr alone'
+    stdout_mode=text
+    mock_case agent-pools-queues-list-no-project "agent-pools queues list (no project)" \
+        agent-pools queues list --json
+
+    expect_oracle_requests='length == 1 and any_path("/ado-harness/Alpha/_apis/test/codecoverage") and qpair("api-version=7.1") and qpair("buildId=42")'
+    expect_rust_requests='length == 1 and any_path("/ado-harness/Alpha/_apis/test/codecoverage") and qpair("api-version=7.1") and qpair("buildId=42")'
+    mock_case test-coverage-show "test-coverage show" \
+        test-coverage show Alpha 42 --json
+
+    stdout_mode=text
+    mock_case test-coverage-show-human "test-coverage show (human)" \
+        test-coverage show Alpha 42
+
+    mock_case test-coverage-empty-json "test-coverage show (empty coverageData)" \
+        test-coverage show Empty 42 --json
+
+    stdout_mode=text
+    mock_case test-coverage-empty-human "test-coverage show (empty coverageData, human)" \
+        test-coverage show Empty 42
+
+    envelope_rule='D21: the frozen no-coverage path prints its human sentence and Done. even under --json (show_no_coverage never reaches Output); this build emits the empty value envelope'
+    mock_case test-coverage-nodata-json "test-coverage show (no coverageData, --json)" \
+        test-coverage show NoCoverage 43 --json
+
+    stdout_mode=text
+    mock_case test-coverage-nodata-human "test-coverage show (no coverageData, human)" \
+        test-coverage show NoCoverage 43
+
+    envelope_rule='D24: the error body stays the upstream bytes here, where the oracle re-renders the decoded map with inspect/2'
+    mock_case test-coverage-404 "test-coverage show (404)" \
+        test-coverage show Missing 42 --json
+
+    envelope_rule='D24: the error body stays the upstream bytes here, where the oracle re-renders the decoded map with inspect/2'
+    mock_case test-coverage-500 "test-coverage show (500)" \
+        test-coverage show Broken 42 --json
+
+    envelope_rule='D5: the oracle prints the command help on stdout before its usage error; this build writes clap’s message to stderr alone'
+    stdout_mode=text
+    mock_case test-coverage-no-build-id "test-coverage show (no build_id)" \
+        test-coverage show Alpha
+
+    envelope_rule='D5: the oracle prints the command help on stdout before its usage error; this build writes clap’s message to stderr alone'
+    stdout_mode=text
+    mock_case test-coverage-noninteger "test-coverage show (non-integer build_id)" \
+        test-coverage show Alpha not-an-integer
 
     mock_scenario_check
 }

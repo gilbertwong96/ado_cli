@@ -1009,6 +1009,28 @@
     {"method": "PUT", "path": "/ado-harness/Alpha/_apis/wiki/wikis/wiki-update/pages", "request_body": {"content": "new text"}, "json": {"id": 44, "path": "/Updated-Slug", "content": "new text", "eTag": "new789"}},
     {"method": "GET", "path": "/ado-harness/Alpha/_apis/wiki/wikis/wiki-noetag/pages", "query": {"path": "%2FHome", "includeContent": "true"}, "json": {"id": 50, "path": "/Home", "content": "no etag here"}},
     {"method": "PUT", "path": "/ado-harness/Alpha/_apis/wiki/wikis/wiki-noetag/pages", "request_body": {"content": "new text"}, "json": {"id": 50, "path": "/No-ETag-Slug", "content": "new text", "eTag": "fresh"}},
-    {"method": "GET", "path": "/ado-harness/Alpha/_apis/wiki/wikis/wiki-gone/pages", "query": {"path": "%2FHome", "includeContent": "true"}, "status": 404, "json": {"message": "TF400813: The user is not authorized."}}
+    {"method": "GET", "path": "/ado-harness/Alpha/_apis/wiki/wikis/wiki-gone/pages", "query": {"path": "%2FHome", "includeContent": "true"}, "status": 404, "json": {"message": "TF400813: The user is not authorized."}},
+
+    {"method": "GET", "path": "/ado-harness/_apis/distributedtask/pools", "fixture": "agent_pools_list.json"},
+    {"method": "GET", "path": "/empty-org/_apis/distributedtask/pools", "json": {"count": 0, "value": []}},
+    {"method": "GET", "path": "/missing/_apis/distributedtask/pools", "status": 404, "json": {"message": "TF400813: The user is not authorized."}},
+    {"method": "GET", "path": "/broken/_apis/distributedtask/pools", "status": 500, "json": {"message": "TF400813: The server is unavailable."}},
+
+    {"method": "GET", "path": "/ado-harness/_apis/distributedtask/pools/1", "fixture": "agent_pool_show.json"},
+    {"method": "GET", "path": "/ado-harness/_apis/distributedtask/pools/1/agents", "fixture": "agent_pool_agents.json"},
+    {"method": "GET", "path": "/ado-harness/_apis/distributedtask/pools/2", "json": {"id": 2, "name": "Hosted", "size": 0}},
+    {"method": "GET", "path": "/ado-harness/_apis/distributedtask/pools/2/agents", "status": 500, "json": {"message": "TF400813: The server is unavailable."}},
+    {"method": "GET", "path": "/ado-harness/_apis/distributedtask/pools/999", "status": 404, "json": {"message": "The pool does not exist."}},
+
+    {"method": "GET", "path": "/ado-harness/Alpha/_apis/distributedtask/queues", "fixture": "agent_queues_list.json"},
+    {"method": "GET", "path": "/ado-harness/Empty/_apis/distributedtask/queues", "json": {"count": 0, "value": []}},
+    {"method": "GET", "path": "/ado-harness/Missing/_apis/distributedtask/queues", "status": 404, "json": {"message": "TF400813: The user is not authorized."}},
+    {"method": "GET", "path": "/ado-harness/Broken/_apis/distributedtask/queues", "status": 500, "json": {"message": "TF400813: The server is unavailable."}},
+
+    {"method": "GET", "path": "/ado-harness/Alpha/_apis/test/codecoverage", "fixture": "test_coverage.json"},
+    {"method": "GET", "path": "/ado-harness/Empty/_apis/test/codecoverage", "json": {"coverageData": []}},
+    {"method": "GET", "path": "/ado-harness/NoCoverage/_apis/test/codecoverage", "json": {"count": 0, "value": []}},
+    {"method": "GET", "path": "/ado-harness/Missing/_apis/test/codecoverage", "status": 404, "json": {"message": "TF400813: The user is not authorized."}},
+    {"method": "GET", "path": "/ado-harness/Broken/_apis/test/codecoverage", "status": 500, "json": {"message": "TF400813: The server is unavailable."}}
   ]
 }
