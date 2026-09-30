@@ -29,6 +29,16 @@
 //! otherwise-equal body fail — the body counterpart of the query's parsed-pairs
 //! comparison.
 //!
+//! A route may serve a **sequence** instead of one body: `sequence` is an array of
+//! response entries (`status`, `fixture` or `json`, `set`), and the route serves
+//! one entry per matching request in order, the last entry repeating forever. That
+//! is what a poll loop needs — `ci watch` reads a build until it is terminal, so
+//! the same path must answer `inProgress` and then `completed` — and it is also
+//! what makes a repeated request observable in the log even when two requests would
+//! otherwise be indistinguishable. A route declares either the singular form or
+//! `sequence`, never both. The cursor is per route, not per path: a request that
+//! matches a different route cannot advance this one.
+//!
 //! [`MockServer`]: crate::MockServer
 
 use std::fs::{File, OpenOptions};
@@ -59,7 +69,10 @@ pub struct Route {
     /// with `*` as a value matching any value. Empty means the route is
     /// query-blind. See the module docs for the matching and precedence rules.
     pub query: Vec<(String, String)>,
-    pub response: MockResponse,
+    /// The responses this route serves, one per matching request, the last
+    /// repeating: a plain route carries one entry, a `sequence` the entries it
+    /// declares. See the module docs.
+    pub responses: Vec<MockResponse>,
     /// The body the request must carry, when the route declares one: a string
     /// compares the bytes as sent, any other JSON value parses the request body
     /// and compares structurally. Recorded in the log as `body_matched`; see the
@@ -119,7 +132,9 @@ impl Scenario {
     /// applied to the body before it is served, an optional `query` object of the
     /// pairs the request must carry (a `"*"` value matches any value), and an
     /// optional `request_body` the request must carry (a string compares as sent;
-    /// an object or array compares structurally).
+    /// an object or array compares structurally). A route may carry `sequence`
+    /// instead of `status`/`fixture`/`json`/`set`: an array of entries with those
+    /// same fields, served one per matching request with the last repeating.
     pub fn from_json(text: &str) -> Result<Scenario, String> {
         let document: Value = serde_json::from_str(text)
             .map_err(|error| format!("the scenario is not JSON: {error}"))?;
@@ -163,11 +178,15 @@ impl Scenario {
                     method: route.method.clone(),
                     path: route.path.replace(BASE_PLACEHOLDER, base),
                     query: route.query.clone(),
-                    response: MockResponse {
-                        status: route.response.status,
-                        body: substitute_body(&route.response.body, base),
-                        headers: route.response.headers.clone(),
-                    },
+                    responses: route
+                        .responses
+                        .iter()
+                        .map(|response| MockResponse {
+                            status: response.status,
+                            body: substitute_body(&response.body, base),
+                            headers: response.headers.clone(),
+                        })
+                        .collect(),
                     request_body: route.request_body.clone(),
                 })
                 .collect(),
@@ -222,38 +241,11 @@ fn parse_route(value: &Value) -> Result<Route, String> {
         .and_then(Value::as_str)
         .ok_or_else(|| format!("the {method} route has no `path`"))?
         .to_owned();
-    let status = value.get("status").and_then(Value::as_u64).unwrap_or(200) as u16;
+    let what = format!("the {method} {path} route");
 
-    let (body, content_type) = match (value.get("fixture"), value.get("json")) {
-        (Some(fixture), None) => {
-            let name = fixture
-                .as_str()
-                .ok_or_else(|| format!("the {method} {path} route's `fixture` is not a string"))?;
-
-            fixture_body(name)?
-        }
-        (None, Some(inline)) => (
-            serde_json::to_vec(inline)
-                .map_err(|error| format!("cannot encode the body: {error}"))?,
-            "application/json",
-        ),
-        (None, None) => {
-            return Err(format!(
-                "the {method} {path} route has neither `fixture` nor `json`"
-            ));
-        }
-        (Some(_), Some(_)) => {
-            return Err(format!(
-                "the {method} {path} route has both `fixture` and `json`"
-            ));
-        }
-    };
-
-    let body = match value.get("set") {
-        Some(edits) => {
-            apply_edits(&body, edits).map_err(|error| format!("{method} {path}: {error}"))?
-        }
-        None => body,
+    let responses = match value.get("sequence") {
+        Some(entries) => parse_sequence(&what, value, entries)?,
+        None => vec![parse_response(&what, value)?],
     };
 
     let request_body = match value.get("request_body") {
@@ -289,12 +281,65 @@ fn parse_route(value: &Value) -> Result<Route, String> {
         method,
         path,
         query,
-        response: MockResponse {
-            status,
-            body,
-            headers: vec![("content-type".to_owned(), content_type.to_owned())],
-        },
+        responses,
         request_body,
+    })
+}
+
+/// The responses a route serves: its singular form is a one-entry sequence.
+fn parse_sequence(what: &str, route: &Value, entries: &Value) -> Result<Vec<MockResponse>, String> {
+    for singular in ["status", "fixture", "json", "set"] {
+        if route.get(singular).is_some() {
+            return Err(format!("{what} has both `sequence` and `{singular}`"));
+        }
+    }
+
+    let entries = entries
+        .as_array()
+        .ok_or_else(|| format!("{what}'s `sequence` is not an array"))?;
+
+    if entries.is_empty() {
+        return Err(format!("{what}'s `sequence` has no entries"));
+    }
+
+    entries
+        .iter()
+        .enumerate()
+        .map(|(index, entry)| parse_response(&format!("{what}'s sequence entry {index}"), entry))
+        .collect()
+}
+
+/// One response a route serves: `status` (default 200), `fixture` xor `json`, and
+/// the `set` edits applied to that body.
+fn parse_response(what: &str, value: &Value) -> Result<MockResponse, String> {
+    let status = value.get("status").and_then(Value::as_u64).unwrap_or(200) as u16;
+
+    let (body, content_type) = match (value.get("fixture"), value.get("json")) {
+        (Some(fixture), None) => {
+            let name = fixture
+                .as_str()
+                .ok_or_else(|| format!("{what}'s `fixture` is not a string"))?;
+
+            fixture_body(name)?
+        }
+        (None, Some(inline)) => (
+            serde_json::to_vec(inline)
+                .map_err(|error| format!("cannot encode the body: {error}"))?,
+            "application/json",
+        ),
+        (None, None) => return Err(format!("{what} has neither `fixture` nor `json`")),
+        (Some(_), Some(_)) => return Err(format!("{what} has both `fixture` and `json`")),
+    };
+
+    let body = match value.get("set") {
+        Some(edits) => apply_edits(&body, edits).map_err(|error| format!("{what}: {error}"))?,
+        None => body,
+    };
+
+    Ok(MockResponse {
+        status,
+        body,
+        headers: vec![("content-type".to_owned(), content_type.to_owned())],
     })
 }
 
@@ -366,6 +411,8 @@ pub struct StandaloneMock {
 
 struct StandaloneState {
     routes: Vec<Route>,
+    /// How many requests each route has answered: the cursor into its `responses`.
+    served: Mutex<Vec<usize>>,
     requests: Mutex<Vec<RecordedRequest>>,
     log: Mutex<Option<File>>,
 }
@@ -394,6 +441,7 @@ impl StandaloneMock {
         });
 
         let state = Arc::new(StandaloneState {
+            served: Mutex::new(vec![0; scenario.routes().len()]),
             routes: scenario.expand(&base_url).routes,
             requests: Mutex::new(Vec::new()),
             log: Mutex::new(log),
@@ -438,6 +486,20 @@ impl StandaloneMock {
 }
 
 impl StandaloneState {
+    /// The response the route at `index` serves next: its cursor walks the route's
+    /// sequence and stops on the last entry.
+    fn serve(&self, index: usize) -> MockResponse {
+        let responses = &self.routes[index].responses;
+        let served = {
+            let mut cursors = lock(&self.served);
+            let served = cursors[index];
+            cursors[index] = served.saturating_add(1);
+            served
+        };
+
+        responses[served.min(responses.len() - 1)].clone()
+    }
+
     fn record(&self, request: &RecordedRequest, matched: bool, body_matched: Option<bool>) {
         lock(&self.requests).push(request.clone());
 
@@ -484,33 +546,33 @@ async fn handle(State(state): State<Arc<StandaloneState>>, request: Request) -> 
         body: (!bytes.is_empty()).then(|| String::from_utf8_lossy(&bytes).into_owned()),
     };
 
-    let matched_route = {
+    let matched_index = {
         let pairs = sent_pairs(&recorded.query);
 
         state
             .routes
             .iter()
-            .find(|route| {
+            .position(|route| {
                 !route.query.is_empty() && route.matches(&recorded.method, &recorded.path, &pairs)
             })
             .or_else(|| {
-                state.routes.iter().find(|route| {
+                state.routes.iter().position(|route| {
                     route.query.is_empty()
                         && route.matches(&recorded.method, &recorded.path, &pairs)
                 })
             })
     };
 
-    let body_matched = matched_route.and_then(|route| {
-        route
+    let body_matched = matched_index.and_then(|index| {
+        state.routes[index]
             .request_body
             .as_ref()
             .map(|expected| body_matches(expected, &bytes))
     });
 
-    state.record(&recorded, matched_route.is_some(), body_matched);
+    state.record(&recorded, matched_index.is_some(), body_matched);
 
-    match matched_route.map(|route| route.response.clone()) {
+    match matched_index.map(|index| state.serve(index)) {
         Some(response) => respond(response),
         None => Response::builder()
             .status(StatusCode::NOT_FOUND)
@@ -611,13 +673,16 @@ mod tests {
         assert_eq!(parsed.routes().len(), 2);
         assert_eq!(parsed.routes()[0].method, "GET");
         assert_eq!(parsed.routes()[0].path, "/a");
-        assert_eq!(parsed.routes()[0].response.status, 200);
+        assert_eq!(parsed.routes()[0].responses[0].status, 200);
         assert_eq!(
-            parsed.routes()[0].response.headers,
+            parsed.routes()[0].responses[0].headers,
             vec![("content-type".to_owned(), "application/json".to_owned())]
         );
-        assert_eq!(parsed.routes()[1].response.status, 404);
-        assert_eq!(parsed.routes()[1].response.body, br#"{"message":"gone"}"#);
+        assert_eq!(parsed.routes()[1].responses[0].status, 404);
+        assert_eq!(
+            parsed.routes()[1].responses[0].body,
+            br#"{"message":"gone"}"#
+        );
     }
 
     #[test]
@@ -652,7 +717,8 @@ mod tests {
             }]}"#,
         );
 
-        let body: Value = serde_json::from_slice(&parsed.routes()[0].response.body).expect("JSON");
+        let body: Value =
+            serde_json::from_slice(&parsed.routes()[0].responses[0].body).expect("JSON");
         assert_eq!(
             body["value"][0]["resource"]["downloadUrl"],
             json!("{base}/blob/drop.zip")
@@ -854,7 +920,7 @@ mod tests {
 
         assert_eq!(parsed.routes()[0].path, "/http://127.0.0.1:9999/blob");
         assert_eq!(
-            parsed.routes()[0].response.body,
+            parsed.routes()[0].responses[0].body,
             br#"{"url":"http://127.0.0.1:9999/blob"}"#
         );
     }
@@ -902,6 +968,207 @@ mod tests {
         assert_eq!(http_get(&mock, "/x").0, 200);
         assert_eq!(http_get(&mock, "/x").0, 200);
         assert_eq!(mock.received().len(), 2);
+    }
+
+    #[test]
+    fn a_two_entry_sequence_answers_the_same_path_twice_differently() {
+        let mock = StandaloneMock::start(
+            scenario(
+                r#"{"responses": [{
+                    "method": "GET",
+                    "path": "/builds/1",
+                    "sequence": [
+                        {"json": {"status": "inProgress"}},
+                        {"json": {"status": "completed"}}
+                    ]
+                }]}"#,
+            ),
+            None,
+            0,
+        );
+
+        assert_eq!(
+            http_get(&mock, "/builds/1"),
+            (200, r#"{"status":"inProgress"}"#.to_owned())
+        );
+        assert_eq!(
+            http_get(&mock, "/builds/1"),
+            (200, r#"{"status":"completed"}"#.to_owned())
+        );
+        assert_eq!(
+            http_get(&mock, "/builds/1"),
+            (200, r#"{"status":"completed"}"#.to_owned()),
+            "the last entry repeats"
+        );
+    }
+
+    #[test]
+    fn a_one_entry_sequence_repeats() {
+        let mock = StandaloneMock::start(
+            scenario(
+                r#"{"responses": [{
+                    "method": "GET",
+                    "path": "/x",
+                    "sequence": [{"json": {"ok": true}}]
+                }]}"#,
+            ),
+            None,
+            0,
+        );
+
+        assert_eq!(http_get(&mock, "/x"), (200, r#"{"ok":true}"#.to_owned()));
+        assert_eq!(http_get(&mock, "/x"), (200, r#"{"ok":true}"#.to_owned()));
+    }
+
+    #[test]
+    fn a_sequence_entry_carries_its_own_status_and_set() {
+        let mock = StandaloneMock::start(
+            scenario(
+                r#"{"responses": [{
+                    "method": "POST",
+                    "path": "/x",
+                    "sequence": [
+                        {"status": 409, "json": {"message": "busy"}},
+                        {"json": {"id": 1}, "set": [{"pointer": "/id", "value": 2}]}
+                    ]
+                }]}"#,
+            ),
+            None,
+            0,
+        );
+
+        assert_eq!(
+            http_request(&mock, "POST", "/x", ""),
+            (409, r#"{"message":"busy"}"#.to_owned())
+        );
+        assert_eq!(
+            http_request(&mock, "POST", "/x", ""),
+            (200, r#"{"id":2}"#.to_owned())
+        );
+    }
+
+    #[test]
+    fn a_sequence_leaves_other_paths_to_their_routes_and_the_404() {
+        let mock = StandaloneMock::start(
+            scenario(
+                r#"{"responses": [
+                    {"method": "GET", "path": "/x", "sequence": [{"json": {"served": 1}}, {"json": {"served": 2}}]},
+                    {"method": "GET", "path": "/y", "json": {"served": "y"}}
+                ]}"#,
+            ),
+            None,
+            0,
+        );
+
+        assert_eq!(http_get(&mock, "/y"), (200, r#"{"served":"y"}"#.to_owned()));
+        assert_eq!(http_get(&mock, "/x"), (200, r#"{"served":1}"#.to_owned()));
+
+        let (status, body) = http_get(&mock, "/nope");
+        assert_eq!(status, 404, "an unmatched request is still a 404");
+        assert!(body.contains("no route for GET /nope"), "body: {body}");
+
+        assert_eq!(
+            http_get(&mock, "/x"),
+            (200, r#"{"served":2}"#.to_owned()),
+            "the other routes' requests did not advance this sequence"
+        );
+    }
+
+    #[test]
+    fn the_request_log_keeps_matched_per_request_while_a_sequence_runs() {
+        let path = scratch("log-sequence");
+        let mock = StandaloneMock::start(
+            scenario(
+                r#"{"responses": [{
+                    "method": "GET",
+                    "path": "/x",
+                    "sequence": [{"json": {"served": 1}}, {"json": {"served": 2}}]
+                }]}"#,
+            ),
+            Some(&path),
+            0,
+        );
+
+        let _ = http_get(&mock, "/x");
+        let _ = http_get(&mock, "/nope");
+        let _ = http_get(&mock, "/x");
+
+        let lines = request_log(&path);
+        assert_eq!(lines[0]["matched"], json!(true));
+        assert_eq!(lines[1]["matched"], json!(false));
+        assert_eq!(lines[2]["matched"], json!(true));
+
+        drop(mock);
+        std::fs::remove_file(&path).expect("remove the log");
+    }
+
+    #[test]
+    fn a_sequence_and_a_singular_body_are_rejected_together() {
+        let error = Scenario::from_json(
+            r#"{"responses": [{
+                "method": "GET",
+                "path": "/x",
+                "json": {"ok": true},
+                "sequence": [{"json": {"ok": true}}]
+            }]}"#,
+        )
+        .expect_err("both forms on one route are invalid");
+
+        assert!(
+            error.contains("both `sequence` and `json`"),
+            "error: {error}"
+        );
+    }
+
+    #[test]
+    fn a_sequence_entry_without_a_body_is_rejected() {
+        let error = Scenario::from_json(
+            r#"{"responses": [{
+                "method": "GET",
+                "path": "/x",
+                "sequence": [{"status": 200}]
+            }]}"#,
+        )
+        .expect_err("a bodyless entry is invalid");
+
+        assert!(
+            error.contains("sequence entry 0 has neither `fixture` nor `json`"),
+            "error: {error}"
+        );
+    }
+
+    #[test]
+    fn an_empty_sequence_is_rejected() {
+        let error = Scenario::from_json(
+            r#"{"responses": [{"method": "GET", "path": "/x", "sequence": []}]}"#,
+        )
+        .expect_err("an empty sequence is invalid");
+
+        assert!(
+            error.contains("`sequence` has no entries"),
+            "error: {error}"
+        );
+    }
+
+    #[test]
+    fn expand_rewrites_the_placeholder_in_a_sequence_too() {
+        let parsed = scenario(
+            r#"{"responses": [{
+                "method": "GET",
+                "path": "/x",
+                "sequence": [{"json": {"url": "{base}/first"}}, {"json": {"url": "{base}/second"}}]
+            }]}"#,
+        )
+        .expand("http://127.0.0.1:9999");
+
+        assert_eq!(
+            parsed.routes()[0].responses[0].body,
+            br#"{"url":"http://127.0.0.1:9999/first"}"#
+        );
+        assert_eq!(
+            parsed.routes()[0].responses[1].body,
+            br#"{"url":"http://127.0.0.1:9999/second"}"#
+        );
     }
 
     #[test]
