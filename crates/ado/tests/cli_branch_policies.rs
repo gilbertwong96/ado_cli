@@ -381,7 +381,7 @@ fn show_renders_the_module_detail() {
         stdout_of(&output),
         concat!(
             "\nPolicy Details\n\n",
-            "────────────────────────────────────────────────────────────\n",
+            "------------------------------------------------------------\n",
             "  ID:        42\n",
             "  Type:      Build\n",
             "  Branch:    refs/heads/main\n",

@@ -233,13 +233,14 @@ fn policies_table(policies: &[Value]) -> Report {
     }
 }
 
-/// The module's `print_policy_detail/1`, minus the colour: its `─` rule, the
-/// `(none)` fallbacks on branch and repository, and the two fields that
-/// interpolate an absent value as the empty string.
+/// The module's `print_policy_detail/1`, minus the colour: its rule of 60 ASCII
+/// hyphens (unlike `teams`' box-drawing `─`), the `(none)` fallbacks on branch and
+/// repository, and the two fields that interpolate an absent value as the empty
+/// string.
 fn policy_detail(policy: &Value) -> String {
     let mut detail = String::from("\nPolicy Details\n\n");
 
-    detail.push_str(&"─".repeat(60));
+    detail.push_str(&"-".repeat(60));
     detail.push('\n');
     detail.push_str(&format!("  ID:        {}\n", value_text(policy.get("id"))));
     detail.push_str(&format!("  Type:      {}\n", type_text(policy)));
@@ -429,7 +430,7 @@ mod tests {
             detail,
             concat!(
                 "\nPolicy Details\n\n",
-                "────────────────────────────────────────────────────────────\n",
+                "------------------------------------------------------------\n",
                 "  ID:        42\n",
                 "  Type:      Build\n",
                 "  Branch:    refs/heads/main\n",
