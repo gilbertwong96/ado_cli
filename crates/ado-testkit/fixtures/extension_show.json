@@ -1,0 +1,7 @@
+{
+  "extensionId": "mspremier-bqc",
+  "extensionName": "BuildQualityChecks",
+  "publisherId": "mspremier",
+  "version": "3.1.20240912.7",
+  "installState": { "flags": "none" }
+}

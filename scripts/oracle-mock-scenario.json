@@ -1113,6 +1113,20 @@
     {"method": "PUT", "path": "/ado-harness/Alpha/_apis/serviceendpoint/endpoints/missing", "status": 404, "json": {"message": "Service connection not found."}},
 
     {"method": "DELETE", "path": "/ado-harness/Alpha/_apis/serviceendpoint/endpoints/c1", "json": {}},
-    {"method": "DELETE", "path": "/ado-harness/Alpha/_apis/serviceendpoint/endpoints/missing", "status": 404, "json": {"message": "Service connection not found."}}
+    {"method": "DELETE", "path": "/ado-harness/Alpha/_apis/serviceendpoint/endpoints/missing", "status": 404, "json": {"message": "Service connection not found."}},
+
+    {"method": "GET", "path": "/ado-harness/_apis/extensionmanagement/installedextensions", "fixture": "extensions_list.json"},
+    {"method": "GET", "path": "/empty-org/_apis/extensionmanagement/installedextensions", "json": {"count": 0, "value": []}},
+    {"method": "GET", "path": "/missing/_apis/extensionmanagement/installedextensions", "status": 404, "json": {"message": "TF400813: The user is not authorized."}},
+    {"method": "GET", "path": "/broken/_apis/extensionmanagement/installedextensions", "status": 500, "json": {"message": "TF400813: The server is unavailable."}},
+    {"method": "GET", "path": "/ado-harness/_apis/extensionmanagement/installedextensions/mspremier.BuildQualityChecks", "fixture": "extension_show.json"},
+    {"method": "GET", "path": "/ado-harness/_apis/extensionmanagement/installedextensions/missing.thing", "status": 404, "json": {"message": "Extension not found."}},
+    {"method": "POST", "path": "/ado-harness/_apis/extensionmanagement/installedextensions", "request_body": {"publisherId": "mspremier", "extensionName": "BuildQualityChecks"}, "json": {"extensionId": "new-ext", "extensionName": "BuildQualityChecks", "publisherId": "mspremier", "version": "3.1.0", "installState": {"flags": "none"}}},
+    {"method": "POST", "path": "/fail-install/_apis/extensionmanagement/installedextensions", "request_body": {"publisherId": "mspremier", "extensionName": "BuildQualityChecks"}, "status": 400, "json": {"message": "Extension 'mspremier.BuildQualityChecks' is not available in the marketplace."}},
+    {"method": "DELETE", "path": "/ado-harness/_apis/extensionmanagement/installedextensions/mspremier.BuildQualityChecks", "json": {}},
+    {"method": "DELETE", "path": "/ado-harness/_apis/extensionmanagement/installedextensions/missing.thing", "status": 404, "json": {"message": "Extension not found."}},
+    {"method": "PATCH", "path": "/ado-harness/_apis/extensionmanagement/installedextensions/mspremier.BuildQualityChecks", "request_body": {"publisherId": "mspremier", "extensionName": "BuildQualityChecks", "installState": {"flags": "none"}}, "json": {}},
+    {"method": "PATCH", "path": "/ado-harness/_apis/extensionmanagement/installedextensions/octopus.octopus-deploy", "request_body": {"publisherId": "octopus", "extensionName": "octopus-deploy", "installState": {"flags": "disabled"}}, "json": {}},
+    {"method": "PATCH", "path": "/ado-harness/_apis/extensionmanagement/installedextensions/missing.thing", "status": 404, "json": {"message": "Extension not found."}}
   ]
 }

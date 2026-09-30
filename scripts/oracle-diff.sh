@@ -3478,6 +3478,227 @@ run_mock_cases() {
     mock_case connections-delete-404 "connections delete (404)" \
         connections delete Alpha missing --force --json
 
+    # ── Wave 3: marketplace extensions (Task 4) ──
+    #
+    # The six commands are the frozen schema's argv (Annex A agrees with the
+    # capture): `--search`, `--publisher` and `--name` are options, `extension_id`
+    # the one positional. `--search` filters client-side on `extensionName` alone,
+    # so the list cases assert "one request, no filter pair" with a direction
+    # filter that pins the query to its single pair, and the three search cases
+    # carry the envelope claim beside it (a server-side filter would answer the
+    # unfiltered array). `install`/`enable`/`disable`/`uninstall` print their human
+    # success line under `--json` there and this build's message envelope here
+    # (D33); each write route's `request_body` pin holds the captured body, and
+    # enable/disable take different paths because one scenario path can carry one
+    # body pin and the `installState.flags` value is the difference being pinned.
+    # `show`/`uninstall`'s 404s keep the module's own wording (D4's halt_error
+    # class), `enable`/`disable`'s are the classified envelope (D24's body
+    # rendering); a missing required option is D34's silent exit 0, a missing
+    # positional D5. The two D22 sites (`show`'s `URI.encode/1`, the writes' raw
+    # dotted id) carry no case — recorded in the D22 row and integration-pinned,
+    # Task 2/3's precedent for a spelling no other case exercises.
+
+    expect_oracle_requests='length == 1 and any_path("/ado-harness/_apis/extensionmanagement/installedextensions") and qpair("api-version=7.1") and (.[0].query | split("&") | length == 1)'
+    expect_rust_requests='length == 1 and any_path("/ado-harness/_apis/extensionmanagement/installedextensions") and qpair("api-version=7.1") and (.[0].query | split("&") | length == 1)'
+    mock_case extensions-list "extensions list" \
+        extensions list --json
+
+    case_org=empty-org
+    expect_oracle_requests='length == 1 and any_path("/empty-org/_apis/extensionmanagement/installedextensions") and qpair("api-version=7.1") and (.[0].query | split("&") | length == 1)'
+    expect_rust_requests='length == 1 and any_path("/empty-org/_apis/extensionmanagement/installedextensions") and qpair("api-version=7.1") and (.[0].query | split("&") | length == 1)'
+    stdout_mode=text
+    mock_case extensions-list-empty-human "extensions list (empty org, human)" \
+        extensions list
+
+    case_org=ado-harness
+    expect_oracle_requests='length == 1 and any_path("/ado-harness/_apis/extensionmanagement/installedextensions") and qpair("api-version=7.1") and (.[0].query | split("&") | length == 1)'
+    expect_rust_requests='length == 1 and any_path("/ado-harness/_apis/extensionmanagement/installedextensions") and qpair("api-version=7.1") and (.[0].query | split("&") | length == 1)'
+    mock_case extensions-list-search "extensions list --search (case-insensitive)" \
+        extensions list --search Build --json
+
+    expect_oracle_requests='length == 1 and any_path("/ado-harness/_apis/extensionmanagement/installedextensions") and qpair("api-version=7.1") and (.[0].query | split("&") | length == 1)'
+    expect_rust_requests='length == 1 and any_path("/ado-harness/_apis/extensionmanagement/installedextensions") and qpair("api-version=7.1") and (.[0].query | split("&") | length == 1)'
+    mock_case extensions-list-search-empty "extensions list --search '' (keeps everything)" \
+        extensions list --search '' --json
+
+    expect_oracle_requests='length == 1 and any_path("/ado-harness/_apis/extensionmanagement/installedextensions") and qpair("api-version=7.1") and (.[0].query | split("&") | length == 1)'
+    expect_rust_requests='length == 1 and any_path("/ado-harness/_apis/extensionmanagement/installedextensions") and qpair("api-version=7.1") and (.[0].query | split("&") | length == 1)'
+    mock_case extensions-list-search-publisher "extensions list --search (the publisher, not the name)" \
+        extensions list --search mspremier --json
+
+    case_org=missing
+    envelope_rule='D24: the error body stays the upstream bytes here, where the oracle re-renders the decoded map with inspect/2 (C12: the list-error row)'
+    expect_oracle_requests='length == 1 and any_path("/missing/_apis/extensionmanagement/installedextensions") and qpair("api-version=7.1")'
+    expect_rust_requests='length == 1 and any_path("/missing/_apis/extensionmanagement/installedextensions") and qpair("api-version=7.1")'
+    mock_case extensions-list-404 "extensions list (404)" \
+        extensions list --json
+
+    case_org=broken
+    envelope_rule='D24: the error body stays the upstream bytes here, where the oracle re-renders the decoded map with inspect/2 (C12: the list-error row)'
+    expect_oracle_requests='length == 1 and any_path("/broken/_apis/extensionmanagement/installedextensions") and qpair("api-version=7.1")'
+    expect_rust_requests='length == 1 and any_path("/broken/_apis/extensionmanagement/installedextensions") and qpair("api-version=7.1")'
+    mock_case extensions-list-500 "extensions list (500)" \
+        extensions list --json
+
+    case_org=missing
+    envelope_rule='D4: the oracle prints its human error line on stdout; this build writes the labelled line to stderr alone'
+    expect_oracle_requests='length == 1 and any_path("/missing/_apis/extensionmanagement/installedextensions") and qpair("api-version=7.1")'
+    expect_rust_requests='length == 1 and any_path("/missing/_apis/extensionmanagement/installedextensions") and qpair("api-version=7.1")'
+    stdout_mode=text
+    mock_case extensions-list-404-human "extensions list (404, human)" \
+        extensions list
+
+    case_org=broken
+    envelope_rule='D4: the oracle prints its human error line on stdout; this build writes the labelled line to stderr alone'
+    expect_oracle_requests='length == 1 and any_path("/broken/_apis/extensionmanagement/installedextensions") and qpair("api-version=7.1")'
+    expect_rust_requests='length == 1 and any_path("/broken/_apis/extensionmanagement/installedextensions") and qpair("api-version=7.1")'
+    stdout_mode=text
+    mock_case extensions-list-500-human "extensions list (500, human)" \
+        extensions list
+
+    case_org=ado-harness
+    expect_oracle_requests='length == 1 and any_path("/ado-harness/_apis/extensionmanagement/installedextensions/mspremier.BuildQualityChecks") and qpair("api-version=7.1")'
+    expect_rust_requests='length == 1 and any_path("/ado-harness/_apis/extensionmanagement/installedextensions/mspremier.BuildQualityChecks") and qpair("api-version=7.1")'
+    mock_case extensions-show "extensions show" \
+        extensions show mspremier.BuildQualityChecks --json
+
+    stdout_mode=text
+    mock_case extensions-show-human "extensions show (human)" \
+        extensions show mspremier.BuildQualityChecks
+
+    envelope_rule='D4: the frozen CLI writes the module wording to stderr with no envelope under --json where this build emits the error envelope'
+    expect_oracle_requests='length == 1 and any_path("/ado-harness/_apis/extensionmanagement/installedextensions/missing.thing")'
+    expect_rust_requests='length == 1 and any_path("/ado-harness/_apis/extensionmanagement/installedextensions/missing.thing")'
+    mock_case extensions-show-404 "extensions show (404)" \
+        extensions show missing.thing --json
+
+    envelope_rule='D5: the oracle prints the command help on stdout before its usage error; this build writes clap’s message to stderr alone'
+    stdout_mode=text
+    mock_case extensions-show-no-id "extensions show (no extension_id)" \
+        extensions show --json
+
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the message envelope'
+    expect_oracle_requests='length == 1 and (.[0].method == "POST") and any_path("/ado-harness/_apis/extensionmanagement/installedextensions") and qpair("api-version=7.1")'
+    expect_rust_requests='length == 1 and (.[0].method == "POST") and any_path("/ado-harness/_apis/extensionmanagement/installedextensions") and qpair("api-version=7.1")'
+    mock_case extensions-install "extensions install" \
+        extensions install --publisher mspremier --name BuildQualityChecks --json
+
+    expect_oracle_requests='length == 1 and (.[0].method == "POST") and any_path("/ado-harness/_apis/extensionmanagement/installedextensions") and qpair("api-version=7.1")'
+    expect_rust_requests='length == 1 and (.[0].method == "POST") and any_path("/ado-harness/_apis/extensionmanagement/installedextensions") and qpair("api-version=7.1")'
+    stdout_mode=text
+    mock_case extensions-install-human "extensions install (human)" \
+        extensions install --publisher mspremier --name BuildQualityChecks
+
+    case_org=fail-install
+    envelope_rule='D24: the error body stays the upstream bytes here, where the oracle re-renders the decoded map with inspect/2'
+    expect_oracle_requests='length == 1 and (.[0].method == "POST") and any_path("/fail-install/_apis/extensionmanagement/installedextensions") and qpair("api-version=7.1")'
+    expect_rust_requests='length == 1 and (.[0].method == "POST") and any_path("/fail-install/_apis/extensionmanagement/installedextensions") and qpair("api-version=7.1")'
+    mock_case extensions-install-400 "extensions install (400)" \
+        extensions install --publisher mspremier --name BuildQualityChecks --json
+
+    case_org=ado-harness
+    status_rule='D34: a missing required option is a silent exit 0 in the oracle (the module’s Map.fetch! crash); this build is a loud usage error'
+    expect_statuses='0 1'
+    stdout_mode=text
+    mock_case extensions-install-no-publisher "extensions install (no --publisher)" \
+        extensions install --name BuildQualityChecks --json
+
+    status_rule='D34: a missing required option is a silent exit 0 in the oracle (the module’s Map.fetch! crash); this build is a loud usage error'
+    expect_statuses='0 1'
+    stdout_mode=text
+    mock_case extensions-install-no-name "extensions install (no --name)" \
+        extensions install --publisher mspremier --json
+
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the message envelope'
+    expect_oracle_requests='length == 1 and (.[0].method == "DELETE") and any_path("/ado-harness/_apis/extensionmanagement/installedextensions/mspremier.BuildQualityChecks") and qpair("api-version=7.1")'
+    expect_rust_requests='length == 1 and (.[0].method == "DELETE") and any_path("/ado-harness/_apis/extensionmanagement/installedextensions/mspremier.BuildQualityChecks") and qpair("api-version=7.1")'
+    mock_case extensions-uninstall "extensions uninstall" \
+        extensions uninstall --publisher mspremier --name BuildQualityChecks --json
+
+    expect_oracle_requests='length == 1 and (.[0].method == "DELETE") and any_path("/ado-harness/_apis/extensionmanagement/installedextensions/mspremier.BuildQualityChecks") and qpair("api-version=7.1")'
+    expect_rust_requests='length == 1 and (.[0].method == "DELETE") and any_path("/ado-harness/_apis/extensionmanagement/installedextensions/mspremier.BuildQualityChecks") and qpair("api-version=7.1")'
+    stdout_mode=text
+    mock_case extensions-uninstall-human "extensions uninstall (human)" \
+        extensions uninstall --publisher mspremier --name BuildQualityChecks
+
+    envelope_rule='D4: the frozen CLI writes the module wording to stderr with no envelope under --json where this build emits the error envelope'
+    expect_oracle_requests='length == 1 and (.[0].method == "DELETE") and any_path("/ado-harness/_apis/extensionmanagement/installedextensions/missing.thing")'
+    expect_rust_requests='length == 1 and (.[0].method == "DELETE") and any_path("/ado-harness/_apis/extensionmanagement/installedextensions/missing.thing")'
+    mock_case extensions-uninstall-404 "extensions uninstall (404)" \
+        extensions uninstall --publisher missing --name thing --json
+
+    status_rule='D34: a missing required option is a silent exit 0 in the oracle (the module’s Map.fetch! crash); this build is a loud usage error'
+    expect_statuses='0 1'
+    stdout_mode=text
+    mock_case extensions-uninstall-no-publisher "extensions uninstall (no --publisher)" \
+        extensions uninstall --name BuildQualityChecks --json
+
+    status_rule='D34: a missing required option is a silent exit 0 in the oracle (the module’s Map.fetch! crash); this build is a loud usage error'
+    expect_statuses='0 1'
+    stdout_mode=text
+    mock_case extensions-uninstall-no-name "extensions uninstall (no --name)" \
+        extensions uninstall --publisher mspremier --json
+
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the message envelope'
+    expect_oracle_requests='length == 1 and (.[0].method == "PATCH") and any_path("/ado-harness/_apis/extensionmanagement/installedextensions/mspremier.BuildQualityChecks") and qpair("api-version=7.1")'
+    expect_rust_requests='length == 1 and (.[0].method == "PATCH") and any_path("/ado-harness/_apis/extensionmanagement/installedextensions/mspremier.BuildQualityChecks") and qpair("api-version=7.1")'
+    mock_case extensions-enable "extensions enable" \
+        extensions enable --publisher mspremier --name BuildQualityChecks --json
+
+    expect_oracle_requests='length == 1 and (.[0].method == "PATCH") and any_path("/ado-harness/_apis/extensionmanagement/installedextensions/mspremier.BuildQualityChecks") and qpair("api-version=7.1")'
+    expect_rust_requests='length == 1 and (.[0].method == "PATCH") and any_path("/ado-harness/_apis/extensionmanagement/installedextensions/mspremier.BuildQualityChecks") and qpair("api-version=7.1")'
+    stdout_mode=text
+    mock_case extensions-enable-human "extensions enable (human)" \
+        extensions enable --publisher mspremier --name BuildQualityChecks
+
+    envelope_rule='D24: the error body stays the upstream bytes here, where the oracle re-renders the decoded map with inspect/2'
+    expect_oracle_requests='length == 1 and (.[0].method == "PATCH") and any_path("/ado-harness/_apis/extensionmanagement/installedextensions/missing.thing")'
+    expect_rust_requests='length == 1 and (.[0].method == "PATCH") and any_path("/ado-harness/_apis/extensionmanagement/installedextensions/missing.thing")'
+    mock_case extensions-enable-404 "extensions enable (404)" \
+        extensions enable --publisher missing --name thing --json
+
+    status_rule='D34: a missing required option is a silent exit 0 in the oracle (the module’s Map.fetch! crash); this build is a loud usage error'
+    expect_statuses='0 1'
+    stdout_mode=text
+    mock_case extensions-enable-no-publisher "extensions enable (no --publisher)" \
+        extensions enable --name BuildQualityChecks --json
+
+    status_rule='D34: a missing required option is a silent exit 0 in the oracle (the module’s Map.fetch! crash); this build is a loud usage error'
+    expect_statuses='0 1'
+    stdout_mode=text
+    mock_case extensions-enable-no-name "extensions enable (no --name)" \
+        extensions enable --publisher mspremier --json
+
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the message envelope'
+    expect_oracle_requests='length == 1 and (.[0].method == "PATCH") and any_path("/ado-harness/_apis/extensionmanagement/installedextensions/octopus.octopus-deploy") and qpair("api-version=7.1")'
+    expect_rust_requests='length == 1 and (.[0].method == "PATCH") and any_path("/ado-harness/_apis/extensionmanagement/installedextensions/octopus.octopus-deploy") and qpair("api-version=7.1")'
+    mock_case extensions-disable "extensions disable (the disabled flags body)" \
+        extensions disable --publisher octopus --name octopus-deploy --json
+
+    expect_oracle_requests='length == 1 and (.[0].method == "PATCH") and any_path("/ado-harness/_apis/extensionmanagement/installedextensions/octopus.octopus-deploy") and qpair("api-version=7.1")'
+    expect_rust_requests='length == 1 and (.[0].method == "PATCH") and any_path("/ado-harness/_apis/extensionmanagement/installedextensions/octopus.octopus-deploy") and qpair("api-version=7.1")'
+    stdout_mode=text
+    mock_case extensions-disable-human "extensions disable (human)" \
+        extensions disable --publisher octopus --name octopus-deploy
+
+    envelope_rule='D24: the error body stays the upstream bytes here, where the oracle re-renders the decoded map with inspect/2'
+    expect_oracle_requests='length == 1 and (.[0].method == "PATCH") and any_path("/ado-harness/_apis/extensionmanagement/installedextensions/missing.thing")'
+    expect_rust_requests='length == 1 and (.[0].method == "PATCH") and any_path("/ado-harness/_apis/extensionmanagement/installedextensions/missing.thing")'
+    mock_case extensions-disable-404 "extensions disable (404)" \
+        extensions disable --publisher missing --name thing --json
+
+    status_rule='D34: a missing required option is a silent exit 0 in the oracle (the module’s Map.fetch! crash); this build is a loud usage error'
+    expect_statuses='0 1'
+    stdout_mode=text
+    mock_case extensions-disable-no-publisher "extensions disable (no --publisher)" \
+        extensions disable --name BuildQualityChecks --json
+
+    status_rule='D34: a missing required option is a silent exit 0 in the oracle (the module’s Map.fetch! crash); this build is a loud usage error'
+    expect_statuses='0 1'
+    stdout_mode=text
+    mock_case extensions-disable-no-name "extensions disable (no --name)" \
+        extensions disable --publisher mspremier --json
+
     mock_scenario_check
 }
 
