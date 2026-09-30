@@ -301,6 +301,37 @@ fn main() -> ExitCode {
                 _ => Err(AdoError::validation(MISSING_SUBCOMMAND)),
             }
         }
+        Some(("security", sub)) => {
+            let mut context = Context::load(globals);
+
+            match sub.subcommand() {
+                Some(("grant", grant)) => commands::security::grant(
+                    &mut context,
+                    grant
+                        .get_one::<String>("project_name_or_id")
+                        .expect("the positional is required")
+                        .as_str(),
+                    grant
+                        .get_one::<String>("permission")
+                        .map(String::as_str)
+                        .unwrap_or(commands::security::DEFAULT_PERMISSION),
+                    grant.get_flag("yes-this-mutates-secret-read"),
+                ),
+                Some(("revoke", revoke)) => commands::security::revoke(
+                    &mut context,
+                    revoke
+                        .get_one::<String>("project_name_or_id")
+                        .expect("the positional is required")
+                        .as_str(),
+                    revoke
+                        .get_one::<String>("permission")
+                        .map(String::as_str)
+                        .unwrap_or(commands::security::DEFAULT_PERMISSION),
+                    revoke.get_flag("yes-this-mutates-secret-read"),
+                ),
+                _ => Err(AdoError::validation(MISSING_SUBCOMMAND)),
+            }
+        }
         Some(("imports", sub)) => {
             let mut context = Context::load(globals);
 

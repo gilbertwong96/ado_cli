@@ -659,6 +659,60 @@ pub fn command() -> Command {
                 ),
         )
         .subcommand(
+            Command::new("security")
+                .about(
+                    "Manage Azure DevOps security permissions on the caller identity. Currently supports toggling the Library 'ViewSecrets' bit for the calling user only. Use this as a workaround when the auto-elevation in 'ado pipelines secure_files download' is unavailable.",
+                )
+                .subcommand(
+                    Command::new("grant")
+                        .about(
+                            "Permanently grant the calling user the 'ViewSecrets' permission on the Library namespace for the given project. Allows downloading Secure Files without per-download elevation. Requires the confirmation flag --yes-this-mutates-secret-read.",
+                        )
+                        .arg(
+                            Arg::new("project_name_or_id")
+                                .value_name("PROJECT_NAME_OR_ID")
+                                .required(true)
+                                .help("Project name or ID"),
+                        )
+                        .arg(
+                            Arg::new("permission")
+                                .long("permission")
+                                .value_name("PERMISSION")
+                                .help("Permission name (currently only ViewSecrets is supported)"),
+                        )
+                        .arg(
+                            Arg::new("yes-this-mutates-secret-read")
+                                .long("yes-this-mutates-secret-read")
+                                .action(clap::ArgAction::SetTrue)
+                                .help("Required safety flag. Without it, the command refuses to run. The verbose name is intentional — typing 'y' to a prompt should never be enough to grant permanent secret-read permission."),
+                        ),
+                )
+                .subcommand(
+                    Command::new("revoke")
+                        .about(
+                            "Revoke a permission previously granted with 'ado security grant'. Restores the Library namespace's viewSecrets bit to OFF for the calling user on the given project. Requires the confirmation flag --yes-this-mutates-secret-read.",
+                        )
+                        .arg(
+                            Arg::new("project_name_or_id")
+                                .value_name("PROJECT_NAME_OR_ID")
+                                .required(true)
+                                .help("Project name or ID"),
+                        )
+                        .arg(
+                            Arg::new("permission")
+                                .long("permission")
+                                .value_name("PERMISSION")
+                                .help("Permission name (currently only ViewSecrets is supported)"),
+                        )
+                        .arg(
+                            Arg::new("yes-this-mutates-secret-read")
+                                .long("yes-this-mutates-secret-read")
+                                .action(clap::ArgAction::SetTrue)
+                                .help("Required safety flag. Without it, the command refuses to run."),
+                        ),
+                ),
+        )
+        .subcommand(
             Command::new("iterations")
                 .about(
                     "Manage Azure DevOps iterations (sprints). Iterations are time-boxed containers for work items used in Scrum-like workflows. They belong to a specific team (a project can have multiple teams with different sprint cadences).",

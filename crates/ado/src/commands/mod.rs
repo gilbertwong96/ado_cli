@@ -20,6 +20,7 @@ pub mod pull_requests;
 pub mod releases;
 pub mod repos;
 pub mod schema;
+pub mod security;
 pub mod teams;
 pub mod test_coverage;
 pub mod test_results;

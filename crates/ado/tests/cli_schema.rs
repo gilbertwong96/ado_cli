@@ -120,6 +120,7 @@ fn schema_root_lists_exactly_the_shipped_subcommands() {
             "ado releases",
             "ado repos",
             "ado schema",
+            "ado security",
             "ado teams",
             "ado test-coverage",
             "ado test-results",
@@ -1870,4 +1871,76 @@ fn schema_test_results_node_lists_every_shipped_subcommand() {
         )
     );
     assert_eq!(argument(&publish, "project")["required"], json!(true));
+}
+
+/// The wave's Task 7 area: one root node with two leaves, where the frozen tree
+/// lists the same node twice (D14 — the duplicate collapses here). The safety
+/// flag's schema name is the hyphenated flag argv accepts (D17's class, the
+/// `--yes_this_mutates_secret_read` spelling is `invalid option` on the oracle).
+#[test]
+fn schema_security_node_lists_every_shipped_subcommand() {
+    let security = find_node("security").expect("the security node");
+
+    assert_eq!(
+        security["doc"],
+        json!(
+            "Manage Azure DevOps security permissions on the caller identity. Currently supports toggling the Library 'ViewSecrets' bit for the calling user only. Use this as a workaround when the auto-elevation in 'ado pipelines secure_files download' is unavailable."
+        )
+    );
+    assert_eq!(security["arguments"], json!([]));
+    assert_eq!(
+        subcommands(&security)
+            .iter()
+            .map(|sub| sub["name"].as_str().expect("a subcommand name"))
+            .collect::<Vec<_>>(),
+        ["ado security grant", "ado security revoke"],
+        "the module's declaration order"
+    );
+
+    let grant = find_node("security grant").expect("the grant node");
+    assert_eq!(
+        option_names(&grant),
+        [
+            "json",
+            "org",
+            "pat",
+            "permission",
+            "server",
+            "verbose",
+            "yes-this-mutates-secret-read"
+        ],
+        "the guard and the permission, under the spelling argv accepts"
+    );
+    assert_eq!(option(&grant, "permission")["type"], json!("string"));
+    assert_eq!(
+        option(&grant, "permission")["doc"],
+        json!("Permission name (currently only ViewSecrets is supported)")
+    );
+    assert_eq!(
+        option(&grant, "yes-this-mutates-secret-read")["type"],
+        json!("boolean"),
+        "the guard is a flag, not a value"
+    );
+    assert_eq!(
+        option(&grant, "yes-this-mutates-secret-read")["default"],
+        json!("false"),
+        "the frozen default: absent is a refusal (the schema stringifies it)"
+    );
+    assert_eq!(
+        option(&grant, "permission")["default"],
+        json!(""),
+        "the module's own default is applied in code, not declared to clap (the banners precedent)"
+    );
+    assert_eq!(
+        argument(&grant, "project_name_or_id")["required"],
+        json!(true),
+        "CliMate enforces the positional the schema marks false (D23)"
+    );
+
+    let revoke = find_node("security revoke").expect("the revoke node");
+    assert_eq!(option_names(&revoke), option_names(&grant));
+    assert_eq!(
+        argument(&revoke, "project_name_or_id")["required"],
+        json!(true)
+    );
 }
