@@ -37,6 +37,11 @@
 //! sites. The 90-column rule and the 8/40/12 pads are the module's own rendering;
 //! this build's `Report::Table` is §8 surface and keeps the full name (the
 //! `extensions`/`branch-policies` precedent).
+//!
+//! Two malformed-body corners are defensive where the frozen code raises, and no
+//! capture covers either (the `test_coverage`/`extensions` style): a
+//! `runStatistics` member that is not an array reads as no stats, and a `build`
+//! that is not an object prints a `Build:` line with an empty id.
 
 use std::fs;
 use std::io::ErrorKind;

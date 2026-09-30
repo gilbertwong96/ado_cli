@@ -4236,7 +4236,7 @@ run_mock_cases() {
     envelope_rule='D34: the oracle’s encode crash leaves no output; this build reports the upload'
     rest_rule='D34: the oracle’s mid-chain crash sends two requests; this build sends the upload as the third'
     expect_oracle_requests='length == 2 and any_path("/ado-harness/BinaryUpload/_apis/test/runs")'
-    expect_rust_requests='length == 3 and any_path("/ado-harness/BinaryUpload/_apis/test/runs/506/attachments") and any_body("binary")'
+    expect_rust_requests='length == 3 and any_path("/ado-harness/BinaryUpload/_apis/test/runs/506/attachments") and (.[2].query | contains("fileName=results.bin")) and any_body("binary")'
     mock_case test-results-publish-binary-file "test-results publish (a non-UTF-8 file)" \
         test-results publish BinaryUpload --name 'Nightly Regression' --file "$work/results.bin" --json
 
