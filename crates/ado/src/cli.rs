@@ -2518,6 +2518,106 @@ pub fn command() -> Command {
                 ),
         )
         .subcommand(
+            Command::new("test-results")
+                .about(
+                    "Manage Azure DevOps test results. Lists recent test runs, shows individual run details, and publishes results from standard format files (Cobertura XML, JUnit, etc.).",
+                )
+                .subcommand(
+                    Command::new("list")
+                        .about(
+                            "List recent test runs in a project. Output is a table (ID, Name, State, Completed date, Passed/Total). Use --build-id to filter to a specific build, --top to limit, --min-last-updated for date-based windowing.",
+                        )
+                        .arg(
+                            Arg::new("project")
+                                .value_name("PROJECT")
+                                .required(true)
+                                .help("Project name or ID"),
+                        )
+                        .arg(
+                            Arg::new("top")
+                                .long("top")
+                                .value_name("N")
+                                .value_parser(clap::value_parser!(i64))
+                                .allow_negative_numbers(true)
+                                .help("Max runs to return (default: 50)"),
+                        )
+                        .arg(
+                            Arg::new("build-id")
+                                .long("build-id")
+                                .value_name("ID")
+                                .value_parser(clap::value_parser!(i64))
+                                .allow_negative_numbers(true)
+                                .help("Filter by build ID"),
+                        )
+                        .arg(
+                            Arg::new("min-last-updated")
+                                .long("min-last-updated")
+                                .value_name("DATE")
+                                .help("ISO date filter for last updated"),
+                        ),
+                )
+                .subcommand(
+                    Command::new("show")
+                        .about(
+                            "Show details of a single test run: name, state, owner, start/complete times, total/passed/failed counts, and outcome breakdown. Pass --json for machine-readable data.",
+                        )
+                        .arg(
+                            Arg::new("project")
+                                .value_name("PROJECT")
+                                .required(true)
+                                .help("Project name or ID"),
+                        )
+                        .arg(
+                            Arg::new("run_id")
+                                .value_name("RUN_ID")
+                                .required(true)
+                                .value_parser(clap::value_parser!(i64))
+                                .allow_negative_numbers(true)
+                                .help("Test run ID"),
+                        ),
+                )
+                .subcommand(
+                    Command::new("publish")
+                        .about(
+                            "Publish test results from a standard-format file (Cobertura/cobertura XML, JUnit, VSTest TRX) to a build. The file is uploaded and parsed; results appear under Test Plans > Runs.",
+                        )
+                        .arg(
+                            Arg::new("project")
+                                .value_name("PROJECT")
+                                .required(true)
+                                .help("Project name or ID"),
+                        )
+                        .arg(
+                            Arg::new("name")
+                                .long("name")
+                                .value_name("NAME")
+                                .required(true)
+                                .help(
+                                    "Test run name (displayed in Azure DevOps Test Plans; use a descriptive name like CI Test Suite or Nightly Regression)",
+                                ),
+                        )
+                        .arg(
+                            Arg::new("file")
+                                .long("file")
+                                .value_name("PATH")
+                                .required(true)
+                                .help(
+                                    "Absolute or relative path to the results file on disk. Must be one of: cobertura XML, JUnit XML, VSTest TRX.",
+                                ),
+                        )
+                        .arg(
+                            Arg::new("build-id")
+                                .long("build-id")
+                                .value_name("ID")
+                                .value_parser(clap::value_parser!(i64))
+                                .allow_negative_numbers(true)
+                                .help(
+                                    "Numeric build ID to attach results to. If omitted, results are published as a standalone run (not linked to any build).",
+                                ),
+                        ),
+                ),
+        )
+        .subcommand(
             Command::new("users")
                 .about(
                     "Manage user access levels and entitlements (licenses, extensions, project memberships). Requires Project Collection Administrator permissions.",

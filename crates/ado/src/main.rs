@@ -1111,6 +1111,48 @@ fn main() -> ExitCode {
                 _ => Err(AdoError::validation(MISSING_SUBCOMMAND)),
             }
         }
+        Some(("test-results", sub)) => {
+            let mut context = Context::load(globals);
+
+            match sub.subcommand() {
+                Some(("list", list)) => commands::test_results::list(
+                    &mut context,
+                    list.get_one::<String>("project")
+                        .expect("the positional is required")
+                        .as_str(),
+                    list.get_one::<i64>("top").copied(),
+                    list.get_one::<i64>("build-id").copied(),
+                    list.get_one::<String>("min-last-updated")
+                        .map(String::as_str),
+                ),
+                Some(("show", show)) => commands::test_results::show(
+                    &mut context,
+                    show.get_one::<String>("project")
+                        .expect("the positional is required")
+                        .as_str(),
+                    show.get_one::<i64>("run_id")
+                        .copied()
+                        .expect("the positional is required"),
+                ),
+                Some(("publish", publish)) => commands::test_results::publish(
+                    &mut context,
+                    publish
+                        .get_one::<String>("project")
+                        .expect("the positional is required")
+                        .as_str(),
+                    publish
+                        .get_one::<String>("name")
+                        .expect("the option is required")
+                        .as_str(),
+                    publish
+                        .get_one::<String>("file")
+                        .expect("the option is required")
+                        .as_str(),
+                    publish.get_one::<i64>("build-id").copied(),
+                ),
+                _ => Err(AdoError::validation(MISSING_SUBCOMMAND)),
+            }
+        }
         Some(("users", sub)) => {
             let mut context = Context::load(globals);
 

@@ -1810,9 +1810,9 @@ fn schema_test_results_node_lists_every_shipped_subcommand() {
     assert_eq!(
         option_names(&list),
         [
-            "build_id",
+            "build-id",
             "json",
-            "min_last_updated",
+            "min-last-updated",
             "org",
             "pat",
             "server",
@@ -1826,13 +1826,16 @@ fn schema_test_results_node_lists_every_shipped_subcommand() {
         json!(true),
         "CliMate enforces the positional the schema marks false (D23)"
     );
-    assert_eq!(option(&list, "top")["doc"], json!("Max runs to return (default: 50)"));
     assert_eq!(
-        option(&list, "build_id")["doc"],
+        option(&list, "top")["doc"],
+        json!("Max runs to return (default: 50)")
+    );
+    assert_eq!(
+        option(&list, "build-id")["doc"],
         json!("Filter by build ID")
     );
     assert_eq!(
-        option(&list, "min_last_updated")["doc"],
+        option(&list, "min-last-updated")["doc"],
         json!("ISO date filter for last updated")
     );
 
@@ -1855,13 +1858,13 @@ fn schema_test_results_node_lists_every_shipped_subcommand() {
     assert_eq!(
         option_names(&publish),
         [
-            "build_id", "file", "json", "name", "org", "pat", "server", "verbose"
+            "build-id", "file", "json", "name", "org", "pat", "server", "verbose"
         ]
     );
     assert_eq!(option(&publish, "name")["required"], json!(true));
     assert_eq!(option(&publish, "file")["required"], json!(true));
     assert_eq!(
-        option(&publish, "build_id")["doc"],
+        option(&publish, "build-id")["doc"],
         json!(
             "Numeric build ID to attach results to. If omitted, results are published as a standalone run (not linked to any build)."
         )

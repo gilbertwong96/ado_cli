@@ -22,6 +22,7 @@ pub mod repos;
 pub mod schema;
 pub mod teams;
 pub mod test_coverage;
+pub mod test_results;
 pub mod users;
 pub mod version;
 pub mod whoami;
