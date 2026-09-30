@@ -487,6 +487,13 @@ requests_filter="map({
 # — so its one pair's value swallows the version, where this build sends the two
 # pairs. Splitting that pair reproduces this build's spelling; a case that sets
 # `rest_norm=$d25_query_norm` still fails on any other request difference.
+# D22's `+` spelling, mechanically: the frozen `URI.encode/1` leaves `+` raw in a
+# path segment and this build escapes it `%2B`, so unescaping it on both sides
+# reproduces one spelling; a case that sets `rest_norm=$d22_plus_norm` still fails
+# on any other request difference, and the escaped form itself is pinned by the
+# integration tests.
+d22_plus_norm='map(.path |= gsub("%2B"; "+"))'
+
 d25_query_norm='map(.query |= ([.[] | if (index("?api-version=") != null)
     then (. | split("?api-version=")) as $parts
        | ($parts[0] | split("=")) as $kv
@@ -2794,6 +2801,7 @@ run_mock_cases() {
         packages versions Alpha feed-1 empty-pkg
 
     rest_rule='D22: the package name is a path segment here, percent-encoded more strictly than the frozen URI.encode/1 (which left the + alone), so the request paths differ and the envelopes do not'
+    rest_norm=$d22_plus_norm
     mock_case packages-versions-plus "packages versions (a name with +)" \
         packages versions Alpha feed-1 name+plus --json
 
@@ -2801,6 +2809,7 @@ run_mock_cases() {
         packages show Alpha feed-1 myapp-builds 1.0.0 --json
 
     rest_rule='D22: the version is a path segment here, percent-encoded more strictly than the frozen URI.encode/1 (which left the + alone), so the request paths differ and the envelopes do not'
+    rest_norm=$d22_plus_norm
     mock_case packages-show-plus "packages show (a version with +)" \
         packages show Alpha feed-1 myapp-builds 1.0.0+build.5 --json
 
@@ -2894,6 +2903,7 @@ run_mock_cases() {
         wikis show Alpha wiki-1
 
     rest_rule='D22: the wiki id is a path segment here, percent-encoded more strictly than the frozen URI.encode/1 (which left the + alone), so the request paths differ and the envelopes do not'
+    rest_norm=$d22_plus_norm
     mock_case wikis-show-plus "wikis show (a wiki id with +)" \
         wikis show Alpha a+b --json
 
