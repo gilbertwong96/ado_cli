@@ -426,6 +426,116 @@ pub fn command() -> Command {
                 ),
         )
         .subcommand(
+            Command::new("extensions")
+                .about(
+                    "Manage Azure DevOps Marketplace extensions installed in the organization. Extensions add features like custom widgets, service hooks, and pipeline tasks.",
+                )
+                .subcommand(
+                    Command::new("list")
+                        .about(
+                            "List all extensions currently installed in the organization. Output is a table (Publisher.Name, Version, State). Use --search to filter by name (case-insensitive substring). Pass --json for the raw array.",
+                        )
+                        .arg(
+                            Arg::new("search")
+                                .long("search")
+                                .value_name("SEARCH")
+                                .help("Filter to extensions whose name contains this string (case-insensitive)"),
+                        ),
+                )
+                .subcommand(
+                    Command::new("show")
+                        .about(
+                            "Show details of a single installed extension: publisher, name, version, and enabled/disabled state. Use the 'publisher.name' form (e.g. 'mspremier.BuildQualityChecks') — find it via `list`.",
+                        )
+                        .arg(
+                            Arg::new("extension_id")
+                                .value_name("EXTENSION_ID")
+                                .required(true)
+                                .help("Extension ID in 'publisher.name' form (e.g. 'mspremier.BuildQualityChecks'). NOT a numeric ID."),
+                        ),
+                )
+                .subcommand(
+                    Command::new("install")
+                        .about(
+                            "Install an extension from the Azure DevOps Marketplace. Both --publisher and --name are required; together they form the extension's ID. The extension must be available in the marketplace (free or licensed for your org).",
+                        )
+                        .arg(
+                            Arg::new("publisher")
+                                .long("publisher")
+                                .value_name("PUBLISHER")
+                                .required(true)
+                                .help("Publisher namespace (e.g. 'mspremier', 'microsoft', 'swellaby'). The publisher's verified identity is shown on the marketplace listing."),
+                        )
+                        .arg(
+                            Arg::new("name")
+                                .long("name")
+                                .value_name("NAME")
+                                .required(true)
+                                .help("Extension name as listed on the marketplace (e.g. 'BuildQualityChecks', ' octopus-deploy')"),
+                        ),
+                )
+                .subcommand(
+                    Command::new("uninstall")
+                        .about(
+                            "Remove an extension from the organization. Fails if the extension is in use by active pipelines, service hooks, or tabs — disable first if you want a soft removal.",
+                        )
+                        .arg(
+                            Arg::new("publisher")
+                                .long("publisher")
+                                .value_name("PUBLISHER")
+                                .required(true)
+                                .help("Publisher namespace"),
+                        )
+                        .arg(
+                            Arg::new("name")
+                                .long("name")
+                                .value_name("NAME")
+                                .required(true)
+                                .help("Extension name"),
+                        ),
+                )
+                .subcommand(
+                    Command::new("enable")
+                        .about(
+                            "Re-enable a previously disabled extension. Does not re-install; just flips the disabled flag back off.",
+                        )
+                        .arg(
+                            Arg::new("publisher")
+                                .long("publisher")
+                                .value_name("PUBLISHER")
+                                .required(true)
+                                .help("Publisher namespace"),
+                        )
+                        .arg(
+                            Arg::new("name")
+                                .long("name")
+                                .value_name("NAME")
+                                .required(true)
+                                .help("Extension name"),
+                        ),
+                )
+                .subcommand(
+                    Command::new("disable")
+                        .about(
+                            "Disable an extension without uninstalling it. A soft-off: the extension is hidden from UI pickers and its service hooks pause, but installation state is preserved. Use `enable` to re-enable.",
+                        )
+                        .arg(
+                            Arg::new("publisher")
+                                .long("publisher")
+                                .value_name("PUBLISHER")
+                                .required(true)
+                                .help("Publisher namespace"),
+                        )
+                        .arg(
+                            Arg::new("name")
+                                .long("name")
+                                .value_name("NAME")
+                                .required(true)
+                                .help("Extension name"),
+                        ),
+                ),
+        )
+        .subcommand(
             Command::new("iterations")
                 .about(
                     "Manage Azure DevOps iterations (sprints). Iterations are time-boxed containers for work items used in Scrum-like workflows. They belong to a specific team (a project can have multiple teams with different sprint cadences).",

@@ -223,6 +223,67 @@ fn main() -> ExitCode {
                 _ => Err(AdoError::validation(MISSING_SUBCOMMAND)),
             }
         }
+        Some(("extensions", sub)) => {
+            let mut context = Context::load(globals);
+
+            match sub.subcommand() {
+                Some(("list", list)) => commands::extensions::list(
+                    &mut context,
+                    list.get_one::<String>("search").cloned(),
+                ),
+                Some(("show", show)) => commands::extensions::show(
+                    &mut context,
+                    show.get_one::<String>("extension_id")
+                        .expect("the positional is required")
+                        .as_str(),
+                ),
+                Some(("install", install)) => commands::extensions::install(
+                    &mut context,
+                    install
+                        .get_one::<String>("publisher")
+                        .expect("the option is required")
+                        .as_str(),
+                    install
+                        .get_one::<String>("name")
+                        .expect("the option is required")
+                        .as_str(),
+                ),
+                Some(("uninstall", uninstall)) => commands::extensions::uninstall(
+                    &mut context,
+                    uninstall
+                        .get_one::<String>("publisher")
+                        .expect("the option is required")
+                        .as_str(),
+                    uninstall
+                        .get_one::<String>("name")
+                        .expect("the option is required")
+                        .as_str(),
+                ),
+                Some(("enable", enable)) => commands::extensions::enable(
+                    &mut context,
+                    enable
+                        .get_one::<String>("publisher")
+                        .expect("the option is required")
+                        .as_str(),
+                    enable
+                        .get_one::<String>("name")
+                        .expect("the option is required")
+                        .as_str(),
+                ),
+                Some(("disable", disable)) => commands::extensions::disable(
+                    &mut context,
+                    disable
+                        .get_one::<String>("publisher")
+                        .expect("the option is required")
+                        .as_str(),
+                    disable
+                        .get_one::<String>("name")
+                        .expect("the option is required")
+                        .as_str(),
+                ),
+                _ => Err(AdoError::validation(MISSING_SUBCOMMAND)),
+            }
+        }
         Some(("iterations", sub)) => {
             let mut context = Context::load(globals);
 

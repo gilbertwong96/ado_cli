@@ -6,6 +6,7 @@ pub mod builds;
 pub mod completion;
 pub mod connections;
 pub mod download;
+pub mod extensions;
 pub mod items;
 pub mod iterations;
 pub mod login;
