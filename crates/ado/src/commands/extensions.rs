@@ -254,11 +254,13 @@ fn state_text(extension: &Value) -> String {
 }
 
 /// The module's `print_extension_detail/1`: the `─` rule and the four labelled
-/// fields.
+/// fields. The blank line after the green header is the module's
+/// `success("Extension Details\n")` reset artefact, which the capture shows as a
+/// line of its own (the `connections` detail has the same shape).
 fn extension_detail(extension: &Value) -> String {
     format!(
         concat!(
-            "\nExtension Details\n",
+            "\nExtension Details\n\n",
             "{}\n",
             "  Publisher: {}\n",
             "  Name:      {}\n",
@@ -431,7 +433,7 @@ mod tests {
             extension_detail(&extensions()[1]),
             format!(
                 concat!(
-                    "\nExtension Details\n",
+                    "\nExtension Details\n\n",
                     "{}\n",
                     "  Publisher: octopus\n",
                     "  Name:      octopus-deploy\n",

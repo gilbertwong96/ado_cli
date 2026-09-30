@@ -389,7 +389,7 @@ fn show_renders_the_module_detail_layout() {
         stdout_of(&output),
         format!(
             concat!(
-                "\nExtension Details\n",
+                "\nExtension Details\n\n",
                 "{}\n",
                 "  Publisher: mspremier\n",
                 "  Name:      BuildQualityChecks\n",
