@@ -1573,9 +1573,12 @@ fn schema_connections_node_lists_every_shipped_subcommand() {
 fn schema_extensions_node_lists_every_shipped_subcommand() {
     let extensions = find_node("extensions").expect("the extensions node");
 
-    assert_eq!(extensions["doc"], json!(
-        "Manage Azure DevOps Marketplace extensions installed in the organization. Extensions add features like custom widgets, service hooks, and pipeline tasks."
-    ));
+    assert_eq!(
+        extensions["doc"],
+        json!(
+            "Manage Azure DevOps Marketplace extensions installed in the organization. Extensions add features like custom widgets, service hooks, and pipeline tasks."
+        )
+    );
     assert_eq!(
         subcommands(&extensions)
             .iter()
@@ -1620,7 +1623,15 @@ fn schema_extensions_node_lists_every_shipped_subcommand() {
 
         assert_eq!(
             option_names(&node),
-            ["json", "name", "org", "pat", "publisher", "server", "verbose"],
+            [
+                "json",
+                "name",
+                "org",
+                "pat",
+                "publisher",
+                "server",
+                "verbose"
+            ],
             "{command}"
         );
         assert_eq!(option(&node, "publisher")["required"], json!(true));
@@ -1629,10 +1640,15 @@ fn schema_extensions_node_lists_every_shipped_subcommand() {
 
     assert_eq!(
         option(&find_node("extensions install").expect("install"), "name")["doc"],
-        json!("Extension name as listed on the marketplace (e.g. 'BuildQualityChecks', ' octopus-deploy')")
+        json!(
+            "Extension name as listed on the marketplace (e.g. 'BuildQualityChecks', ' octopus-deploy')"
+        )
     );
     assert_eq!(
-        option(&find_node("extensions uninstall").expect("uninstall"), "name")["doc"],
+        option(
+            &find_node("extensions uninstall").expect("uninstall"),
+            "name"
+        )["doc"],
         json!("Extension name")
     );
 }

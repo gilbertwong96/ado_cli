@@ -131,7 +131,7 @@ fn list_renders_the_module_columns_and_the_full_version() {
     );
     assert!(lines[0].contains("State"), "header line: {stdout}");
     assert!(
-        lines[1].chars().all(|cell| cell == '─') && !lines[1].is_empty(),
+        lines[1].contains("---") && lines[1].chars().all(|cell| cell == '-' || cell == ' '),
         "the rule line: {stdout}"
     );
     assert!(
@@ -267,8 +267,16 @@ fn search_filters_the_extension_name_case_insensitively_and_sends_no_query() {
     server.expect("GET", EXTENSIONS, MockResponse::json(200, extensions()));
     server.expect("GET", EXTENSIONS, MockResponse::json(200, extensions()));
 
-    let upper = run(&home, &server, &["extensions", "list", "--search", "Build", "--json"]);
-    let lower = run(&home, &server, &["extensions", "list", "--search", "build", "--json"]);
+    let upper = run(
+        &home,
+        &server,
+        &["extensions", "list", "--search", "Build", "--json"],
+    );
+    let lower = run(
+        &home,
+        &server,
+        &["extensions", "list", "--search", "build", "--json"],
+    );
 
     assert_success(&upper);
     assert_success(&lower);
@@ -337,11 +345,19 @@ fn show_emits_the_value_envelope_and_the_extension_path() {
     let output = run(
         &home,
         &server,
-        &["extensions", "show", "mspremier.BuildQualityChecks", "--json"],
+        &[
+            "extensions",
+            "show",
+            "mspremier.BuildQualityChecks",
+            "--json",
+        ],
     );
 
     assert_success(&output);
-    assert_eq!(envelope(&output), json!({"ok": true, "result": extension()}));
+    assert_eq!(
+        envelope(&output),
+        json!({"ok": true, "result": extension()})
+    );
 
     let requests = requests(&server);
     assert_eq!(requests.len(), 1);
@@ -398,7 +414,11 @@ fn show_encodes_the_id_as_one_path_segment() {
         MockResponse::json(200, json!({"extensionName": "name", "publisherId": "pub"})),
     );
 
-    let output = run(&home, &server, &["extensions", "show", "pub/name", "--json"]);
+    let output = run(
+        &home,
+        &server,
+        &["extensions", "show", "pub/name", "--json"],
+    );
 
     assert_success(&output);
     assert_eq!(
@@ -410,7 +430,7 @@ fn show_encodes_the_id_as_one_path_segment() {
 }
 
 #[test]
-fn show_404_uses_the_modules_wording_with_no_envelope() {
+fn show_404_uses_the_modules_wording_in_the_envelope() {
     let home = TempHome::new();
     let server = MockServer::start();
     server.expect(
@@ -426,14 +446,20 @@ fn show_404_uses_the_modules_wording_with_no_envelope() {
     );
 
     assert_eq!(output.status.code(), Some(1));
-    assert!(
-        stdout_of(&output).is_empty(),
-        "the frozen halt_error writes no envelope under --json (D4): {}",
-        stdout_of(&output)
+    let envelope = envelope(&output);
+
+    assert_eq!(envelope["ok"], json!(false));
+    assert_eq!(envelope["error"]["code"], json!("not_found"));
+    assert_eq!(envelope["error"]["status"], json!(404));
+    assert_eq!(
+        envelope["error"]["message"],
+        json!("Extension 'missing.thing' not found"),
+        "the module's own wording; the frozen halt_error writes it to stderr with \
+         no envelope under --json, this build's one error path envelopes it (D4)"
     );
     assert!(
-        stderr_of(&output).contains("Extension 'missing.thing' not found"),
-        "the module's own wording: {}",
+        stderr_of(&output).is_empty(),
+        "under --json the envelope is the whole answer: {}",
         stderr_of(&output)
     );
 }
@@ -553,7 +579,13 @@ fn install_without_a_publisher_is_a_usage_error() {
     let output = run(
         &home,
         &server,
-        &["extensions", "install", "--name", "BuildQualityChecks", "--json"],
+        &[
+            "extensions",
+            "install",
+            "--name",
+            "BuildQualityChecks",
+            "--json",
+        ],
     );
 
     usage_error(&output, "--publisher");
@@ -571,7 +603,13 @@ fn install_without_a_name_is_a_usage_error() {
     let output = run(
         &home,
         &server,
-        &["extensions", "install", "--publisher", "mspremier", "--json"],
+        &[
+            "extensions",
+            "install",
+            "--publisher",
+            "mspremier",
+            "--json",
+        ],
     );
 
     usage_error(&output, "--name");
@@ -587,7 +625,11 @@ fn install_without_a_name_is_a_usage_error() {
 fn uninstall_deletes_the_dotted_path_and_emits_the_message_envelope() {
     let home = TempHome::new();
     let server = MockServer::start();
-    server.expect("DELETE", BUILD_QUALITY_CHECKS, MockResponse::json(200, json!({})));
+    server.expect(
+        "DELETE",
+        BUILD_QUALITY_CHECKS,
+        MockResponse::json(200, json!({})),
+    );
 
     let output = run(
         &home,
@@ -619,7 +661,11 @@ fn uninstall_deletes_the_dotted_path_and_emits_the_message_envelope() {
 fn uninstall_human_output_is_the_success_line() {
     let home = TempHome::new();
     let server = MockServer::start();
-    server.expect("DELETE", BUILD_QUALITY_CHECKS, MockResponse::json(200, json!({})));
+    server.expect(
+        "DELETE",
+        BUILD_QUALITY_CHECKS,
+        MockResponse::json(200, json!({})),
+    );
 
     let output = run(
         &home,
@@ -642,7 +688,7 @@ fn uninstall_human_output_is_the_success_line() {
 }
 
 #[test]
-fn uninstall_404_uses_the_modules_wording_with_no_envelope() {
+fn uninstall_404_uses_the_modules_wording_in_the_envelope() {
     let home = TempHome::new();
     let server = MockServer::start();
     server.expect(
@@ -666,9 +712,43 @@ fn uninstall_404_uses_the_modules_wording_with_no_envelope() {
     );
 
     assert_eq!(output.status.code(), Some(1));
+    let envelope = envelope(&output);
+
+    assert_eq!(envelope["error"]["code"], json!("not_found"));
+    assert_eq!(
+        envelope["error"]["message"],
+        json!("Extension 'missing.thing' not found"),
+        "the module's own 404 wording (D4's halt_error class)"
+    );
+}
+
+#[test]
+fn uninstall_404_human_writes_the_modules_wording_to_stderr() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "DELETE",
+        "/myorg/_apis/extensionmanagement/installedextensions/missing.thing",
+        MockResponse::json(404, json!({"message": "Extension not found."})),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "extensions",
+            "uninstall",
+            "--publisher",
+            "missing",
+            "--name",
+            "thing",
+        ],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
     assert!(
         stdout_of(&output).is_empty(),
-        "no envelope: {}",
+        "no document on stdout: {}",
         stdout_of(&output)
     );
     assert!(
@@ -686,7 +766,13 @@ fn uninstall_without_a_publisher_is_a_usage_error() {
     let output = run(
         &home,
         &server,
-        &["extensions", "uninstall", "--name", "BuildQualityChecks", "--json"],
+        &[
+            "extensions",
+            "uninstall",
+            "--name",
+            "BuildQualityChecks",
+            "--json",
+        ],
     );
 
     usage_error(&output, "--publisher");
@@ -704,7 +790,13 @@ fn uninstall_without_a_name_is_a_usage_error() {
     let output = run(
         &home,
         &server,
-        &["extensions", "uninstall", "--publisher", "mspremier", "--json"],
+        &[
+            "extensions",
+            "uninstall",
+            "--publisher",
+            "mspremier",
+            "--json",
+        ],
     );
 
     usage_error(&output, "--name");
@@ -720,7 +812,11 @@ fn uninstall_without_a_name_is_a_usage_error() {
 fn enable_patches_the_none_flags_body_and_emits_the_message_envelope() {
     let home = TempHome::new();
     let server = MockServer::start();
-    server.expect("PATCH", BUILD_QUALITY_CHECKS, MockResponse::json(200, json!({})));
+    server.expect(
+        "PATCH",
+        BUILD_QUALITY_CHECKS,
+        MockResponse::json(200, json!({})),
+    );
 
     let output = run(
         &home,
@@ -759,7 +855,11 @@ fn enable_patches_the_none_flags_body_and_emits_the_message_envelope() {
 fn enable_human_output_is_the_success_line() {
     let home = TempHome::new();
     let server = MockServer::start();
-    server.expect("PATCH", BUILD_QUALITY_CHECKS, MockResponse::json(200, json!({})));
+    server.expect(
+        "PATCH",
+        BUILD_QUALITY_CHECKS,
+        MockResponse::json(200, json!({})),
+    );
 
     let output = run(
         &home,
@@ -824,7 +924,13 @@ fn enable_without_a_publisher_is_a_usage_error() {
     let output = run(
         &home,
         &server,
-        &["extensions", "enable", "--name", "BuildQualityChecks", "--json"],
+        &[
+            "extensions",
+            "enable",
+            "--name",
+            "BuildQualityChecks",
+            "--json",
+        ],
     );
 
     usage_error(&output, "--publisher");
@@ -858,7 +964,11 @@ fn enable_without_a_name_is_a_usage_error() {
 fn disable_patches_the_disabled_flags_body_and_emits_the_message_envelope() {
     let home = TempHome::new();
     let server = MockServer::start();
-    server.expect("PATCH", BUILD_QUALITY_CHECKS, MockResponse::json(200, json!({})));
+    server.expect(
+        "PATCH",
+        BUILD_QUALITY_CHECKS,
+        MockResponse::json(200, json!({})),
+    );
 
     let output = run(
         &home,
@@ -931,7 +1041,13 @@ fn disable_without_a_publisher_is_a_usage_error() {
     let output = run(
         &home,
         &server,
-        &["extensions", "disable", "--name", "BuildQualityChecks", "--json"],
+        &[
+            "extensions",
+            "disable",
+            "--name",
+            "BuildQualityChecks",
+            "--json",
+        ],
     );
 
     usage_error(&output, "--publisher");
@@ -949,7 +1065,13 @@ fn disable_without_a_name_is_a_usage_error() {
     let output = run(
         &home,
         &server,
-        &["extensions", "disable", "--publisher", "mspremier", "--json"],
+        &[
+            "extensions",
+            "disable",
+            "--publisher",
+            "mspremier",
+            "--json",
+        ],
     );
 
     usage_error(&output, "--name");
@@ -968,7 +1090,7 @@ fn show_without_the_extension_id_is_a_usage_error() {
 
     let output = run(&home, &server, &["extensions", "show", "--json"]);
 
-    usage_error(&output, "extension_id");
+    usage_error(&output, "EXTENSION_ID");
     assert!(
         server.received().is_empty(),
         "a usage error sends no request"
