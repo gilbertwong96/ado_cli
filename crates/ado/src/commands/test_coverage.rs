@@ -22,7 +22,10 @@ use crate::output::Report;
 const BAR_CELLS: usize = 20;
 
 /// `ado test-coverage show PROJECT BUILD_ID`: `GET /{project}/_apis/test/codecoverage`
-/// with the module's `buildId` pair.
+/// with the module's `buildId` pair. The result is the `coverageData` array under the
+/// value envelope; a body with no such key takes the module's "no coverage data"
+/// branch, and a member that is present but not an array reads as an empty list —
+/// the header alone (the frozen `Enum.each` would raise there; no capture covers it).
 pub fn show(context: &mut Context, project: &str, build_id: i64) -> Result<Report, AdoError> {
     let body = context
         .client()?
