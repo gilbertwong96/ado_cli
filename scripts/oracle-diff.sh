@@ -2552,6 +2552,208 @@ run_mock_cases() {
     mock_case users-remove-404 "users remove (404)" \
         users remove missing-id --json
 
+    # ── Wave 2: the branch policies (Task 14) ──
+    #
+    # `branch-policies` is the runnable spelling of the schema's `ado repos
+    # policies` (R3/D18): the display name is rejected by both parsers. The REST
+    # surface is `/{project}/_apis/policy/configurations`, where the frozen list
+    # glues `?repositoryId=…` into the path and then appends `?api-version=7.1`,
+    # so its repositoryId value swallows the version — D25's third site, and every
+    # list case carries the normaliser as its `rest_norm` because of it. The two
+    # writes' `--json` output is this build's value/message envelope where the
+    # oracle prints its human line (D33); `show`/`update`'s GET 404 is the module's
+    # own wording on stderr there and an envelope here (D4); the PUT 404/409 and
+    # the 409 on create keep the classified envelope with this build's raw error
+    # body where the oracle renders the decoded map (D24); the delete 404 MATCHes
+    # because the frozen `Client.delete/2` passes its body on undecoded, which is
+    # exactly what this build's raw-body envelope carries. `--blocking`/
+    # `--no-blocking` (and `--enabled`/`--no-enabled`) are one flag pair here where
+    # the oracle's OptionParser `--no-` prefix does the same; both sides take the
+    # last spelling given. A missing `--type`/`--branch` is D34's silent exit 0 in
+    # the oracle. `delete` never prompts (R1/R5): the `(stdin n — no prompt)` and
+    # `(EOF)` cases send their DELETEs.
+
+    rest_rule='D25: the frozen list glues `?repositoryId=…` onto the path and then appends `?api-version=7.1`, so its one pair swallows the version; this build sends the two pairs'
+    rest_norm=$d25_query_norm
+    mock_case policies-list "branch-policies list" \
+        branch-policies list Alpha Alpha.Core --json
+
+    rest_rule='D25: the frozen list glues `?repositoryId=…` onto the path and then appends `?api-version=7.1`; this build sends repositoryId, branch and api-version as three pairs'
+    rest_norm=$d25_query_norm
+    mock_case policies-list-branch "branch-policies list --branch" \
+        branch-policies list Alpha Alpha.Core --branch main --json
+
+    rest_rule='D25: the frozen list glues `?repositoryId=…` onto the path and then appends `?api-version=7.1`; this build sends the two pairs'
+    rest_norm=$d25_query_norm
+    stdout_mode=text
+    mock_case policies-list-empty-human "branch-policies list (empty, human)" \
+        branch-policies list Empty Alpha.Core
+
+    rest_rule='D25: the frozen list glues `?repositoryId=…` onto the path and then appends `?api-version=7.1`; this build sends the two pairs'
+    rest_norm=$d25_query_norm
+    envelope_rule='D24: the error body stays the upstream bytes here, where the oracle re-renders the decoded map with inspect/2 (C2: the list-error row)'
+    mock_case policies-list-404 "branch-policies list (404)" \
+        branch-policies list Missing Alpha.Core --json
+
+    rest_rule='D25: the frozen list glues `?repositoryId=…` onto the path and then appends `?api-version=7.1`; this build sends the two pairs'
+    rest_norm=$d25_query_norm
+    envelope_rule='D24: the error body stays the upstream bytes here, where the oracle re-renders the decoded map with inspect/2 (C2: the list-error row)'
+    mock_case policies-list-500 "branch-policies list (500)" \
+        branch-policies list Broken Alpha.Core --json
+
+    mock_case policies-show "branch-policies show" \
+        branch-policies show Alpha Alpha.Core 42 --json
+
+    stdout_mode=text
+    mock_case policies-show-human "branch-policies show (human)" \
+        branch-policies show Alpha Alpha.Core 42
+
+    mock_case policies-show-reviewers "branch-policies show (second type)" \
+        branch-policies show Alpha Alpha.Core 43 --json
+
+    mock_case policies-show-bare "branch-policies show (bare policy)" \
+        branch-policies show Alpha Alpha.Core 52 --json
+
+    envelope_rule='D4: the frozen CLI writes the guard to stderr with no envelope under --json where this build emits the error envelope'
+    mock_case policies-show-404 "branch-policies show (404)" \
+        branch-policies show Alpha Alpha.Core 999 --json
+
+    envelope_rule='D5: the oracle prints the command help on stdout before its usage error; this build writes clap’s message to stderr alone'
+    stdout_mode=text
+    mock_case policies-show-non-integer "branch-policies show (non-integer id)" \
+        branch-policies show Alpha Alpha.Core not-an-integer --json
+
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the value envelope'
+    mock_case policies-create "branch-policies create" \
+        branch-policies create Alpha Alpha.Core \
+        --type fa4e907d-c16b-4a4c-9dfa-4906e5d171dd --branch refs/heads/main --json
+
+    stdout_mode=text
+    mock_case policies-create-human "branch-policies create (human)" \
+        branch-policies create Alpha Alpha.Core \
+        --type fa4e907d-c16b-4a4c-9dfa-4906e5d171dd --branch refs/heads/main
+
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the value envelope'
+    mock_case policies-create-reviewers "branch-policies create --no-blocking (second type)" \
+        branch-policies create Alpha2 Beta.Core \
+        --type fd2167ab-9d2a-4d8b-b2c9-1cdfbb6d4c34 --branch refs/heads/release/2.0 \
+        --no-blocking --json
+
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the value envelope'
+    mock_case policies-create-both-flags "branch-policies create --blocking --no-blocking (last wins)" \
+        branch-policies create Both Alpha.Core \
+        --type fa4e907d-c16b-4a4c-9dfa-4906e5d171dd --branch refs/heads/main \
+        --blocking --no-blocking --json
+
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the value envelope'
+    mock_case policies-create-reverse "branch-policies create --no-blocking --blocking (last wins)" \
+        branch-policies create Reverse Alpha.Core \
+        --type fa4e907d-c16b-4a4c-9dfa-4906e5d171dd --branch refs/heads/main \
+        --no-blocking --blocking --json
+
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the value envelope'
+    mock_case policies-create-wildcard "branch-policies create (wildcard ref)" \
+        branch-policies create Wildcard Wild \
+        --type 0609b952-1397-4640-95ec-e121a052fb4b --branch 'refs/heads/feature/*' --json
+
+    envelope_rule='D24: the error body stays the upstream bytes here, where the oracle re-renders the decoded map with inspect/2'
+    mock_case policies-create-409 "branch-policies create (409)" \
+        branch-policies create Conflict Alpha.Core \
+        --type fa4e907d-c16b-4a4c-9dfa-4906e5d171dd --branch refs/heads/main --json
+
+    status_rule='D34: a missing required option is a silent exit 0 in the oracle; this build is a loud usage error'
+    expect_statuses='0 1'
+    stdout_mode=text
+    mock_case policies-create-no-type "branch-policies create (no --type)" \
+        branch-policies create Alpha Alpha.Core --branch refs/heads/main --json
+
+    status_rule='D34: a missing required option is a silent exit 0 in the oracle; this build is a loud usage error'
+    expect_statuses='0 1'
+    stdout_mode=text
+    mock_case policies-create-no-branch "branch-policies create (no --branch)" \
+        branch-policies create Alpha Alpha.Core \
+        --type fa4e907d-c16b-4a4c-9dfa-4906e5d171dd --json
+
+    envelope_rule='D5: the oracle prints the command help on stdout before its usage error; this build writes clap’s message to stderr alone'
+    stdout_mode=text
+    mock_case policies-create-unknown-flag "branch-policies create --type-id (unknown flag)" \
+        branch-policies create Alpha Alpha.Core --type-id fa4e907d
+
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the value envelope'
+    mock_case policies-update-blocking "branch-policies update --blocking" \
+        branch-policies update Alpha Alpha.Core 44 --blocking --json
+
+    stdout_mode=text
+    mock_case policies-update-blocking-human "branch-policies update --blocking (human)" \
+        branch-policies update Alpha Alpha.Core 44 --blocking
+
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the value envelope'
+    mock_case policies-update-enabled "branch-policies update --no-enabled (second type)" \
+        branch-policies update Alpha Alpha.Core 45 --no-enabled --json
+
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the value envelope'
+    mock_case policies-update-both-flags "branch-policies update --no-blocking --no-enabled" \
+        branch-policies update Alpha Alpha.Core 46 --no-blocking --no-enabled --json
+
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the value envelope'
+    mock_case policies-update-no-options "branch-policies update (no options)" \
+        branch-policies update Alpha Alpha.Core 47 --json
+
+    stdout_mode=text
+    mock_case policies-update-no-options-human "branch-policies update (no options, human)" \
+        branch-policies update Alpha Alpha.Core 47
+
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the value envelope'
+    mock_case policies-update-bare-policy "branch-policies update (a policy without type or flags)" \
+        branch-policies update Alpha Alpha.Core 54 --json
+
+    envelope_rule='D4: the frozen CLI writes the guard to stderr with no envelope under --json where this build emits the error envelope'
+    mock_case policies-update-get-404 "branch-policies update (GET 404)" \
+        branch-policies update Alpha Alpha.Core 998 --blocking --json
+
+    envelope_rule='D24: the error body stays the upstream bytes here, where the oracle re-renders the decoded map with inspect/2'
+    mock_case policies-update-put-404 "branch-policies update (PUT 404)" \
+        branch-policies update Alpha Alpha.Core 48 --no-enabled --json
+
+    envelope_rule='D24: the error body stays the upstream bytes here, where the oracle re-renders the decoded map with inspect/2'
+    mock_case policies-update-put-409 "branch-policies update (PUT 409)" \
+        branch-policies update Alpha Alpha.Core 49 --no-blocking --json
+
+    envelope_rule='D5: the oracle prints the command help on stdout before its usage error; this build writes clap’s message to stderr alone'
+    stdout_mode=text
+    mock_case policies-update-non-integer "branch-policies update (non-integer id)" \
+        branch-policies update Alpha Alpha.Core not-an-integer --blocking --json
+
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the message envelope'
+    mock_case policies-delete "branch-policies delete" \
+        branch-policies delete Alpha Alpha.Core 42 --json
+
+    stdout_mode=text
+    mock_case policies-delete-human "branch-policies delete (human)" \
+        branch-policies delete Alpha Alpha.Core 42
+
+    case_stdin=$'n\n'
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the message envelope'
+    mock_case policies-delete-stdin-n "branch-policies delete (stdin n — no prompt)" \
+        branch-policies delete Alpha Alpha.Core 997 --json
+
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the message envelope'
+    mock_case policies-delete-eof "branch-policies delete (EOF — no prompt)" \
+        branch-policies delete Alpha Alpha.Core 997 --json
+
+    mock_case policies-delete-404 "branch-policies delete (404)" \
+        branch-policies delete Alpha Alpha.Core 999 --json
+
+    envelope_rule='D5: the oracle prints the command help on stdout before its usage error; this build writes clap’s message to stderr alone'
+    stdout_mode=text
+    mock_case policies-delete-force "branch-policies delete --force (unknown flag)" \
+        branch-policies delete Alpha Alpha.Core 42 --force
+
+    envelope_rule='D5: the oracle prints the parent help on stdout before its unknown-subcommand line; this build writes clap’s message to stderr alone (R3: the display name is not runnable)'
+    stdout_mode=text
+    mock_case policies-display-name "repos policies list (the schema display name)" \
+        repos policies list Alpha Alpha.Core
+
     mock_scenario_check
 }
 
@@ -2672,8 +2874,8 @@ if exits_ok schema-json &&
     #   * D18/R3: the group nodes this build reports in the spelling argv accepts
     #     differ from the oracle's display names — `pipelines builds` and `pipelines
     #     artifacts` gain a hyphen, `pipelines secure-files` loses the hyphen for the
-    #     underscore, and `pipelines folders` gains the hyphen — at the root and in
-    #     every descendant's name;
+    #     underscore, `pipelines folders` gains the hyphen, and `repos policies`
+    #     becomes `branch-policies` — at the root and in every descendant's name;
     #   * doc values are §8 regenerated surface, and the nodes this wave wrote or
     #     rewrote carry this build's wording. Their option and argument docs are
     #     blanked here; their node docs are reported by the doc check further down.
@@ -2684,6 +2886,7 @@ if exits_ok schema-json &&
                    | .name |= gsub(\" pipelines artifacts\"; \" pipelines-artifacts\")
                    | .name |= gsub(\" pipelines secure_files\"; \" pipelines secure-files\")
                    | .name |= gsub(\" pipelines folders\"; \" pipelines-folders\")
+                   | .name |= gsub(\" repos policies\"; \" branch-policies\")
         else . end)
       | (.schema.subcommands[] | select(.name as \$node | $s8_nodes | index(\$node))
          | .options[]? | select(.name as \$o | $globals_names | index(\$o) | not) | .doc) |= \"\"
@@ -2698,7 +2901,7 @@ if exits_ok schema-json &&
     # D18/R3's premise: the oracle spells these group nodes differently from the
     # spelling argv accepts. If that changed, this is not the frozen oracle and the
     # normalisation above is stale.
-    d18_renamed=$(jq -r '[.schema | recurse(.subcommands[]?) | .name | select(test(" pipelines (builds|artifacts|secure-files|folders)"))] | length' "$work/schema-json.elixir")
+    d18_renamed=$(jq -r '[.schema | recurse(.subcommands[]?) | .name | select(test(" (pipelines (builds|artifacts|secure-files|folders)|repos policies)"))] | length' "$work/schema-json.elixir")
 
     if (( d18_renamed > 0 )); then
         note "D18/R3: $d18_renamed oracle node names differ from the runnable spelling this build reports"
