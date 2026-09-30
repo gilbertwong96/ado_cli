@@ -4264,6 +4264,330 @@ run_mock_cases() {
     mock_case test-results-publish-no-project "test-results publish (no project)" \
         test-results publish --name 'Nightly Regression' --file "$work/results.xml" --json
 
+    # ── security ──
+    #
+    # The wave's second guard family. The typed flag's absence is a **loud**
+    # refusal on both sides — exit 1, stdout empty, the same sentence on stderr —
+    # so those cases run in text mode even under --json (this build emits no
+    # document by D32's rule, and the oracle emits none either) and compare equal.
+    # Every error path is D4 (the oracle's stderr-only prose against this build's
+    # envelope), the two success writes are D33, and the one D34 row is this
+    # area's own: a matching project entry without an `id` crashes the frozen
+    # `%{"id" => id}` match into a silent exit 0.
+
+    expect_oracle_requests='length == 0'
+    expect_rust_requests='length == 0'
+    stdout_mode=text
+    mock_case security-grant-guard "security grant (no flag)" \
+        security grant Alpha
+
+    expect_oracle_requests='length == 0'
+    expect_rust_requests='length == 0'
+    stdout_mode=text
+    mock_case security-revoke-guard "security revoke (no flag)" \
+        security revoke Alpha
+
+    # The invocation carries --json and both sides still print nothing, which is
+    # why the mode is text: the case asserts stdout empty and exit 1, not a
+    # document (D32's no-envelope half, matched by D32's own refusal shape).
+    expect_oracle_requests='length == 0'
+    expect_rust_requests='length == 0'
+    stdout_mode=text
+    mock_case security-grant-guard-json "security grant (no flag, --json)" \
+        security grant Alpha --json
+
+    security_chain='length == 3 and (.[0].path == "/sec/_apis/projects") and qpair("api-version=7.1") and (.[1].path == "/sec/_apis/connectionData") and qpair("api-version=7.1-preview.1") and (.[2].method == "POST") and (.[2].path | endswith("/_apis/accesscontrolentries/b7e84409-6553-448a-bbb2-af228e07cbeb")) and (.[2].query | contains("api-version=7.1"))'
+
+    envelope_rule='D33: the frozen write paths print their human sentence under --json; this build emits the message envelope'
+    expect_oracle_requests="$security_chain and any_body(\"\\\"token\\\":\\\"6a1f8f6e-2b8d-4b9e-9d2a-1c3f5e7a9b0c\\\"\") and any_body(\"\\\"merge\\\":true\") and any_body(\"\\\"allow\\\":8\") and any_body(\"\\\"extendedInfo\\\":{}\")"
+    expect_rust_requests="$security_chain and any_body(\"\\\"token\\\":\\\"6a1f8f6e-2b8d-4b9e-9d2a-1c3f5e7a9b0c\\\"\") and any_body(\"\\\"merge\\\":true\") and any_body(\"\\\"allow\\\":8\") and any_body(\"\\\"extendedInfo\\\":{}\")"
+    case_org=sec
+    mock_case security-grant "security grant" \
+        security grant Alpha --yes-this-mutates-secret-read --json
+
+    stdout_mode=text
+    expect_oracle_requests="$security_chain and any_body(\"\\\"token\\\":\\\"6a1f8f6e-2b8d-4b9e-9d2a-1c3f5e7a9b0c\\\"\") and any_body(\"\\\"merge\\\":true\")"
+    expect_rust_requests="$security_chain and any_body(\"\\\"token\\\":\\\"6a1f8f6e-2b8d-4b9e-9d2a-1c3f5e7a9b0c\\\"\") and any_body(\"\\\"merge\\\":true\")"
+    case_org=sec
+    mock_case security-grant-human "security grant (human)" \
+        security grant Alpha --yes-this-mutates-secret-read
+
+    envelope_rule='D33: the frozen write paths print their human sentence under --json; this build emits the message envelope'
+    expect_oracle_requests="$security_chain and any_body(\"\\\"token\\\":\\\"6a1f8f6e-2b8d-4b9e-9d2a-1c3f5e7a9b0c\\\"\") and any_body(\"\\\"merge\\\":false\") and any_body(\"\\\"allow\\\":0\")"
+    expect_rust_requests="$security_chain and any_body(\"\\\"token\\\":\\\"6a1f8f6e-2b8d-4b9e-9d2a-1c3f5e7a9b0c\\\"\") and any_body(\"\\\"merge\\\":false\") and any_body(\"\\\"allow\\\":0\")"
+    case_org=sec
+    mock_case security-revoke "security revoke" \
+        security revoke Alpha --yes-this-mutates-secret-read --json
+
+    stdout_mode=text
+    expect_oracle_requests='length == 3 and (.[0].path == "/sec/_apis/projects") and (.[2].method == "POST")'
+    expect_rust_requests='length == 3 and (.[0].path == "/sec/_apis/projects") and (.[2].method == "POST")'
+    case_org=sec
+    mock_case security-revoke-human "security revoke (human)" \
+        security revoke Alpha --yes-this-mutates-secret-read
+
+    # The UUID short-circuit: the lookup is absent, and the filter names its
+    # absence — a build that always looked the project up would still pass a
+    # filter that only described the two requests it does send.
+    envelope_rule='D33: the frozen write paths print their human sentence under --json; this build emits the message envelope'
+    expect_oracle_requests='length == 2 and (any_path("/_apis/projects") | not) and (.[0].path == "/sec/_apis/connectionData") and qpair("api-version=7.1-preview.1") and (.[1].method == "POST") and any_body("\"token\":\"11111111-2222-3333-4444-555555555555\"") and any_body("\"merge\":true")'
+    expect_rust_requests='length == 2 and (any_path("/_apis/projects") | not) and (.[0].path == "/sec/_apis/connectionData") and qpair("api-version=7.1-preview.1") and (.[1].method == "POST") and any_body("\"token\":\"11111111-2222-3333-4444-555555555555\"") and any_body("\"merge\":true")'
+    case_org=sec
+    mock_case security-grant-uuid "security grant (a UUID project)" \
+        security grant 11111111-2222-3333-4444-555555555555 --yes-this-mutates-secret-read --json
+
+    envelope_rule='D33: the frozen write paths print their human sentence under --json; this build emits the message envelope'
+    expect_oracle_requests='length == 2 and (any_path("/_apis/projects") | not) and (.[0].path == "/sec-revoke/_apis/connectionData") and (.[1].method == "POST") and any_body("\"token\":\"11111111-2222-3333-4444-555555555555\"") and any_body("\"merge\":false") and any_body("\"allow\":0")'
+    expect_rust_requests='length == 2 and (any_path("/_apis/projects") | not) and (.[0].path == "/sec-revoke/_apis/connectionData") and (.[1].method == "POST") and any_body("\"token\":\"11111111-2222-3333-4444-555555555555\"") and any_body("\"merge\":false") and any_body("\"allow\":0")'
+    case_org=sec-revoke
+    mock_case security-revoke-uuid "security revoke (a UUID project)" \
+        security revoke 11111111-2222-3333-4444-555555555555 --yes-this-mutates-secret-read --json
+
+    expect_oracle_requests='length == 1 and (.[0].path == "/sec/_apis/projects") and qpair("api-version=7.1")'
+    expect_rust_requests='length == 1 and (.[0].path == "/sec/_apis/projects") and qpair("api-version=7.1")'
+    case_org=sec
+    envelope_rule='D4: the frozen CLI writes the module wording to stderr with no envelope under --json where this build emits the error envelope'
+    mock_case security-grant-not-found "security grant (a name the list does not carry)" \
+        security grant Nope --yes-this-mutates-secret-read --json
+
+    stdout_mode=text
+    expect_oracle_requests='length == 1 and (.[0].path == "/sec/_apis/projects")'
+    expect_rust_requests='length == 1 and (.[0].path == "/sec/_apis/projects")'
+    case_org=sec
+    mock_case security-grant-not-found-human "security grant (a name the list does not carry, human)" \
+        security grant Nope --yes-this-mutates-secret-read
+
+    envelope_rule='D4: the frozen CLI writes the module wording to stderr with no envelope under --json where this build emits the error envelope'
+    expect_oracle_requests='length == 0'
+    expect_rust_requests='length == 0'
+    mock_case security-grant-empty-project "security grant (an empty project)" \
+        security grant '' --yes-this-mutates-secret-read --json
+
+    envelope_rule='D4: the frozen CLI writes the module wording to stderr with no envelope under --json where this build emits the error envelope'
+    expect_oracle_requests='length == 0'
+    expect_rust_requests='length == 0'
+    mock_case security-grant-permission "security grant --permission ViewLibrary" \
+        security grant Alpha --yes-this-mutates-secret-read --permission ViewLibrary --json
+
+    stdout_mode=text
+    expect_oracle_requests='length == 0'
+    expect_rust_requests='length == 0'
+    mock_case security-grant-permission-human "security grant --permission ViewLibrary (human)" \
+        security grant Alpha --yes-this-mutates-secret-read --permission ViewLibrary
+
+    envelope_rule='D4: the frozen CLI writes the module wording to stderr with no envelope under --json where this build emits the error envelope'
+    expect_oracle_requests='length == 0'
+    expect_rust_requests='length == 0'
+    mock_case security-grant-permission-empty "security grant --permission ''" \
+        security grant Alpha --yes-this-mutates-secret-read --permission '' --json
+
+    envelope_rule='D4: the frozen CLI writes the module wording to stderr with no envelope under --json where this build emits the error envelope'
+    expect_oracle_requests='length == 1 and (.[0].path == "/sec-novalue/_apis/projects")'
+    expect_rust_requests='length == 1 and (.[0].path == "/sec-novalue/_apis/projects")'
+    case_org=sec-novalue
+    mock_case security-grant-novalue "security grant (a projects body without value)" \
+        security grant Alpha --yes-this-mutates-secret-read --json
+
+    status_rule='D34: the frozen `%{"id" => id}` match crashes on an entry without an id and the rescue exits 0; this build fails loudly after the lookup'
+    expect_statuses='0 1'
+    envelope_rule='D34: the frozen crash leaves no output; this build emits the lookup failure'
+    expect_oracle_requests='length == 1 and (.[0].path == "/sec-noid/_apis/projects")'
+    expect_rust_requests='length == 1 and (.[0].path == "/sec-noid/_apis/projects")'
+    case_org=sec-noid
+    mock_case security-grant-noid "security grant (a matching entry with no id)" \
+        security grant Alpha --yes-this-mutates-secret-read --json
+
+    envelope_rule='D24: the error body stays the upstream bytes here, where the oracle re-renders the decoded map with the step name and inspect/2'
+    expect_oracle_requests='length == 1 and (.[0].path == "/sec-proj-broken/_apis/projects")'
+    expect_rust_requests='length == 1 and (.[0].path == "/sec-proj-broken/_apis/projects")'
+    case_org=sec-proj-broken
+    mock_case security-grant-proj-500 "security grant (the projects lookup 500s)" \
+        security grant Alpha --yes-this-mutates-secret-read --json
+
+    envelope_rule='D24: the error body stays the upstream bytes here, where the oracle re-renders the decoded map with the step name and inspect/2 (C12: the lookup-error row)'
+    expect_oracle_requests='length == 1 and (.[0].path == "/sec-proj-missing/_apis/projects")'
+    expect_rust_requests='length == 1 and (.[0].path == "/sec-proj-missing/_apis/projects")'
+    case_org=sec-proj-missing
+    mock_case security-grant-proj-404 "security grant (the projects lookup 404s)" \
+        security grant Alpha --yes-this-mutates-secret-read --json
+
+    envelope_rule='D4: the frozen CLI writes the MSA refusal to stderr with no envelope under --json where this build emits the error envelope'
+    expect_oracle_requests='length == 2 and (.[0].path == "/sec-msa/_apis/projects") and (.[1].path == "/sec-msa/_apis/connectionData") and (any_body("msa.") | not)'
+    expect_rust_requests='length == 2 and (.[0].path == "/sec-msa/_apis/projects") and (.[1].path == "/sec-msa/_apis/connectionData") and (any_body("msa.") | not)'
+    case_org=sec-msa
+    mock_case security-grant-msa "security grant (an MSA descriptor)" \
+        security grant Alpha --yes-this-mutates-secret-read --json
+
+    envelope_rule='D4: the frozen CLI writes the missing-descriptor refusal to stderr with no envelope under --json where this build emits the error envelope'
+    expect_oracle_requests='length == 2 and (.[0].path == "/sec-nodesc/_apis/projects") and (.[1].path == "/sec-nodesc/_apis/connectionData")'
+    expect_rust_requests='length == 2 and (.[0].path == "/sec-nodesc/_apis/projects") and (.[1].path == "/sec-nodesc/_apis/connectionData")'
+    case_org=sec-nodesc
+    mock_case security-grant-nodesc "security grant (no subjectDescriptor)" \
+        security grant Alpha --yes-this-mutates-secret-read --json
+
+    envelope_rule='D4: the frozen CLI writes the missing-descriptor refusal to stderr with no envelope under --json where this build emits the error envelope'
+    expect_oracle_requests='length == 2 and (.[0].path == "/sec-nodesc-empty/_apis/projects") and (.[1].path == "/sec-nodesc-empty/_apis/connectionData")'
+    expect_rust_requests='length == 2 and (.[0].path == "/sec-nodesc-empty/_apis/projects") and (.[1].path == "/sec-nodesc-empty/_apis/connectionData")'
+    case_org=sec-nodesc-empty
+    mock_case security-grant-nodesc-empty "security grant (an empty subjectDescriptor)" \
+        security grant Alpha --yes-this-mutates-secret-read --json
+
+    envelope_rule='D24: the error body stays the upstream bytes here, where the oracle re-renders the decoded map with the step name and inspect/2'
+    expect_oracle_requests='length == 2 and (.[0].path == "/sec-conn-broken/_apis/projects") and (.[1].path == "/sec-conn-broken/_apis/connectionData") and (any_path("accesscontrolentries") | not)'
+    expect_rust_requests='length == 2 and (.[0].path == "/sec-conn-broken/_apis/projects") and (.[1].path == "/sec-conn-broken/_apis/connectionData") and (any_path("accesscontrolentries") | not)'
+    case_org=sec-conn-broken
+    mock_case security-grant-conn-500 "security grant (the descriptor fetch 500s)" \
+        security grant Alpha --yes-this-mutates-secret-read --json
+
+    sec_acl='any_path("/_apis/accesscontrolentries/b7e84409-6553-448a-bbb2-af228e07cbeb")'
+
+    envelope_rule='D24: the module’s three-cause prose carries the raw upstream bytes here, where the oracle interpolates inspect/2 of the decoded map'
+    expect_oracle_requests='length == 2 and (any_path("/_apis/projects") | not) and (.[0].path == "/sec-reject/_apis/connectionData") and (.[1].method == "POST") and '"$sec_acl"' and any_body("\"merge\":true")'
+    expect_rust_requests='length == 2 and (any_path("/_apis/projects") | not) and (.[0].path == "/sec-reject/_apis/connectionData") and (.[1].method == "POST") and '"$sec_acl"' and any_body("\"merge\":true")'
+    case_org=sec-reject
+    mock_case security-grant-403 "security grant (a 403)" \
+        security grant 11111111-2222-3333-4444-555555555555 --yes-this-mutates-secret-read --json
+
+    envelope_rule='D24: the module’s three-cause prose names the revoke and carries the raw upstream bytes'
+    expect_oracle_requests='length == 2 and (any_path("/_apis/projects") | not) and (.[0].path == "/sec-revoke-reject/_apis/connectionData") and (.[1].method == "POST") and '"$sec_acl"' and any_body("\"merge\":false")'
+    expect_rust_requests='length == 2 and (any_path("/_apis/projects") | not) and (.[0].path == "/sec-revoke-reject/_apis/connectionData") and (.[1].method == "POST") and '"$sec_acl"' and any_body("\"merge\":false")'
+    case_org=sec-revoke-reject
+    mock_case security-revoke-403 "security revoke (a 403)" \
+        security revoke 11111111-2222-3333-4444-555555555555 --yes-this-mutates-secret-read --json
+
+    envelope_rule='D24: the module’s three-cause prose carries the raw upstream bytes here, where the oracle interpolates inspect/2 of the decoded map'
+    expect_oracle_requests='length == 2 and (any_path("/_apis/projects") | not) and (.[0].path == "/sec-auth/_apis/connectionData") and (.[1].method == "POST") and '"$sec_acl"''
+    expect_rust_requests='length == 2 and (any_path("/_apis/projects") | not) and (.[0].path == "/sec-auth/_apis/connectionData") and (.[1].method == "POST") and '"$sec_acl"''
+    case_org=sec-auth
+    mock_case security-grant-401 "security grant (a 401)" \
+        security grant 11111111-2222-3333-4444-555555555555 --yes-this-mutates-secret-read --json
+
+    envelope_rule='D24: the module’s three-cause prose carries the raw upstream bytes here, where the oracle interpolates inspect/2 of the decoded map'
+    expect_oracle_requests='length == 2 and (any_path("/_apis/projects") | not) and (.[0].path == "/sec-bad/_apis/connectionData") and (.[1].method == "POST") and '"$sec_acl"''
+    expect_rust_requests='length == 2 and (any_path("/_apis/projects") | not) and (.[0].path == "/sec-bad/_apis/connectionData") and (.[1].method == "POST") and '"$sec_acl"''
+    case_org=sec-bad
+    mock_case security-grant-400 "security grant (a 400)" \
+        security grant 11111111-2222-3333-4444-555555555555 --yes-this-mutates-secret-read --json
+
+    envelope_rule='D24: the error body stays the upstream bytes here, where the oracle re-renders the decoded map with the step name and inspect/2'
+    expect_oracle_requests='length == 2 and (any_path("/_apis/projects") | not) and (.[0].path == "/sec-acl-broken/_apis/connectionData") and (.[1].method == "POST") and '"$sec_acl"''
+    expect_rust_requests='length == 2 and (any_path("/_apis/projects") | not) and (.[0].path == "/sec-acl-broken/_apis/connectionData") and (.[1].method == "POST") and '"$sec_acl"''
+    case_org=sec-acl-broken
+    mock_case security-grant-acl-500 "security grant (the write 500s)" \
+        security grant 11111111-2222-3333-4444-555555555555 --yes-this-mutates-secret-read --json
+
+    # D43's spelling family on the guard. `=true` proceeds in the oracle; this
+    # build’s clap refuses the =value form, so the statuses and the chains differ.
+    status_rule='D43: the frozen parser takes --yes-this-mutates-secret-read=true and proceeds; this build’s clap refuses the =value spelling'
+    expect_statuses='0 1'
+    envelope_rule='D5: the oracle prints its human sentence and proceeds, this build writes clap’s usage error to stderr alone'
+    rest_rule='D43: the oracle proceeds with the flag set and walks the chain; this build refuses the spelling and sends nothing'
+    expect_oracle_requests="$security_chain and any_body(\"\\\"merge\\\":true\")"
+    expect_rust_requests='length == 0'
+    stdout_mode=text
+    case_org=sec
+    mock_case security-grant-flag-eq-true "security grant --yes-this-mutates-secret-read=true (the unported spelling)" \
+        security grant Alpha --yes-this-mutates-secret-read=true
+
+    # Both refuse with exit 1 and empty stdout, so the case compares equal; the
+    # mechanism differs (the oracle parses the value and its own guard refuses,
+    # clap rejects the spelling) and the integration suite pins this side's.
+    expect_oracle_requests='length == 0'
+    expect_rust_requests='length == 0'
+    stdout_mode=text
+    mock_case security-grant-flag-eq-false "security grant --yes-this-mutates-secret-read=false (the unported spelling)" \
+        security grant Alpha --yes-this-mutates-secret-read=false --json
+
+    expect_oracle_requests='length == 0'
+    expect_rust_requests='length == 0'
+    stdout_mode=text
+    mock_case security-grant-flag-no "security grant --no-yes-this-mutates-secret-read (the unported spelling)" \
+        security grant Alpha --no-yes-this-mutates-secret-read --json
+
+    status_rule='D43: the last spelling wins in the frozen parser (--flag=false then the bare flag is true); this build refuses the =value spelling'
+    expect_statuses='0 1'
+    envelope_rule='D5: the oracle prints its human sentence and proceeds, this build writes clap’s usage error to stderr alone'
+    rest_rule='D43: the last spelling wins, so the oracle walks the chain; this build refuses the first spelling and sends nothing'
+    expect_oracle_requests="$security_chain and any_body(\"\\\"merge\\\":true\")"
+    expect_rust_requests='length == 0'
+    stdout_mode=text
+    case_org=sec
+    mock_case security-grant-flag-last-wins "security grant --yes-this-mutates-secret-read=false --yes-this-mutates-secret-read (last spelling wins)" \
+        security grant Alpha --yes-this-mutates-secret-read=false --yes-this-mutates-secret-read
+
+    # Only the literals true/false parse in the oracle: =1 is an `invalid option`
+    # usage error there and a clap error here (D5's stdout side).
+    envelope_rule='D5: the oracle prints the command help on stdout before its usage error; this build writes clap’s message to stderr alone'
+    expect_oracle_requests='length == 0'
+    expect_rust_requests='length == 0'
+    stdout_mode=text
+    mock_case security-grant-flag-eq-one "security grant --yes-this-mutates-secret-read=1 (the value is not a literal)" \
+        security grant Alpha --yes-this-mutates-secret-read=1 --json
+
+    # D17's class: the option is declared with underscores and runnable hyphenated.
+    envelope_rule='D17/D5: the oracle refuses the underscore spelling (invalid option) with help on stdout; this build writes clap’s message to stderr alone'
+    expect_oracle_requests='length == 0'
+    expect_rust_requests='length == 0'
+    stdout_mode=text
+    mock_case security-grant-flag-underscore "security grant --yes_this_mutates_secret_read (the underscore spelling)" \
+        security grant Alpha --yes_this_mutates_secret_read --json
+
+    # A dash-leading project argument is an option to the frozen parser and to
+    # clap: one usage error each, help on stdout there and nothing here (D5).
+    envelope_rule='D5: the oracle prints the command help on stdout before its usage error; this build writes clap’s message to stderr alone'
+    expect_oracle_requests='length == 0'
+    expect_rust_requests='length == 0'
+    stdout_mode=text
+    mock_case security-grant-dash-project "security grant -Alpha (a dash-leading project)" \
+        security grant -Alpha --yes-this-mutates-secret-read --json
+
+    # The boundary: `-1` is a positional to OptionParser's negative-number rule
+    # and an option to clap, so the oracle looks the name up and this build sends
+    # nothing. The filter names the lookup it must send.
+    envelope_rule='D5: the oracle prints the command help on stdout before its usage error; this build writes clap’s message to stderr alone'
+    rest_rule='the frozen parser reads -1 as a positional (its negative-number rule) and looks it up; clap reads it as an option and sends nothing'
+    expect_oracle_requests='length == 1 and (.[0].path == "/sec/_apis/projects") and qpair("api-version=7.1")'
+    expect_rust_requests='length == 0'
+    stdout_mode=text
+    case_org=sec
+    mock_case security-grant-negative-project "security grant -1 (the oracle’s negative-number rule)" \
+        security grant -1 --yes-this-mutates-secret-read --json
+
+    # `--` is the escape both parsers honour: the dash-leading project becomes
+    # the positional and the guard refuses for want of the flag on both sides.
+    expect_oracle_requests='length == 0'
+    expect_rust_requests='length == 0'
+    stdout_mode=text
+    mock_case security-grant-escape "security grant -- -Alpha (the escape)" \
+        security grant -- -Alpha
+
+    envelope_rule='D5: the oracle prints the command help on stdout before its usage error; this build writes clap’s message to stderr alone'
+    expect_oracle_requests='length == 0'
+    expect_rust_requests='length == 0'
+    stdout_mode=text
+    mock_case security-no-subcommand "security (no sub-command)" \
+        security --json
+
+    envelope_rule='D5: the oracle prints the command help on stdout before its usage error; this build writes clap’s message to stderr alone'
+    expect_oracle_requests='length == 0'
+    expect_rust_requests='length == 0'
+    stdout_mode=text
+    mock_case security-grant-no-project "security grant (no project)" \
+        security grant --yes-this-mutates-secret-read --json
+
+    envelope_rule='D5: the oracle prints the command help on stdout before its usage error; this build writes clap’s message to stderr alone'
+    expect_oracle_requests='length == 0'
+    expect_rust_requests='length == 0'
+    stdout_mode=text
+    mock_case security-grant-extra "security grant (an extra positional)" \
+        security grant Alpha Extra --yes-this-mutates-secret-read --json
+
+    envelope_rule='D5: the oracle prints the command help on stdout before its usage error; this build writes clap’s message to stderr alone'
+    expect_oracle_requests='length == 0'
+    expect_rust_requests='length == 0'
+    stdout_mode=text
+    mock_case security-grant-permission-valueless "security grant (a valueless --permission)" \
+        security grant Alpha --yes-this-mutates-secret-read --permission
 
     mock_scenario_check
 }
@@ -4502,6 +4826,11 @@ if exits_ok schema-json &&
     # not have fails the name check above.
     shared_names=$(jq -c '[.schema.subcommands[].name]' "$schema_rs")
     shared_children=$(jq -c '[.schema.subcommands[] | {key: .name, value: [.subcommands[].name]}] | from_entries' "$schema_rs")
+    # D14: the oracle's tree lists `ado security` twice, so the projection below
+    # is deduped by name — clap cannot carry the duplicate and this build's tree
+    # has one node. The D14 check above proves the oracle still duplicates, so the
+    # dedupe cannot go stale, and the name check above still fails on any Rust
+    # node the oracle does not have.
     node_projection='[ .schema.subcommands[]
         | select(.name as $node | $nodes | index($node))
         | . as $self
@@ -4509,7 +4838,7 @@ if exits_ok schema-json &&
             options: ([ .options[] | select(.name as $o | $names | index($o) | not) ] | sort_by(.name)),
             subcommands: ([ $self.subcommands[].name ]
                 | map(select(. as $child | ($children[$self.name] // []) | index($child))) | sort) } ]
-      | sort_by(.name)'
+      | sort_by(.name) | unique_by(.name)'
     node_projection_normalised='[ .schema.subcommands[]
         | select(.name as $node | $nodes | index($node))
         | . as $self
@@ -4519,7 +4848,7 @@ if exits_ok schema-json &&
                 | if .name == "write-to-file" then .name = "write_to_file" else . end ] | sort_by(.name)),
             subcommands: ([ $self.subcommands[].name ]
                 | map(select(. as $child | ($children[$self.name] // []) | index($child))) | sort) } ]
-      | sort_by(.name)'
+      | sort_by(.name) | unique_by(.name)'
 
     jq -S --argjson nodes "$shared_names" --argjson names "$globals_names" --argjson children "$shared_children" "$node_projection" "$schema_el" >"$work/schema.nodes.elixir"
     jq -S --argjson nodes "$shared_names" --argjson names "$globals_names" --argjson children "$shared_children" "$node_projection" "$schema_rs" >"$work/schema.nodes.rust"
@@ -4535,10 +4864,12 @@ if exits_ok schema-json &&
     fi
 
     # Node docs: equal, or this build's §8 wording for the nodes this wave wrote,
-    # or the Rust doc is the oracle's prefix (D10).
+    # or the Rust doc is the oracle's prefix (D10). The reads take the first entry
+    # per name, because the oracle lists `ado security` twice (D14) and a
+    # concatenated double doc would read as a truncation that is not there.
     while IFS= read -r node; do
-        el_doc=$(jq -r --arg node "$node" '.schema.subcommands[] | select(.name == $node) | .doc' "$schema_el")
-        rs_doc=$(jq -r --arg node "$node" '.schema.subcommands[] | select(.name == $node) | .doc' "$schema_rs")
+        el_doc=$(jq -r --arg node "$node" 'first(.schema.subcommands[] | select(.name == $node) | .doc)' "$schema_el")
+        rs_doc=$(jq -r --arg node "$node" 'first(.schema.subcommands[] | select(.name == $node) | .doc)' "$schema_rs")
 
         if [[ $el_doc == "$rs_doc" ]]; then
             continue

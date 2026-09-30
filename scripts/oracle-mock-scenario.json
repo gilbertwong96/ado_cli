@@ -1190,6 +1190,45 @@
     {"method": "POST", "path": "/ado-harness/BinaryUpload/_apis/test/runs/506/attachments", "json": {"id": "att-6"}},
 
     {"method": "POST", "path": "/missing/Alpha/_apis/test/runs", "status": 404, "json": {"message": "The project does not exist."}},
-    {"method": "POST", "path": "/broken/Alpha/_apis/test/runs", "status": 500, "json": {"message": "TF400813: The server is unavailable."}}
+    {"method": "POST", "path": "/broken/Alpha/_apis/test/runs", "status": 500, "json": {"message": "TF400813: The server is unavailable."}},
+
+    {"method": "GET", "path": "/sec/_apis/projects", "fixture": "projects_list.json"},
+    {"method": "GET", "path": "/sec/_apis/connectionData", "json": {"authenticatedUser": {"id": "c1d2e3f4-0002-0002-0002-000000000002", "displayName": "Ada Example", "subjectDescriptor": "aad.QwErTyUiOpAsDfGhJkLzXcVbNm"}}},
+    {"method": "POST", "path": "/sec/_apis/accesscontrolentries/b7e84409-6553-448a-bbb2-af228e07cbeb", "json": {"count": 1, "value": [{"descriptor": "aad.QwErTyUiOpAsDfGhJkLzXcVbNm", "allow": 8, "deny": 0}]}},
+
+    {"method": "GET", "path": "/sec-revoke/_apis/connectionData", "json": {"authenticatedUser": {"id": "c1d2e3f4-0002-0002-0002-000000000002", "subjectDescriptor": "aad.QwErTyUiOpAsDfGhJkLzXcVbNm"}}},
+    {"method": "POST", "path": "/sec-revoke/_apis/accesscontrolentries/b7e84409-6553-448a-bbb2-af228e07cbeb", "request_body": {"token": "11111111-2222-3333-4444-555555555555", "merge": false, "accessControlEntries": [{"descriptor": "aad.QwErTyUiOpAsDfGhJkLzXcVbNm", "allow": 0, "deny": 0, "extendedInfo": {}}]}, "json": {"count": 1, "value": []}},
+
+    {"method": "GET", "path": "/sec-novalue/_apis/projects", "json": {"count": 0}},
+    {"method": "GET", "path": "/sec-noid/_apis/projects", "json": {"count": 1, "value": [{"name": "Alpha"}]}},
+    {"method": "GET", "path": "/sec-proj-broken/_apis/projects", "status": 500, "json": {"message": "TF400813: The server is unavailable."}},
+    {"method": "GET", "path": "/sec-proj-missing/_apis/projects", "status": 404, "json": {"message": "The project does not exist."}},
+
+    {"method": "GET", "path": "/sec-msa/_apis/projects", "fixture": "projects_list.json"},
+    {"method": "GET", "path": "/sec-msa/_apis/connectionData", "json": {"authenticatedUser": {"id": "c1d2e3f4-0002-0002-0002-000000000002", "subjectDescriptor": "msa.MTIzNDU2Nzg5"}}},
+
+    {"method": "GET", "path": "/sec-nodesc/_apis/projects", "fixture": "projects_list.json"},
+    {"method": "GET", "path": "/sec-nodesc/_apis/connectionData", "json": {"authenticatedUser": {"id": "c1d2e3f4-0002-0002-0002-000000000002", "displayName": "Ada Example"}}},
+
+    {"method": "GET", "path": "/sec-nodesc-empty/_apis/projects", "fixture": "projects_list.json"},
+    {"method": "GET", "path": "/sec-nodesc-empty/_apis/connectionData", "json": {"authenticatedUser": {"id": "c1d2e3f4-0002-0002-0002-000000000002", "subjectDescriptor": ""}}},
+
+    {"method": "GET", "path": "/sec-conn-broken/_apis/projects", "fixture": "projects_list.json"},
+    {"method": "GET", "path": "/sec-conn-broken/_apis/connectionData", "status": 500, "json": {"message": "TF400813: The server is unavailable."}},
+
+    {"method": "GET", "path": "/sec-reject/_apis/connectionData", "json": {"authenticatedUser": {"id": "c1d2e3f4-0002-0002-0002-000000000002", "subjectDescriptor": "aad.QwErTyUiOpAsDfGhJkLzXcVbNm"}}},
+    {"method": "POST", "path": "/sec-reject/_apis/accesscontrolentries/b7e84409-6553-448a-bbb2-af228e07cbeb", "request_body": {"token": "11111111-2222-3333-4444-555555555555", "merge": true, "accessControlEntries": [{"descriptor": "aad.QwErTyUiOpAsDfGhJkLzXcVbNm", "allow": 8, "deny": 0, "extendedInfo": {}}]}, "status": 403, "json": {"message": "TF400813: The user is not authorized.", "$id": "1"}},
+
+    {"method": "GET", "path": "/sec-revoke-reject/_apis/connectionData", "json": {"authenticatedUser": {"id": "c1d2e3f4-0002-0002-0002-000000000002", "subjectDescriptor": "aad.QwErTyUiOpAsDfGhJkLzXcVbNm"}}},
+    {"method": "POST", "path": "/sec-revoke-reject/_apis/accesscontrolentries/b7e84409-6553-448a-bbb2-af228e07cbeb", "request_body": {"token": "11111111-2222-3333-4444-555555555555", "merge": false, "accessControlEntries": [{"descriptor": "aad.QwErTyUiOpAsDfGhJkLzXcVbNm", "allow": 0, "deny": 0, "extendedInfo": {}}]}, "status": 403, "json": {"message": "TF400813: The user is not authorized.", "$id": "1"}},
+
+    {"method": "GET", "path": "/sec-auth/_apis/connectionData", "json": {"authenticatedUser": {"id": "c1d2e3f4-0002-0002-0002-000000000002", "subjectDescriptor": "aad.QwErTyUiOpAsDfGhJkLzXcVbNm"}}},
+    {"method": "POST", "path": "/sec-auth/_apis/accesscontrolentries/b7e84409-6553-448a-bbb2-af228e07cbeb", "request_body": {"token": "11111111-2222-3333-4444-555555555555", "merge": true, "accessControlEntries": [{"descriptor": "aad.QwErTyUiOpAsDfGhJkLzXcVbNm", "allow": 8, "deny": 0, "extendedInfo": {}}]}, "status": 401, "json": {"message": "TF400813: The token is not valid."}},
+
+    {"method": "GET", "path": "/sec-bad/_apis/connectionData", "json": {"authenticatedUser": {"id": "c1d2e3f4-0002-0002-0002-000000000002", "subjectDescriptor": "aad.QwErTyUiOpAsDfGhJkLzXcVbNm"}}},
+    {"method": "POST", "path": "/sec-bad/_apis/accesscontrolentries/b7e84409-6553-448a-bbb2-af228e07cbeb", "request_body": {"token": "11111111-2222-3333-4444-555555555555", "merge": true, "accessControlEntries": [{"descriptor": "aad.QwErTyUiOpAsDfGhJkLzXcVbNm", "allow": 8, "deny": 0, "extendedInfo": {}}]}, "status": 400, "json": {"message": "The descriptor is not valid."}},
+
+    {"method": "GET", "path": "/sec-acl-broken/_apis/connectionData", "json": {"authenticatedUser": {"id": "c1d2e3f4-0002-0002-0002-000000000002", "subjectDescriptor": "aad.QwErTyUiOpAsDfGhJkLzXcVbNm"}}},
+    {"method": "POST", "path": "/sec-acl-broken/_apis/accesscontrolentries/b7e84409-6553-448a-bbb2-af228e07cbeb", "request_body": {"token": "11111111-2222-3333-4444-555555555555", "merge": true, "accessControlEntries": [{"descriptor": "aad.QwErTyUiOpAsDfGhJkLzXcVbNm", "allow": 8, "deny": 0, "extendedInfo": {}}]}, "status": 500, "json": {"message": "TF400813: The server is unavailable."}}
   ]
 }
