@@ -1,0 +1,31 @@
+{
+  "count": 3,
+  "value": [
+    {
+      "id": 101,
+      "name": "Nightly Regression",
+      "state": "Completed",
+      "totalTests": 42,
+      "passedTests": 40,
+      "runStatistics": [
+        {"outcome": "TotalTests", "count": 42},
+        {"outcome": "Passed", "count": 40},
+        {"outcome": "Failed", "count": 2}
+      ]
+    },
+    {
+      "id": 102,
+      "name": "A very long test run name that goes past the thirty-nine character slice",
+      "runStatistics": [
+        {"state": "TotalTests", "count": 12},
+        {"state": "Passed", "count": 11},
+        {"outcome": "Failed", "count": null}
+      ]
+    },
+    {
+      "id": 103,
+      "name": "Queued run",
+      "state": "InProgress"
+    }
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "id": 42,
+  "name": "Nightly Regression",
+  "state": "Completed",
+  "startedDate": "2026-09-26T22:00:00.000Z",
+  "completedDate": "2026-09-26T22:31:07.417Z",
+  "totalTests": 42,
+  "passedTests": 40,
+  "runStatistics": [
+    {"outcome": "TotalTests", "count": 42},
+    {"outcome": "Passed", "count": 40},
+    {"outcome": "Failed", "count": 2}
+  ],
+  "build": {"id": 501, "name": "20260926.1"}
+}
