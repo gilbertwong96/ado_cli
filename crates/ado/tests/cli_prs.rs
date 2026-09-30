@@ -2540,6 +2540,61 @@ fn diff_unified_reads_the_repo_diff_and_joins_the_files() {
     assert_eq!(requests[3].path, diff_commits_path());
 }
 
+/// D36: a `/diffs/commits` body without a `changes` key is this build's
+/// `api_error`, not an empty diff. The wrong fix the row names is a fallback to
+/// an empty list, which would exit 0 with a document claiming there is nothing to
+/// see — so the pin is the error class *and* the empty stdout's absence.
+#[test]
+fn diff_unified_without_a_changes_key_is_an_api_error() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "GET",
+        &diff_changes_path("137", "2"),
+        MockResponse::json(200, diff_changes()),
+    );
+    expect_diff_iterations(&server, "137", diff_iterations());
+    server.expect_query(
+        "GET",
+        &diff_commits_path(),
+        &[
+            ("baseVersionType", "commit"),
+            ("baseVersion", "aaaa1111"),
+            ("targetVersionType", "commit"),
+            ("targetVersion", "cccc3333"),
+        ],
+        MockResponse::json(200, json!({})),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "prs",
+            "diff",
+            "Alpha",
+            "Alpha.Core",
+            "137",
+            "--iteration",
+            "2",
+            "--unified",
+            "--json",
+        ],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    let envelope: Value =
+        serde_json::from_str(&stdout_of(&output)).expect("stdout is one JSON document");
+    assert_eq!(envelope["ok"], json!(false));
+    assert_eq!(envelope["error"]["code"], json!("api_error"));
+    assert_eq!(envelope["error"]["message"], json!("No changes found"));
+    assert_eq!(
+        server.received().len(),
+        3,
+        "no content request once the diff response is rejected"
+    );
+}
+
 /// `--iteration N` skips the first iteration-list GET; `--file` with it still
 /// re-reads the list (captured: changes first, then the list).
 #[test]
