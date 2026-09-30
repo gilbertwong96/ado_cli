@@ -273,6 +273,8 @@ fn iteration_detail(iteration: &Value) -> String {
         value_text(attributes.and_then(|attributes| attributes.get("finishDate")))
     ));
 
+    detail.push('\n');
+
     detail
 }
 
@@ -375,7 +377,7 @@ mod tests {
         assert_eq!(
             detail,
             format!(
-                "\nIteration Details\n\n{}\n  ID:    i1\n  Name:  Sprint 24\n  Path:  \n  Start: \n  Finish: \n",
+                "\nIteration Details\n\n{}\n  ID:    i1\n  Name:  Sprint 24\n  Path:  \n  Start: \n  Finish: \n\n",
                 "─".repeat(60)
             ),
             "a missing attribute interpolates as the empty string, trailing space and all"

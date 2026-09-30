@@ -263,6 +263,8 @@ fn team_detail(team: &Value) -> String {
     ));
     detail.push_str(&format!("  URL:         {}\n", value_text(team.get("url"))));
 
+    detail.push('\n');
+
     detail
 }
 
@@ -388,7 +390,7 @@ mod tests {
         assert_eq!(
             detail,
             format!(
-                "\nTeam Details\n\n{}\n  ID:          team-1\n  Name:        Alpha Team\n  Description: (none)\n  URL:         \n",
+                "\nTeam Details\n\n{}\n  ID:          team-1\n  Name:        Alpha Team\n  Description: (none)\n  URL:         \n\n",
                 "─".repeat(60)
             ),
             "a missing description falls back; a missing url prints empty"

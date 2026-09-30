@@ -309,7 +309,9 @@ fn show_renders_the_detail() {
             "  Path:      \\Alpha\\Team\n",
             "  Structure: hierarchy\n",
             "  URL:       https://dev.azure.com/ado-harness/Alpha/_apis/wit/classificationNodes/Areas/Team\n",
-        )
+            "\n",
+        ),
+        "the module's detail, with the trailing blank line its `writeln(\"\")` writes"
     );
 }
 

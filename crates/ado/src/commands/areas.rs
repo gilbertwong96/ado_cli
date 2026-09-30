@@ -168,6 +168,8 @@ fn area_detail(area: &Value) -> String {
         detail.push_str(&format!("  URL:       {url}\n"));
     }
 
+    detail.push('\n');
+
     detail
 }
 
@@ -246,7 +248,7 @@ mod tests {
         assert_eq!(
             detail,
             format!(
-                "\nArea Path Details\n\n{}\n  ID:        2\n  Name:      Team\n  Path:      \\Alpha\\Team\n  Structure: hierarchy\n",
+                "\nArea Path Details\n\n{}\n  ID:        2\n  Name:      Team\n  Path:      \\Alpha\\Team\n  Structure: hierarchy\n\n",
                 "-".repeat(60)
             )
         );

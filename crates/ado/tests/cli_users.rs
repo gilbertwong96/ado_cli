@@ -313,7 +313,9 @@ fn show_renders_the_detail() {
             "  Name:    Ada Lovelace\n",
             "  License: express\n",
             "  Status:  active\n",
-        )
+            "\n",
+        ),
+        "the module's detail, with the trailing blank line its `writeln(\"\")` writes"
     );
 }
 

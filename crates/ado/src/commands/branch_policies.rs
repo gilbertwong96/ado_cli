@@ -261,6 +261,8 @@ fn policy_detail(policy: &Value) -> String {
         value_text(policy.get("createdDate"))
     ));
 
+    detail.push('\n');
+
     detail
 }
 
@@ -437,6 +439,7 @@ mod tests {
                 "  Blocking:  false\n",
                 "  Enabled:   true\n",
                 "  Created:   2026-09-01T10:00:00.000Z\n",
+                "\n",
             )
         );
     }

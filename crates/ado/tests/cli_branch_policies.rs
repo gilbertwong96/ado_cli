@@ -389,7 +389,9 @@ fn show_renders_the_module_detail() {
             "  Blocking:  false\n",
             "  Enabled:   true\n",
             "  Created:   2026-09-01T10:00:00.000Z\n",
-        )
+            "\n",
+        ),
+        "the module's detail, with the trailing blank line its `writeln(\"\")` writes"
     );
 }
 

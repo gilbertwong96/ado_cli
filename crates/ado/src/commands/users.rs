@@ -172,6 +172,8 @@ fn user_detail(user: &Value) -> String {
         value_text(access.and_then(|access| access.get("status")))
     ));
 
+    detail.push('\n');
+
     detail
 }
 
@@ -251,7 +253,7 @@ mod tests {
         assert_eq!(
             detail,
             format!(
-                "\nUser Details\n\n{}\n  ID:      user-1\n  Email:   ada@example.com\n  Name:    Ada Lovelace\n  License: express\n  Status:  active\n",
+                "\nUser Details\n\n{}\n  ID:      user-1\n  Email:   ada@example.com\n  Name:    Ada Lovelace\n  License: express\n  Status:  active\n\n",
                 "─".repeat(60)
             )
         );
@@ -264,7 +266,7 @@ mod tests {
         assert_eq!(
             detail,
             format!(
-                "\nUser Details\n\n{}\n  ID:      user-1\n  Email:   \n  Name:    \n  License: \n  Status:  \n",
+                "\nUser Details\n\n{}\n  ID:      user-1\n  Email:   \n  Name:    \n  License: \n  Status:  \n\n",
                 "─".repeat(60)
             )
         );

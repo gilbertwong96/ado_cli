@@ -313,7 +313,9 @@ fn show_renders_the_detail() {
             "  Name:        Alpha Team\n",
             "  Description: The alpha team\n",
             "  URL:         https://dev.azure.com/myorg/_apis/projects/Alpha/teams/team-1\n",
-        )
+            "\n",
+        ),
+        "the module's detail, with the trailing blank line its `writeln(\"\")` writes"
     );
 }
 
