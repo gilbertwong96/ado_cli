@@ -54,9 +54,7 @@ pub fn create(
         Some(parent) => area_node_path(project, &parent),
         None => areas_path(project),
     };
-    let area = context
-        .client()?
-        .post(&path, &json!({ "name": name }), &[])?;
+    let area = context.client()?.post(&path, &name_body(name), &[])?;
 
     Ok(context.json_or_report(ok_value(area.clone()), || {
         Report::Text(format!(
@@ -75,9 +73,7 @@ pub fn update(
     name: &str,
 ) -> Result<Report, AdoError> {
     let path = area_node_path(project, area_path);
-    let area = context
-        .client()?
-        .patch(&path, &json!({ "name": name }), &[])?;
+    let area = context.client()?.patch(&path, &name_body(name), &[])?;
 
     Ok(context.json_or_report(ok_value(area.clone()), || {
         Report::Text(format!(
@@ -95,6 +91,12 @@ pub fn delete(context: &mut Context, project: &str, area_path: &str) -> Result<R
     let message = format!("Area '{area_path}' deleted.");
 
     Ok(context.json_or_report(ok_message(&message), || Report::Text(message)))
+}
+
+/// The module's `%{"name" => name}`, which both writes send (the frozen
+/// `create_area/1` and `update_area/1` build the same map inline).
+fn name_body(name: &str) -> Value {
+    json!({ "name": name })
 }
 
 /// The collection path: `/{project}/_apis/wit/classificationNodes/areas`.
@@ -260,6 +262,16 @@ mod tests {
 
         assert!(detail.contains("  Structure: \n"), "detail: {detail:?}");
         assert!(!detail.contains("  URL:"), "detail: {detail:?}");
+    }
+
+    #[test]
+    fn the_body_is_the_modules_name_key() {
+        assert_eq!(name_body("Team"), json!({"name": "Team"}));
+        assert_eq!(
+            name_body("Team").as_object().map(serde_json::Map::len),
+            Some(1),
+            "nothing else goes into the body"
+        );
     }
 
     #[test]
