@@ -101,10 +101,12 @@ fn schema_root_lists_exactly_the_shipped_subcommands() {
         [
             "ado agent-pools",
             "ado areas",
+            "ado banners",
             "ado branch-policies",
             "ado completion",
             "ado connections",
             "ado extensions",
+            "ado imports",
             "ado iterations",
             "ado login",
             "ado logout",
@@ -1651,4 +1653,108 @@ fn schema_extensions_node_lists_every_shipped_subcommand() {
         )["doc"],
         json!("Extension name")
     );
+}
+
+/// The two Task 5 areas: `imports` and `banners`, whose group docs and leaves
+/// are the frozen modules' own `doc:` strings (`task5/imports-banners-schema.json`).
+#[test]
+fn schema_imports_node_lists_every_shipped_subcommand() {
+    let imports = find_node("imports").expect("the imports node");
+
+    assert_eq!(
+        imports["doc"],
+        json!(
+            "Manage Git repository imports (e.g. GitHub → Azure DevOps migration). Creates a new Azure DevOps repo and populates it with the git history, branches, and tags from a source repository. The new repo is a one-time copy, not a mirror."
+        )
+    );
+    assert_eq!(subcommands(&imports).len(), 3);
+    assert_eq!(
+        subcommands(&imports)
+            .iter()
+            .map(|sub| sub["name"].as_str().expect("a subcommand name"))
+            .collect::<Vec<_>>(),
+        ["ado imports list", "ado imports show", "ado imports create"],
+        "the module's declaration order"
+    );
+
+    let list = find_node("imports list").expect("the list node");
+    assert_eq!(
+        option_names(&list),
+        ["json", "org", "pat", "server", "top", "verbose"],
+        "--top is the module's one option"
+    );
+    assert_eq!(option(&list, "top")["type"], json!("integer"));
+    assert_eq!(
+        option(&list, "top")["doc"],
+        json!("Maximum number of imports to return. Default 50.")
+    );
+    assert_eq!(argument(&list, "project")["doc"], json!("Project name or ID"));
+    assert_eq!(argument(&list, "project")["required"], json!(false));
+
+    let show = find_node("imports show").expect("the show node");
+    assert_eq!(option_names(&show), GLOBALS, "show declares no option");
+    assert_eq!(argument(&show, "import_id")["type"], json!("string"));
+    assert_eq!(
+        argument(&show, "import_id")["doc"],
+        json!("Import request ID (UUID, returned by `create`)")
+    );
+
+    let create = find_node("imports create").expect("the create node");
+    assert_eq!(
+        option_names(&create),
+        ["json", "org", "password", "pat", "server", "url", "user", "verbose"],
+        "url/user/password, and no others"
+    );
+    assert_eq!(option(&create, "url")["required"], json!(true));
+    assert_eq!(option(&create, "user")["required"], json!(false));
+    assert_eq!(option(&create, "password")["required"], json!(false));
+    assert_eq!(
+        argument(&create, "repo_name")["doc"],
+        json!("Name for the new repository (must not already exist in the project)")
+    );
+}
+
+#[test]
+fn schema_banners_node_lists_every_shipped_subcommand() {
+    let banners = find_node("banners").expect("the banners node");
+
+    assert_eq!(
+        banners["doc"],
+        json!(
+            "Manage the organization-wide notification banner that appears at the top of the Azure DevOps web UI for every user. Useful for maintenance windows or org-wide announcements."
+        )
+    );
+    assert_eq!(banners["arguments"], json!([]));
+    assert_eq!(option_names(&banners), GLOBALS, "the group declares no option");
+    assert_eq!(
+        subcommands(&banners)
+            .iter()
+            .map(|sub| sub["name"].as_str().expect("a subcommand name"))
+            .collect::<Vec<_>>(),
+        ["ado banners show", "ado banners set", "ado banners delete"],
+        "the module's declaration order"
+    );
+
+    let show = find_node("banners show").expect("the show node");
+    assert_eq!(option_names(&show), GLOBALS, "show declares no option");
+    assert_eq!(show["arguments"], json!([]));
+
+    let set = find_node("banners set").expect("the set node");
+    assert_eq!(
+        option_names(&set),
+        ["json", "level", "message", "org", "pat", "server", "type", "verbose"]
+    );
+    assert_eq!(option(&set, "message")["required"], json!(true));
+    assert_eq!(option(&set, "type")["required"], json!(false));
+    assert_eq!(option(&set, "level")["required"], json!(false));
+    assert_eq!(
+        option(&set, "message")["doc"],
+        json!(
+            "Banner text shown to users. Markdown is not supported; the text is rendered as plain text. Multi-word values do not need quoting (joined until next flag). Use @<file> or - to read from a file/stdin."
+        )
+    );
+
+    let delete = find_node("banners delete").expect("the delete node");
+    assert_eq!(option_names(&delete), GLOBALS, "delete declares no option");
+    assert_eq!(delete["arguments"], json!([]));
 }
