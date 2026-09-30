@@ -2395,6 +2395,7 @@ run_mock_cases() {
         teams show Alpha team-1
 
     rest_rule='D22: the email id is a path segment here, percent-encoded more strictly than the frozen URI.encode/1 (which left the @ alone), so the request paths differ and the envelopes do not'
+    rest_norm='map(.path |= sub("%40"; "@"))'
     mock_case teams-show-email "teams show (email id)" \
         teams show Alpha ada@example.com --json
 
@@ -2502,6 +2503,7 @@ run_mock_cases() {
         users show user-1
 
     rest_rule='D22: the email id is a path segment here, percent-encoded more strictly than the frozen URI.encode/1 (which left the @ alone), so the request paths differ and the envelopes do not'
+    rest_norm='map(.path |= sub("%40"; "@"))'
     mock_case users-show-email "users show (email id)" \
         users show ada@example.com --json
 
