@@ -147,6 +147,42 @@ fn list_sends_the_pipelines_path_and_emits_the_oracle_envelope() {
     assert_list_request(&received[0], vec![api_version()]);
 }
 
+#[test]
+fn list_404_is_the_not_found_envelope() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "GET",
+        "/myorg/Missing/_apis/pipelines",
+        MockResponse::from_fixture("error_404").with_status(404),
+    );
+
+    let output = run(&home, &server, &["pipelines", "list", "Missing", "--json"]);
+
+    assert_not_found_envelope(
+        &output,
+        "Resource not found. Check the project/repo/build ID and your permissions.",
+    );
+}
+
+#[test]
+fn list_500_is_the_api_error_envelope() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "GET",
+        "/myorg/Broken/_apis/pipelines",
+        MockResponse::json(
+            500,
+            json!({"message": "TF400813: The user is not authorized."}),
+        ),
+    );
+
+    let output = run(&home, &server, &["pipelines", "list", "Broken", "--json"]);
+
+    assert_api_error_envelope(&output);
+}
+
 /// The module's own parameter order (`$top`, then `folder`), with the wire forms
 /// the client encodes: `$` is `%24`, `/` is `%2F`.
 #[test]
@@ -1147,6 +1183,19 @@ fn assert_not_found_envelope(output: &Output, message: &str) {
     assert_eq!(envelope["error"]["message"], json!(message));
 }
 
+fn assert_api_error_envelope(output: &Output) {
+    assert_eq!(output.status.code(), Some(1));
+    let envelope = mutation_envelope_failure(output);
+
+    assert_eq!(envelope["ok"], json!(false));
+    assert_eq!(envelope["error"]["code"], json!("api_error"));
+    assert_eq!(envelope["error"]["status"], json!(500));
+    assert_eq!(
+        envelope["error"]["message"],
+        json!("Azure DevOps server error. Retry later.")
+    );
+}
+
 /// R4's class, asserted here: the oracle's CliMate never validates the required
 /// option and exits 0 with nothing on either stream; this build's clap makes it a
 /// loud usage error before any credential or request (D5/D23).
@@ -1509,6 +1558,50 @@ fn vars_list_sends_top_and_emits_the_value_envelope() {
         received[0].query_pairs(),
         vec![api_version(), pair("%24top", "10")]
     );
+}
+
+#[test]
+fn vars_list_404_is_the_not_found_envelope() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "GET",
+        VARS_PATH,
+        MockResponse::from_fixture("error_404").with_status(404),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &["pipelines", "vars", "list", "Alpha", "--json"],
+    );
+
+    assert_not_found_envelope(
+        &output,
+        "Resource not found. Check the project/repo/build ID and your permissions.",
+    );
+}
+
+#[test]
+fn vars_list_500_is_the_api_error_envelope() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "GET",
+        VARS_PATH,
+        MockResponse::json(
+            500,
+            json!({"message": "TF400813: The user is not authorized."}),
+        ),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &["pipelines", "vars", "list", "Alpha", "--json"],
+    );
+
+    assert_api_error_envelope(&output);
 }
 
 #[test]
@@ -2415,6 +2508,28 @@ fn variables_list_404_reports_the_pipeline_not_found_message() {
 }
 
 #[test]
+fn variables_list_500_is_the_api_error_envelope() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "GET",
+        SHOW_PATH,
+        MockResponse::json(
+            500,
+            json!({"message": "TF400813: The user is not authorized."}),
+        ),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &["pipelines", "variables", "list", "Alpha", "12", "--json"],
+    );
+
+    assert_api_error_envelope(&output);
+}
+
+#[test]
 fn variables_create_patches_the_existing_pipeline_with_the_new_variable() {
     let home = TempHome::new();
     let server = MockServer::start();
@@ -2769,6 +2884,50 @@ fn secure_files_list_without_top_sends_no_top_param() {
 
     assert_success(&output);
     assert_eq!(server.received()[0].query_pairs(), vec![api_version()]);
+}
+
+#[test]
+fn secure_files_list_404_is_the_not_found_envelope() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "GET",
+        SECURE_FILES_PATH,
+        MockResponse::from_fixture("error_404").with_status(404),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &["pipelines", "secure_files", "list", "Alpha", "--json"],
+    );
+
+    assert_not_found_envelope(
+        &output,
+        "Resource not found. Check the project/repo/build ID and your permissions.",
+    );
+}
+
+#[test]
+fn secure_files_list_500_is_the_api_error_envelope() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "GET",
+        SECURE_FILES_PATH,
+        MockResponse::json(
+            500,
+            json!({"message": "TF400813: The user is not authorized."}),
+        ),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &["pipelines", "secure_files", "list", "Alpha", "--json"],
+    );
+
+    assert_api_error_envelope(&output);
 }
 
 #[test]
@@ -3579,6 +3738,28 @@ fn folders_list_404_is_the_error_envelope() {
         &output,
         "Resource not found. Check the project/repo/build ID and your permissions.",
     );
+}
+
+#[test]
+fn folders_list_500_is_the_api_error_envelope() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "GET",
+        "/myorg/Broken/_apis/pipelines",
+        MockResponse::json(
+            500,
+            json!({"message": "TF400813: The user is not authorized."}),
+        ),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &["pipelines-folders", "list", "Broken", "--json"],
+    );
+
+    assert_api_error_envelope(&output);
 }
 
 #[test]

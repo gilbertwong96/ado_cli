@@ -269,6 +269,65 @@ fn list_encodes_path_separators_strictly() {
 }
 
 #[test]
+fn list_404_is_the_not_found_envelope() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "GET",
+        ARTIFACTS_PATH,
+        MockResponse::from_fixture("error_404").with_status(404),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &["pipelines-artifacts", "list", "Alpha", "7", "99", "--json"],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    let envelope: Value =
+        serde_json::from_str(&stdout_of(&output)).expect("stdout is one JSON document");
+    assert_eq!(envelope["ok"], json!(false));
+    assert_eq!(envelope["error"]["code"], json!("not_found"));
+    assert_eq!(envelope["error"]["status"], json!(404));
+    assert_eq!(
+        envelope["error"]["message"],
+        json!("Resource not found. Check the project/repo/build ID and your permissions.")
+    );
+}
+
+#[test]
+fn list_500_is_the_api_error_envelope() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "GET",
+        ARTIFACTS_PATH,
+        MockResponse::json(
+            500,
+            json!({"message": "TF400813: The user is not authorized."}),
+        ),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &["pipelines-artifacts", "list", "Alpha", "7", "99", "--json"],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    let envelope: Value =
+        serde_json::from_str(&stdout_of(&output)).expect("stdout is one JSON document");
+    assert_eq!(envelope["ok"], json!(false));
+    assert_eq!(envelope["error"]["code"], json!("api_error"));
+    assert_eq!(envelope["error"]["status"], json!(500));
+    assert_eq!(
+        envelope["error"]["message"],
+        json!("Azure DevOps server error. Retry later.")
+    );
+}
+
+#[test]
 fn list_empty_answer_human_output_says_no_artifacts_found() {
     let home = TempHome::new();
     let server = MockServer::start();

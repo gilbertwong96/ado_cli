@@ -172,6 +172,65 @@ fn list_sends_the_builds_path_and_emits_the_oracle_envelope() {
     assert_query(&received[0], BUILDS_PATH, vec![api_version()]);
 }
 
+#[test]
+fn list_404_is_the_not_found_envelope() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "GET",
+        "/myorg/Missing/_apis/build/builds",
+        MockResponse::from_fixture("error_404").with_status(404),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &["pipelines-builds", "list", "Missing", "--json"],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    let envelope: Value =
+        serde_json::from_str(&stdout_of(&output)).expect("stdout is one JSON document");
+    assert_eq!(envelope["ok"], json!(false));
+    assert_eq!(envelope["error"]["code"], json!("not_found"));
+    assert_eq!(envelope["error"]["status"], json!(404));
+    assert_eq!(
+        envelope["error"]["message"],
+        json!("Resource not found. Check the project/repo/build ID and your permissions.")
+    );
+}
+
+#[test]
+fn list_500_is_the_api_error_envelope() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "GET",
+        "/myorg/Broken/_apis/build/builds",
+        MockResponse::json(
+            500,
+            json!({"message": "TF400813: The user is not authorized."}),
+        ),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &["pipelines-builds", "list", "Broken", "--json"],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    let envelope: Value =
+        serde_json::from_str(&stdout_of(&output)).expect("stdout is one JSON document");
+    assert_eq!(envelope["ok"], json!(false));
+    assert_eq!(envelope["error"]["code"], json!("api_error"));
+    assert_eq!(envelope["error"]["status"], json!(500));
+    assert_eq!(
+        envelope["error"]["message"],
+        json!("Azure DevOps server error. Retry later.")
+    );
+}
+
 /// The module's own parameter order (`$top`, then `definitions`), with the wire
 /// forms the client encodes: `$` is `%24`, `,` is `%2C`.
 #[test]

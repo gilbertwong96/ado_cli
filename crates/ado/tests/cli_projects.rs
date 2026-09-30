@@ -360,6 +360,33 @@ fn list_404_is_the_not_found_envelope() {
 }
 
 #[test]
+fn list_500_is_the_api_error_envelope() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "GET",
+        "/myorg/_apis/projects",
+        MockResponse::json(
+            500,
+            json!({"message": "TF400813: The user is not authorized."}),
+        ),
+    );
+
+    let output = run(&home, &server, &["projects", "list", "--json"]);
+
+    assert_eq!(output.status.code(), Some(1));
+    let envelope: Value =
+        serde_json::from_str(&stdout_of(&output)).expect("stdout is one JSON document");
+    assert_eq!(envelope["ok"], json!(false));
+    assert_eq!(envelope["error"]["code"], json!("api_error"));
+    assert_eq!(envelope["error"]["status"], json!(500));
+    assert_eq!(
+        envelope["error"]["message"],
+        json!("Azure DevOps server error. Retry later.")
+    );
+}
+
+#[test]
 fn show_sends_the_project_path_and_emits_the_value_envelope() {
     let home = TempHome::new();
     let server = MockServer::start();
