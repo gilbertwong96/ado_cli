@@ -1,0 +1,8 @@
+{
+  "id": "banners",
+  "value": {
+    "message": "Scheduled maintenance tonight",
+    "type": "warning",
+    "level": "projectCollection"
+  }
+}

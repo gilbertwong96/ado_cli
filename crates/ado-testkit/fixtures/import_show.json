@@ -1,0 +1,11 @@
+{
+  "id": "imp-1",
+  "status": "inProgress",
+  "url": "https://dev.azure.com/ado-harness/Alpha/_apis/git/repositories/NewRepo/importRequests/imp-1",
+  "repository": {"id": "repo-1", "name": "NewRepo"},
+  "parameters": {
+    "gitSource": {"url": "https://github.com/owner/repo.git"},
+    "deleteServiceEndpointAfterImportIsDone": false
+  },
+  "detailedStatus": {"allStepsSucceeded": false, "errorMessage": null}
+}

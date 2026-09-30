@@ -1,0 +1,33 @@
+{
+  "count": 3,
+  "value": [
+    {
+      "id": "imp-1",
+      "status": "completed",
+      "url": "https://dev.azure.com/ado-harness/Alpha/_apis/git/repositories/NewRepo/importRequests/imp-1",
+      "repository": {"id": "repo-1", "name": "NewRepo"},
+      "parameters": {
+        "gitSource": {"url": "https://github.com/owner/repo.git"},
+        "deleteServiceEndpointAfterImportIsDone": false
+      },
+      "detailedStatus": {"allStepsSucceeded": true, "errorMessage": null}
+    },
+    {
+      "id": "imp-2",
+      "status": "failed",
+      "url": "https://dev.azure.com/ado-harness/Alpha/_apis/git/repositories/Other/importRequests/imp-2",
+      "repository": {"id": "repo-2", "name": "Other"},
+      "parameters": {
+        "gitSource": {"url": "https://github.com/owner/other.git"},
+        "deleteServiceEndpointAfterImportIsDone": false
+      },
+      "detailedStatus": {"allStepsSucceeded": false, "errorMessage": "TF401019: The import failed."}
+    },
+    {
+      "id": "imp-3",
+      "status": "queued",
+      "url": "https://dev.azure.com/ado-harness/Alpha/_apis/git/repositories/Third/importRequests/imp-3",
+      "repository": {"id": "repo-3", "name": "Third"}
+    }
+  ]
+}
