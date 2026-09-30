@@ -287,8 +287,9 @@ parse_check() {
 #     the refusal/proceed contract.
 #
 # A case may set `rest_rule`, `rest_norm`, `envelope_rule`, `status_rule`,
-# `expect_statuses`, `stdout_mode`, `case_org`, `case_pat`, `case_extra`, `case_stdin`
-# or `compare_files` immediately before it; `mock_case` clears them afterwards, so a
+# `expect_statuses`, `expect_oracle_requests`, `expect_rust_requests`,
+# `stdout_mode`, `case_org`, `case_pat`, `case_extra`, `case_stdin` or
+# `compare_files` immediately before it; `mock_case` clears them afterwards, so a
 # rule cannot leak into the next case. A case that meets a difference no rule covers
 # is a finding, not a row to invent.
 #
@@ -308,10 +309,28 @@ parse_check() {
 #     only in that way: the filter is applied to both sides' projections and
 #     anything still different — a missing or extra request included — fails the
 #     case, where a bare `rest_rule` rules the whole request list away. The filter
-#     is symmetric, so it cannot say which side carried the difference: a
-#     candidate that regressed to the oracle's spelling normalises equal and the
-#     case would print MATCH. The strict spellings are pinned by the integration
-#     suites, not here (inventory §10, "What the harness cannot assert").
+#     is symmetric, so it cannot say which side carried the difference.
+#
+# `expect_oracle_requests` and `expect_rust_requests` are the request-direction
+# assertion (C6): each is a jq filter over **one side's** recorded requests, asserted
+# whenever the case sets it — whether or not the two sides differ. Unlike every rule
+# above, which is consulted only after the two projections differ, it can fail on a
+# case that would otherwise read MATCH. It is adopted on the 23 cases whose request
+# difference is a spelling: on 14 of them that spelling is the case's only
+# difference, so a candidate regressing to the oracle's spelling would normalise
+# equal and pass; on the other 9 an envelope rule still fires on another difference,
+# but the request rule would stop firing.
+#
+#   * The filter reads the side's request log as one array (`jq -s`): the mock's log
+#     objects in arrival order, `{method, path, query (exactly as sent, undecoded),
+#     body (as sent), matched, body_matched}`.
+#   * A failing filter fails the case and names the side; a satisfied one is silent,
+#     so an untouched run's output is byte-identical to the run before the adoption.
+#   * The `direction_jq` prelude below is prepended to every filter: `qpair("p")`
+#     asserts a request carried exactly the pair `p`, `any_path("n")`/`any_body("n")`
+#     that a request's path/body contains `n`. Anything else is raw jq over the log
+#     objects. Both sides' spellings are stated, so the case's premise cannot drift
+#     silently on either side.
 
 mock_bin=${ADO_ORACLE_MOCK:-$root/target/debug/mock}
 mock_scenario=${ADO_ORACLE_SCENARIO:-$root/scripts/oracle-mock-scenario.json}
@@ -326,6 +345,8 @@ rest_norm=
 envelope_rule=
 status_rule=
 expect_statuses=
+expect_oracle_requests=
+expect_rust_requests=
 stdout_mode=json
 case_org=$mock_org
 case_pat=$mock_pat
@@ -424,6 +445,7 @@ mock_case() {
     mock_run "$slug" rust "$rust_bin" "$@"
     mock_exit_check "$slug"
     mock_requests_check "$slug"
+    mock_direction_check "$slug"
     mock_stdout_check "$slug"
     mock_files_check "$slug"
 
@@ -432,6 +454,8 @@ mock_case() {
     envelope_rule=
     status_rule=
     expect_statuses=
+    expect_oracle_requests=
+    expect_rust_requests=
     stdout_mode=json
     case_org=$mock_org
     case_pat=$mock_pat
@@ -569,6 +593,42 @@ mock_requests_check() {
     else
         fail "the recorded requests differ: $(first_difference "$work/$slug.requests.elixir" "$work/$slug.requests.rust")"
     fi
+}
+
+# The shared vocabulary the direction filters are written in: `qpair("p")`
+# asserts a request carried exactly the pair `p` as sent (so `state=` cannot match
+# `stateFilter=`), `any_path("n")`/`any_body("n")` that some request's path/body
+# contains `n`. Filters that need more write raw jq over the log objects.
+direction_jq='def qpairs: [.[] | .query | split("&")[] | select(. != "")];
+    def qpair($pair): (qpairs | index($pair)) != null;
+    def any_path($needle): any(.[]; .path | contains($needle));
+    def any_body($needle): any(.[]; (.body // "") | contains($needle));'
+
+# The request-direction assertion: each side's filter runs over that side's
+# recorded requests, read as one array. It is asserted on every case that sets one,
+# whether or not the two sides differ — the one check a case that would otherwise
+# read MATCH can still fail on. A satisfied filter adds no note, so the adoption
+# leaves an unchanged run's output unchanged; a failing one names the side.
+mock_direction_check() {
+    local slug=$1 side var filter file result
+
+    for side in oracle rust; do
+        var=expect_${side}_requests
+        filter=${!var}
+        [[ -z $filter ]] && continue
+
+        if [[ $side == oracle ]]; then
+            file=$work/$slug.elixir.requests
+        else
+            file=$work/$slug.rust.requests
+        fi
+
+        if result=$(jq -s -c -e "$direction_jq $filter" "$file" 2>&1); then
+            continue
+        fi
+
+        fail "the $side requests do not satisfy the direction filter ($result): $filter"
+    done
 }
 
 # stdout with the ANSI colour the oracle wraps its lines in removed (§8, D11) and
@@ -776,10 +836,14 @@ run_mock_cases() {
     mock_case projects-list "projects list" projects list --json
 
     rest_rule='D19: the frozen CLI sends state/top/skip where this build sends the intended stateFilter/$top/$skip'
+    expect_oracle_requests='qpair("state=wellFormed") and qpair("top=1") and qpair("skip=0")'
+    expect_rust_requests='qpair("stateFilter=wellFormed") and qpair("%24top=1") and qpair("%24skip=0")'
     mock_case projects-list-filters "projects list --state/--top/--skip" \
         projects list --state wellFormed --top 1 --skip 0 --json
 
     rest_rule='D19: present means sent — the empty state and the two zeros reach the wire on both sides, under the two spellings'
+    expect_oracle_requests='qpair("state=") and qpair("top=0") and qpair("skip=0")'
+    expect_rust_requests='qpair("stateFilter=") and qpair("%24top=0") and qpair("%24skip=0")'
     mock_case projects-list-zeros "projects list --state '' --top 0 --skip 0" \
         projects list --state "" --top 0 --skip 0 --json
 
@@ -802,6 +866,8 @@ run_mock_cases() {
     mock_case workitems-list "workitems list" workitems list Alpha --json
 
     rest_rule='D20: the frozen CLI sends its malformed WIQL (a leading AND, doubled ANDs) where this build ships valid WIQL'
+    expect_oracle_requests="any_body(\"FROM WorkItems WHERE AND [System.State] = 'Active'\")"
+    expect_rust_requests="any_body(\"FROM WorkItems WHERE [System.TeamProject] = 'Alpha' AND [System.WorkItemType] = 'Bug'\") and (any_body(\"AND AND\") | not)"
     mock_case workitems-list-filters "workitems list --type/--state/--assigned-to" \
         workitems list Alpha --type Bug --state Active --assigned-to alice --json
 
@@ -852,6 +918,8 @@ run_mock_cases() {
         pipelines-artifacts download Alpha 8 99 drop --output out.zip --json
 
     rest_rule='D25: an absolute downloadUrl is requested verbatim with no added api-version, where the frozen client prepends its base and org-injects'
+    expect_oracle_requests='any(.[]; (.path | contains("/ado-harness/http")) and (.path | endswith("/blob/drop.zip")))'
+    expect_rust_requests='any(.[]; .path == "/blob/drop.zip" and .query == "")'
     stdout_mode=text
     compare_files=(out.zip)
     mock_case artifacts-download-absolute "pipelines-artifacts download (absolute downloadUrl)" \
@@ -1498,6 +1566,8 @@ run_mock_cases() {
 
     rest_rule='D25: the frozen get_raw appends api-version onto a path that already carries ?fileName=… (one query pair whose value swallows the version); this build sends fileName and api-version as separate pairs'
     rest_norm=$d25_query_norm
+    expect_oracle_requests='qpair("fileName=out.bin?api-version=7.1")'
+    expect_rust_requests='qpair("fileName=out.bin")'
     envelope_rule='§8: the frozen download prints its success line plus the halt_success "Done." marker; this build prints the line alone'
     stdout_mode=text
     compare_files=(out.bin)
@@ -1506,6 +1576,8 @@ run_mock_cases() {
 
     rest_rule='D25: the frozen get_raw appends api-version onto a path that already carries ?fileName=… (one query pair whose value swallows the version); this build sends fileName and api-version as separate pairs'
     rest_norm=$d25_query_norm
+    expect_oracle_requests='qpair("fileName=out.bin?api-version=7.1")'
+    expect_rust_requests='qpair("fileName=out.bin")'
     envelope_rule='§8: the frozen download prints its success line plus the halt_success "Done." marker; this build prints the line alone'
     stdout_mode=text
     compare_files=(out.bin)
@@ -1514,6 +1586,8 @@ run_mock_cases() {
 
     rest_rule='D25: the frozen get_raw appends api-version onto a path that already carries ?fileName=… (one query pair whose value swallows the version); this build sends fileName and api-version as separate pairs'
     rest_norm=$d25_query_norm
+    expect_oracle_requests='qpair("fileName=notes.txt?api-version=7.1")'
+    expect_rust_requests='qpair("fileName=notes.txt")'
     envelope_rule='§8: the frozen download prints its success line plus the halt_success "Done." marker; this build prints the line alone'
     stdout_mode=text
     compare_files=(notes.txt)
@@ -1522,6 +1596,8 @@ run_mock_cases() {
 
     rest_rule='D25: the frozen get_raw appends api-version onto a path that already carries ?fileName=… (one query pair whose value swallows the version); this build sends fileName and api-version as separate pairs'
     rest_norm=$d25_query_norm
+    expect_oracle_requests='qpair("fileName=attachment_att-3?api-version=7.1")'
+    expect_rust_requests='qpair("fileName=attachment_att-3")'
     envelope_rule='§8: the frozen download prints its success line plus the halt_success "Done." marker; this build prints the line alone'
     stdout_mode=text
     compare_files=(attachment_att-3)
@@ -1531,6 +1607,8 @@ run_mock_cases() {
     case_stdin=$'n\n'
     rest_rule='D25: the frozen get_raw appends api-version onto a path that already carries ?fileName=… (one query pair whose value swallows the version); this build sends fileName and api-version as separate pairs'
     rest_norm=$d25_query_norm
+    expect_oracle_requests='qpair("fileName=out.bin?api-version=7.1")'
+    expect_rust_requests='qpair("fileName=out.bin")'
     envelope_rule='§8: the frozen download prints its success line plus the halt_success "Done." marker; this build prints the line alone'
     stdout_mode=text
     compare_files=(out.bin)
@@ -1595,6 +1673,8 @@ run_mock_cases() {
         --source feature/payments --target main --draft --json
 
     rest_rule='D35: the oracle dies on the absent --description before any request (exit 0, no output); this build sends the body without the key'
+    expect_oracle_requests='length == 0'
+    expect_rust_requests='any(.[]; (.path | endswith("/pullrequests")) and ((.body | fromjson | has("description")) | not))'
     envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the value envelope'
     mock_case prs-create-minimal "prs create (no --description)" prs create CreateMin Alpha.Core \
         --title 'Add checkout retries' --source feature/payments --target main --json
@@ -2108,6 +2188,8 @@ run_mock_cases() {
         --reviewer aaaaaaaa-0001-0001-0001-000000000001
 
     rest_rule='D22: the reviewer id is a path segment here, percent-encoded more strictly than the frozen URI.encode/1 (which left the @ alone), so the request paths differ and the bodies do not'
+    expect_oracle_requests='any_path("/reviewers/ada@example.com")'
+    expect_rust_requests='any_path("/reviewers/ada%40example.com")'
     envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the value envelope'
     mock_case prs-reviewers-add-email "prs reviewers add --reviewer email" \
         prs reviewers add Alpha Alpha.Core 137 --reviewer ada@example.com --json
@@ -2200,6 +2282,8 @@ run_mock_cases() {
         areas show Alpha 'Alpha\Team'
 
     rest_rule='D22: the whole area path is one path segment here, percent-encoded more strictly than the frozen URI.encode/1 (which left the / alone), so the request paths differ and the envelopes do not'
+    expect_oracle_requests='any_path("/classificationNodes/areas/Alpha/Team")'
+    expect_rust_requests='any_path("/classificationNodes/areas/Alpha%2FTeam")'
     mock_case areas-show-slash "areas show (slash in the path)" \
         areas show Alpha 'Alpha/Team' --json
 
@@ -2271,6 +2355,8 @@ run_mock_cases() {
 
     rest_rule='D25 (second site): the frozen list path carries an inline ?$timeframe=current and build_url appends ?api-version=7.1, so its one query pair swallows the version; this build sends $timeframe and api-version as separate pairs'
     rest_norm=$d25_query_norm
+    expect_oracle_requests='qpair("$timeframe=current?api-version=7.1")'
+    expect_rust_requests='qpair("%24timeframe=current")'
     mock_case iterations-list-current "iterations list --current" \
         iterations list Alpha Team --current --json
 
@@ -2416,6 +2502,8 @@ run_mock_cases() {
 
     rest_rule='D22: the email id is a path segment here, percent-encoded more strictly than the frozen URI.encode/1 (which left the @ alone), so the request paths differ and the envelopes do not'
     rest_norm='map(.path |= sub("%40"; "@"))'
+    expect_oracle_requests='any_path("/teams/ada@example.com")'
+    expect_rust_requests='any_path("/teams/ada%40example.com")'
     mock_case teams-show-email "teams show (email id)" \
         teams show Alpha ada@example.com --json
 
@@ -2524,6 +2612,8 @@ run_mock_cases() {
 
     rest_rule='D22: the email id is a path segment here, percent-encoded more strictly than the frozen URI.encode/1 (which left the @ alone), so the request paths differ and the envelopes do not'
     rest_norm='map(.path |= sub("%40"; "@"))'
+    expect_oracle_requests='any_path("/userentitlements/ada@example.com")'
+    expect_rust_requests='any_path("/userentitlements/ada%40example.com")'
     mock_case users-show-email "users show (email id)" \
         users show ada@example.com --json
 
@@ -2595,28 +2685,38 @@ run_mock_cases() {
 
     rest_rule='D25: the frozen list glues `?repositoryId=…` onto the path and then appends `?api-version=7.1`, so its one pair swallows the version; this build sends the two pairs'
     rest_norm=$d25_query_norm
+    expect_oracle_requests='qpair("repositoryId=Alpha.Core?api-version=7.1")'
+    expect_rust_requests='qpair("repositoryId=Alpha.Core")'
     mock_case policies-list "branch-policies list" \
         branch-policies list Alpha Alpha.Core --json
 
     rest_rule='D25: the frozen list glues `?repositoryId=…` onto the path and then appends `?api-version=7.1`; this build sends repositoryId, branch and api-version as three pairs'
     rest_norm=$d25_query_norm
+    expect_oracle_requests='qpair("repositoryId=Alpha.Core?api-version=7.1") and qpair("branch=main")'
+    expect_rust_requests='qpair("repositoryId=Alpha.Core") and qpair("branch=main")'
     mock_case policies-list-branch "branch-policies list --branch" \
         branch-policies list Alpha Alpha.Core --branch main --json
 
     rest_rule='D25: the frozen list glues `?repositoryId=…` onto the path and then appends `?api-version=7.1`; this build sends the two pairs'
     rest_norm=$d25_query_norm
+    expect_oracle_requests='qpair("repositoryId=Alpha.Core?api-version=7.1")'
+    expect_rust_requests='qpair("repositoryId=Alpha.Core")'
     stdout_mode=text
     mock_case policies-list-empty-human "branch-policies list (empty, human)" \
         branch-policies list Empty Alpha.Core
 
     rest_rule='D25: the frozen list glues `?repositoryId=…` onto the path and then appends `?api-version=7.1`; this build sends the two pairs'
     rest_norm=$d25_query_norm
+    expect_oracle_requests='qpair("repositoryId=Alpha.Core?api-version=7.1")'
+    expect_rust_requests='qpair("repositoryId=Alpha.Core")'
     envelope_rule='D24: the error body stays the upstream bytes here, where the oracle re-renders the decoded map with inspect/2 (C2: the list-error row)'
     mock_case policies-list-404 "branch-policies list (404)" \
         branch-policies list Missing Alpha.Core --json
 
     rest_rule='D25: the frozen list glues `?repositoryId=…` onto the path and then appends `?api-version=7.1`; this build sends the two pairs'
     rest_norm=$d25_query_norm
+    expect_oracle_requests='qpair("repositoryId=Alpha.Core?api-version=7.1")'
+    expect_rust_requests='qpair("repositoryId=Alpha.Core")'
     envelope_rule='D24: the error body stays the upstream bytes here, where the oracle re-renders the decoded map with inspect/2 (C2: the list-error row)'
     mock_case policies-list-500 "branch-policies list (500)" \
         branch-policies list Broken Alpha.Core --json
@@ -2815,6 +2915,8 @@ run_mock_cases() {
 
     rest_rule='D22: the package name is a path segment here, percent-encoded more strictly than the frozen URI.encode/1 (which left the + alone), so the request paths differ and the envelopes do not'
     rest_norm=$d22_plus_norm
+    expect_oracle_requests='any_path("/packages/name+plus/versions")'
+    expect_rust_requests='any_path("/packages/name%2Bplus/versions")'
     mock_case packages-versions-plus "packages versions (a name with +)" \
         packages versions Alpha feed-1 name+plus --json
 
@@ -2823,6 +2925,8 @@ run_mock_cases() {
 
     rest_rule='D22: the version is a path segment here, percent-encoded more strictly than the frozen URI.encode/1 (which left the + alone), so the request paths differ and the envelopes do not'
     rest_norm=$d22_plus_norm
+    expect_oracle_requests='any_path("/versions/1.0.0+build.5")'
+    expect_rust_requests='any_path("/versions/1.0.0%2Bbuild.5")'
     mock_case packages-show-plus "packages show (a version with +)" \
         packages show Alpha feed-1 myapp-builds 1.0.0+build.5 --json
 
@@ -2917,6 +3021,8 @@ run_mock_cases() {
 
     rest_rule='D22: the wiki id is a path segment here, percent-encoded more strictly than the frozen URI.encode/1 (which left the + alone), so the request paths differ and the envelopes do not'
     rest_norm=$d22_plus_norm
+    expect_oracle_requests='any_path("/wikis/a+b")'
+    expect_rust_requests='any_path("/wikis/a%2Bb")'
     mock_case wikis-show-plus "wikis show (a wiki id with +)" \
         wikis show Alpha a+b --json
 
