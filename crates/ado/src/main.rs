@@ -284,6 +284,61 @@ fn main() -> ExitCode {
                 _ => Err(AdoError::validation(MISSING_SUBCOMMAND)),
             }
         }
+        Some(("banners", sub)) => {
+            let mut context = Context::load(globals);
+
+            match sub.subcommand() {
+                Some(("show", _)) => commands::banners::show(&mut context),
+                Some(("set", set)) => commands::banners::set(
+                    &mut context,
+                    set.get_one::<String>("message").cloned(),
+                    set.get_one::<String>("type").cloned(),
+                    set.get_one::<String>("level").cloned(),
+                ),
+                Some(("delete", _)) => commands::banners::delete(&mut context),
+                _ => Err(AdoError::validation(MISSING_SUBCOMMAND)),
+            }
+        }
+        Some(("imports", sub)) => {
+            let mut context = Context::load(globals);
+
+            match sub.subcommand() {
+                Some(("list", list)) => commands::imports::list(
+                    &mut context,
+                    list.get_one::<String>("project")
+                        .expect("the positional is required")
+                        .as_str(),
+                    list.get_one::<i64>("top").copied(),
+                ),
+                Some(("show", show)) => commands::imports::show(
+                    &mut context,
+                    show.get_one::<String>("project")
+                        .expect("the positional is required")
+                        .as_str(),
+                    show.get_one::<String>("import_id")
+                        .expect("the positional is required")
+                        .as_str(),
+                ),
+                Some(("create", create)) => commands::imports::create(
+                    &mut context,
+                    create
+                        .get_one::<String>("project")
+                        .expect("the positional is required")
+                        .as_str(),
+                    create
+                        .get_one::<String>("repo_name")
+                        .expect("the positional is required")
+                        .as_str(),
+                    create
+                        .get_one::<String>("url")
+                        .expect("the option is required")
+                        .as_str(),
+                    create.get_one::<String>("user").cloned(),
+                    create.get_one::<String>("password").cloned(),
+                ),
+                _ => Err(AdoError::validation(MISSING_SUBCOMMAND)),
+            }
+        }
         Some(("iterations", sub)) => {
             let mut context = Context::load(globals);
 

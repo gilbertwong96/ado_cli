@@ -536,6 +536,129 @@ pub fn command() -> Command {
                 ),
         )
         .subcommand(
+            Command::new("imports")
+                .about(
+                    "Manage Git repository imports (e.g. GitHub → Azure DevOps migration). Creates a new Azure DevOps repo and populates it with the git history, branches, and tags from a source repository. The new repo is a one-time copy, not a mirror.",
+                )
+                .subcommand(
+                    Command::new("list")
+                        .about(
+                            "List recent import requests in a project. Output is a table (ID, Status, Source URL). Use --top to limit. Pass --json for raw data.",
+                        )
+                        .arg(
+                            Arg::new("project")
+                                .value_name("PROJECT")
+                                .required(true)
+                                .help("Project name or ID"),
+                        )
+                        .arg(
+                            Arg::new("top")
+                                .long("top")
+                                .value_name("N")
+                                .value_parser(clap::value_parser!(i64))
+                                .help("Maximum number of imports to return. Default 50."),
+                        ),
+                )
+                .subcommand(
+                    Command::new("show")
+                        .about(
+                            "Show the current status of an import request (queued, inProgress, completed, failed, etc.) and any error message. Imports for large repos can take hours.",
+                        )
+                        .arg(
+                            Arg::new("project")
+                                .value_name("PROJECT")
+                                .required(true)
+                                .help("Project name or ID"),
+                        )
+                        .arg(
+                            Arg::new("import_id")
+                                .value_name("IMPORT_ID")
+                                .required(true)
+                                .help("Import request ID (UUID, returned by `create`)"),
+                        ),
+                )
+                .subcommand(
+                    Command::new("create")
+                        .about(
+                            "Import a Git repository into Azure DevOps. The new repo is created in the target project; the source repo is read once (branches, tags, and history are copied). For private source repos, pass --user and --password/PAT.",
+                        )
+                        .arg(
+                            Arg::new("project")
+                                .value_name("PROJECT")
+                                .required(true)
+                                .help("Target project name or ID where the new repo will live"),
+                        )
+                        .arg(
+                            Arg::new("repo_name")
+                                .value_name("REPO_NAME")
+                                .required(true)
+                                .help("Name for the new repository (must not already exist in the project)"),
+                        )
+                        .arg(
+                            Arg::new("url")
+                                .long("url")
+                                .value_name("URL")
+                                .required(true)
+                                .help("Source git URL ending in .git. Supports https:// (with optional basic auth) and git://. SSH URLs are not supported. Example: https://github.com/owner/repo.git"),
+                        )
+                        .arg(
+                            Arg::new("user")
+                                .long("user")
+                                .value_name("USER")
+                                .help("Username for source-repo authentication (only for private repos). For GitHub, use any non-empty string with a PAT as the password."),
+                        )
+                        .arg(
+                            Arg::new("password")
+                                .long("password")
+                                .value_name("PASS")
+                                .help("Password or Personal Access Token for the source repo. For GitHub, generate a PAT at https://github.com/settings/tokens with `repo` scope. For Azure DevOps, use a PAT with `vso.code` scope."),
+                        ),
+                ),
+        )
+        .subcommand(
+            Command::new("banners")
+                .about(
+                    "Manage the organization-wide notification banner that appears at the top of the Azure DevOps web UI for every user. Useful for maintenance windows or org-wide announcements.",
+                )
+                .subcommand(
+                    Command::new("show")
+                        .about(
+                            "Show the current organization banner. Prints 'No banner configured.' if no banner is set, or the message, type, and audience level otherwise. Pass --json for raw output.",
+                        ),
+                )
+                .subcommand(
+                    Command::new("set")
+                        .about(
+                            "Set or update the organization banner. The banner appears immediately for all users in the org (or for the chosen audience level). Replaces any existing banner.",
+                        )
+                        .arg(
+                            Arg::new("message")
+                                .long("message")
+                                .value_name("MSG")
+                                .required(true)
+                                .help("Banner text shown to users. Markdown is not supported; the text is rendered as plain text. Multi-word values do not need quoting (joined until next flag). Use @<file> or - to read from a file/stdin."),
+                        )
+                        .arg(
+                            Arg::new("type")
+                                .long("type")
+                                .value_name("TYPE")
+                                .help("Visual style. Valid: info (default — blue), warning (yellow), error (red). Controls the icon and color in the web UI."),
+                        )
+                        .arg(
+                            Arg::new("level")
+                                .long("level")
+                                .value_name("LEVEL")
+                                .help("Audience level. Valid: projectCollection (default — whole org), project (specific project — requires the project context)."),
+                        ),
+                )
+                .subcommand(
+                    Command::new("delete")
+                        .about(
+                            "Remove the organization banner. Errors if no banner is set; otherwise the banner disappears immediately for all users.",
+                        ),
+                ),
+        )
+        .subcommand(
             Command::new("iterations")
                 .about(
                     "Manage Azure DevOps iterations (sprints). Iterations are time-boxed containers for work items used in Scrum-like workflows. They belong to a specific team (a project can have multiple teams with different sprint cadences).",

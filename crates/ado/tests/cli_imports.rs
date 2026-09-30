@@ -158,8 +158,8 @@ fn list_sends_the_dollar_top_pair_only_when_the_option_is_given() {
     assert_eq!(
         requests(&server)[0].query_pairs(),
         vec![
-            ("%24top".to_owned(), "5".to_owned()),
-            ("api-version".to_owned(), "7.1".to_owned())
+            ("api-version".to_owned(), "7.1".to_owned()),
+            ("%24top".to_owned(), "5".to_owned())
         ],
         "the module's $top pair, percent-encoded as the frozen client encodes it"
     );
@@ -178,8 +178,8 @@ fn list_sends_the_dollar_top_pair_only_when_the_option_is_given() {
     assert_eq!(
         requests(&server)[0].query_pairs(),
         vec![
-            ("%24top".to_owned(), "0".to_owned()),
-            ("api-version".to_owned(), "7.1".to_owned())
+            ("api-version".to_owned(), "7.1".to_owned()),
+            ("%24top".to_owned(), "0".to_owned())
         ],
         "zero is truthy in the module's `if t = Map.get(...)`, so the pair is sent"
     );
@@ -249,11 +249,7 @@ fn list_404_and_500_are_the_classified_envelopes() {
             "not_found",
             "Resource not found. Check the project/repo/build ID and your permissions.",
         ),
-        (
-            500,
-            "api_error",
-            "Azure DevOps server error. Retry later.",
-        ),
+        (500, "api_error", "Azure DevOps server error. Retry later."),
     ] {
         let home = TempHome::new();
         let server = MockServer::start();
@@ -293,7 +289,10 @@ fn list_404_human_writes_the_labelled_line_to_stderr() {
     let output = run(&home, &server, &["imports", "list", "Alpha"]);
 
     assert_eq!(output.status.code(), Some(1));
-    assert!(stdout_of(&output).is_empty(), "no human line on stdout (D4)");
+    assert!(
+        stdout_of(&output).is_empty(),
+        "no human line on stdout (D4)"
+    );
     assert!(
         stderr_of(&output).contains("Resource not found."),
         "the classified wording on stderr: {}",
@@ -308,7 +307,7 @@ fn list_requires_the_project_positional() {
 
     let output = run(&home, &server, &["imports", "list"]);
 
-    usage_error(&output, "project");
+    usage_error(&output, "PROJECT");
     assert!(requests(&server).is_empty(), "a usage error sends nothing");
 }
 
@@ -350,7 +349,11 @@ fn show_emits_the_value_envelope_and_the_id_path() {
     let server = MockServer::start();
     server.expect("GET", IMPORT, MockResponse::json(200, import()));
 
-    let output = run(&home, &server, &["imports", "show", "Alpha", "imp-1", "--json"]);
+    let output = run(
+        &home,
+        &server,
+        &["imports", "show", "Alpha", "imp-1", "--json"],
+    );
 
     assert_success(&output);
     assert_eq!(envelope(&output), json!({"ok": true, "result": import()}));
@@ -462,7 +465,10 @@ fn show_omits_the_detail_line_when_detailed_status_is_absent() {
     let stdout = stdout_of(&output);
 
     assert!(!stdout.contains("Detail:"), "no line at all: {stdout}");
-    assert!(stdout.contains("  Source: \n"), "an absent source: {stdout}");
+    assert!(
+        stdout.contains("  Source: \n"),
+        "an absent source: {stdout}"
+    );
 }
 
 #[test]
@@ -482,12 +488,20 @@ fn show_404_is_the_modules_wording_with_no_envelope() {
     );
 
     assert_eq!(output.status.code(), Some(1));
-    assert!(
-        stdout_of(&output).is_empty(),
-        "no envelope even under --json (D4): {}",
-        stdout_of(&output)
+    let envelope = envelope(&output);
+
+    assert_eq!(envelope["error"]["code"], json!("not_found"));
+    assert_eq!(envelope["error"]["status"], json!(404));
+    assert_eq!(
+        envelope["error"]["message"],
+        json!("Import 'missing' not found"),
+        "the module's own wording, in the error envelope this build always writes (D4)"
     );
-    assert_eq!(stderr_of(&output).trim_end(), "Import 'missing' not found");
+    assert!(
+        stderr_of(&output).is_empty(),
+        "under --json the envelope is the whole output: {}",
+        stderr_of(&output)
+    );
 }
 
 #[test]
@@ -495,8 +509,11 @@ fn show_requires_both_positionals() {
     let home = TempHome::new();
     let server = MockServer::start();
 
-    usage_error(&run(&home, &server, &["imports", "show", "Alpha"]), "import_id");
-    usage_error(&run(&home, &server, &["imports", "show"]), "project");
+    usage_error(
+        &run(&home, &server, &["imports", "show", "Alpha"]),
+        "IMPORT_ID",
+    );
+    usage_error(&run(&home, &server, &["imports", "show"]), "PROJECT");
     assert!(requests(&server).is_empty(), "a usage error sends nothing");
 }
 
@@ -640,10 +657,17 @@ fn create_without_the_url_option_is_a_loud_usage_error() {
     let home = TempHome::new();
     let server = MockServer::start();
 
-    let output = run(&home, &server, &["imports", "create", "Alpha", "NewRepo", "--json"]);
+    let output = run(
+        &home,
+        &server,
+        &["imports", "create", "Alpha", "NewRepo", "--json"],
+    );
 
     usage_error(&output, "url");
-    assert!(requests(&server).is_empty(), "no request, unlike D34's silence");
+    assert!(
+        requests(&server).is_empty(),
+        "no request, unlike D34's silence"
+    );
 }
 
 #[test]
@@ -657,15 +681,21 @@ fn create_requires_both_positionals() {
             &server,
             &["imports", "create", "--url", "https://github.com/o/r.git"],
         ),
-        "project",
+        "PROJECT",
     );
     usage_error(
         &run(
             &home,
             &server,
-            &["imports", "create", "Alpha", "--url", "https://github.com/o/r.git"],
+            &[
+                "imports",
+                "create",
+                "Alpha",
+                "--url",
+                "https://github.com/o/r.git",
+            ],
         ),
-        "repo_name",
+        "REPO_NAME",
     );
     assert!(requests(&server).is_empty(), "a usage error sends nothing");
 }
@@ -776,5 +806,5 @@ fn the_group_without_a_subcommand_is_a_usage_error() {
     let home = TempHome::new();
     let server = MockServer::start();
 
-    usage_error(&run(&home, &server, &["imports"]), "subcommand");
+    usage_error(&run(&home, &server, &["imports"]), "sub-command");
 }

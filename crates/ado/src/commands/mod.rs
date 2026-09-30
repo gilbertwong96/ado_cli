@@ -1,12 +1,14 @@
 pub mod agent_pools;
 pub mod areas;
 pub mod artifacts;
+pub mod banners;
 pub mod branch_policies;
 pub mod builds;
 pub mod completion;
 pub mod connections;
 pub mod download;
 pub mod extensions;
+pub mod imports;
 pub mod items;
 pub mod iterations;
 pub mod login;

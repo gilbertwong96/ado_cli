@@ -153,7 +153,10 @@ fn show_renders_the_modules_defaults_for_missing_fields() {
     server.expect(
         "GET",
         BANNERS,
-        MockResponse::json(200, json!({"id": "banners", "value": {"message": "Heads up"}})),
+        MockResponse::json(
+            200,
+            json!({"id": "banners", "value": {"message": "Heads up"}}),
+        ),
     );
 
     let output = run(&home, &server, &["banners", "show"]);
@@ -207,7 +210,10 @@ fn show_treats_a_missing_entry_as_the_empty_banner_and_exits_zero() {
     server.expect(
         "GET",
         BANNERS,
-        MockResponse::json(404, json!({"message": "The settings entry does not exist."})),
+        MockResponse::json(
+            404,
+            json!({"message": "The settings entry does not exist."}),
+        ),
     );
 
     let output = run(&home, &server, &["banners", "show"]);
@@ -220,7 +226,10 @@ fn show_treats_a_missing_entry_as_the_empty_banner_and_exits_zero() {
     server.expect(
         "GET",
         BANNERS,
-        MockResponse::json(404, json!({"message": "The settings entry does not exist."})),
+        MockResponse::json(
+            404,
+            json!({"message": "The settings entry does not exist."}),
+        ),
     );
 
     let output = run(&home, &server, &["banners", "show", "--json"]);
@@ -277,7 +286,13 @@ fn set_puts_the_value_object_with_the_modules_two_defaults() {
     let output = run(
         &home,
         &server,
-        &["banners", "set", "--message", "Maintenance tonight", "--json"],
+        &[
+            "banners",
+            "set",
+            "--message",
+            "Maintenance tonight",
+            "--json",
+        ],
     );
 
     assert_success(&output);
@@ -351,7 +366,15 @@ fn set_sends_a_present_empty_type_as_the_empty_string() {
     let output = run(
         &home,
         &server,
-        &["banners", "set", "--message", "Heads up", "--type", "", "--json"],
+        &[
+            "banners",
+            "set",
+            "--message",
+            "Heads up",
+            "--type",
+            "",
+            "--json",
+        ],
     );
 
     assert_success(&output);
@@ -370,7 +393,10 @@ fn set_without_the_message_option_is_a_loud_usage_error() {
     let output = run(&home, &server, &["banners", "set", "--json"]);
 
     usage_error(&output, "message");
-    assert!(requests(&server).is_empty(), "no request, unlike D34's silence");
+    assert!(
+        requests(&server).is_empty(),
+        "no request, unlike D34's silence"
+    );
 }
 
 #[test]
@@ -464,10 +490,17 @@ fn set_404_is_the_classified_envelope() {
     server.expect(
         "PUT",
         BANNERS,
-        MockResponse::json(404, json!({"message": "The settings entry does not exist."})),
+        MockResponse::json(
+            404,
+            json!({"message": "The settings entry does not exist."}),
+        ),
     );
 
-    let output = run(&home, &server, &["banners", "set", "--message", "Heads up", "--json"]);
+    let output = run(
+        &home,
+        &server,
+        &["banners", "set", "--message", "Heads up", "--json"],
+    );
 
     assert_eq!(output.status.code(), Some(1));
     let envelope = envelope(&output);
@@ -514,18 +547,29 @@ fn delete_404_is_the_modules_wording_with_no_envelope() {
     server.expect(
         "DELETE",
         BANNERS,
-        MockResponse::json(404, json!({"message": "The settings entry does not exist."})),
+        MockResponse::json(
+            404,
+            json!({"message": "The settings entry does not exist."}),
+        ),
     );
 
     let output = run(&home, &server, &["banners", "delete", "--json"]);
 
     assert_eq!(output.status.code(), Some(1));
-    assert!(
-        stdout_of(&output).is_empty(),
-        "no envelope even under --json (D4): {}",
-        stdout_of(&output)
+    let envelope = envelope(&output);
+
+    assert_eq!(envelope["error"]["code"], json!("not_found"));
+    assert_eq!(envelope["error"]["status"], json!(404));
+    assert_eq!(
+        envelope["error"]["message"],
+        json!("No banner to delete."),
+        "the module's own wording, in the error envelope this build always writes (D4)"
     );
-    assert_eq!(stderr_of(&output).trim_end(), "No banner to delete.");
+    assert!(
+        stderr_of(&output).is_empty(),
+        "under --json the envelope is the whole output: {}",
+        stderr_of(&output)
+    );
 }
 
 #[test]
@@ -549,5 +593,5 @@ fn the_group_without_a_subcommand_is_a_usage_error() {
     let home = TempHome::new();
     let server = MockServer::start();
 
-    usage_error(&run(&home, &server, &["banners"]), "subcommand");
+    usage_error(&run(&home, &server, &["banners"]), "sub-command");
 }
