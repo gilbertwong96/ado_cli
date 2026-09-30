@@ -103,6 +103,7 @@ fn schema_root_lists_exactly_the_shipped_subcommands() {
             "ado areas",
             "ado banners",
             "ado branch-policies",
+            "ado ci",
             "ado completion",
             "ado connections",
             "ado extensions",
@@ -131,6 +132,78 @@ fn schema_root_lists_exactly_the_shipped_subcommands() {
             "ado workitems"
         ]
     );
+}
+
+#[test]
+fn schema_ci_node_lists_every_shipped_subcommand() {
+    let ci = find_node("ci").expect("the ci node");
+
+    assert_eq!(
+        ci["doc"],
+        json!(
+            "Watch Azure DevOps pipelines in real-time. Streams live build status (job/step progress) and per-line log output to your terminal, like `gh run watch` or `kubectl logs -f`. Exits when the build completes or on Ctrl+C."
+        )
+    );
+    assert_eq!(ci["arguments"], json!([]));
+    assert_eq!(
+        subcommands(&ci)
+            .iter()
+            .map(|sub| sub["name"].as_str().expect("a subcommand name"))
+            .collect::<Vec<_>>(),
+        ["ado ci watch"],
+        "the module's declaration order"
+    );
+
+    let watch = find_node("ci watch").expect("the watch node");
+    assert_eq!(
+        watch["doc"],
+        json!(
+            "Stream live status and per-line log output for an Azure DevOps build. The build status is polled every 2s (configurable via --poll-interval), and new log lines are printed as they appear. Exits with code 0 on success, 1 on build failure, 2 on cancellation."
+        )
+    );
+    assert_eq!(
+        option_names(&watch),
+        [
+            "branch",
+            "definition",
+            "json",
+            "latest",
+            "org",
+            "pat",
+            "poll-interval",
+            "server",
+            "verbose"
+        ],
+        "Annex A's four options plus the globals; the hyphen spelling argv accepts (Ruling 4(a))"
+    );
+    assert_eq!(
+        option(&watch, "poll-interval")["doc"],
+        json!(
+            "How often to poll the build status, in milliseconds. Default 2000 (2s). Values below 250 are clamped to 2000. Lower values update faster but use more API quota."
+        )
+    );
+    assert_eq!(
+        option(&watch, "poll-interval")["type"],
+        json!("string"),
+        "D23: clap does not expose the value parser's type"
+    );
+    assert_eq!(
+        option(&watch, "latest")["default"],
+        json!("false"),
+        "the frozen default: absent is false"
+    );
+    assert_eq!(
+        option(&watch, "poll-interval")["default"],
+        json!(""),
+        "the module's own default is applied in code, not declared to clap (the banners precedent)"
+    );
+    assert_eq!(argument(&watch, "project")["required"], json!(true));
+    assert_eq!(
+        argument(&watch, "build_id")["required"],
+        json!(false),
+        "the frozen schema marks the second positional optional"
+    );
+    assert_eq!(argument(&watch, "build_id")["type"], json!("string"));
 }
 
 /// Wave 1 ported the two read paths; Task 9 adds the five lifecycle mutations,
