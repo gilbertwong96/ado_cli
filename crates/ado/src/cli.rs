@@ -619,6 +619,193 @@ pub fn command() -> Command {
                 ),
         )
         .subcommand(
+            Command::new("branch-policies")
+                .about(
+                    "Manage branch policies that gate pull requests (build validation, required reviewers, status checks, etc.). A policy is a configuration object scoped to a specific branch and repository.",
+                )
+                .subcommand(
+                    Command::new("list")
+                        .about(
+                            "List branch policies in a repository as a table (ID, Type, Branch, Blocking, Enabled). Use --branch to filter to a single branch (e.g. main). Pass --json for the raw array.",
+                        )
+                        .arg(
+                            Arg::new("project")
+                                .value_name("PROJECT")
+                                .required(true)
+                                .help("Project name or ID"),
+                        )
+                        .arg(
+                            Arg::new("repo_id")
+                                .value_name("REPO_ID")
+                                .required(true)
+                                .help("Repository name or ID"),
+                        )
+                        .arg(
+                            Arg::new("branch")
+                                .long("branch")
+                                .value_name("BRANCH")
+                                .help(
+                                    "Filter by branch name. Pass the full ref like 'refs/heads/main', or just 'main' (substring match)",
+                                ),
+                        ),
+                )
+                .subcommand(
+                    Command::new("show")
+                        .about(
+                            "Show details of a single policy (ID, type, branch, repo, blocking, enabled, created date). Use `list` first to discover the policy ID.",
+                        )
+                        .arg(
+                            Arg::new("project")
+                                .value_name("PROJECT")
+                                .required(true)
+                                .help("Project name or ID"),
+                        )
+                        .arg(
+                            Arg::new("repo_id")
+                                .value_name("REPO_ID")
+                                .required(true)
+                                .help("Repository name or ID"),
+                        )
+                        .arg(
+                            Arg::new("policy_id")
+                                .value_name("POLICY_ID")
+                                .required(true)
+                                .value_parser(clap::value_parser!(i64))
+                                .help("Numeric policy configuration ID (from `list`)"),
+                        ),
+                )
+                .subcommand(
+                    Command::new("create")
+                        .about(
+                            "Create a new branch policy. The policy type is identified by a UUID; common ones are: fa4e907d-c16b-4a4c-9dfa-4906e5d171dd (Build validation), fd2167ab-9d2a-4d8b-b2c9-1cdfbb6d4c34 (Required reviewers), 0609b952-1397-4640-95ec-e121a052fb4b (Status check).",
+                        )
+                        .arg(
+                            Arg::new("project")
+                                .value_name("PROJECT")
+                                .required(true)
+                                .help("Project name or ID"),
+                        )
+                        .arg(
+                            Arg::new("repo_id")
+                                .value_name("REPO_ID")
+                                .required(true)
+                                .help("Repository name or ID"),
+                        )
+                        .arg(
+                            Arg::new("type")
+                                .long("type")
+                                .value_name("TYPE_ID")
+                                .required(true)
+                                .help(
+                                    "Policy type UUID. Find these in the Azure DevOps UI under Project Settings > Repos > Policies > any policy > URL contains 'policyType='.",
+                                ),
+                        )
+                        .arg(
+                            Arg::new("branch")
+                                .long("branch")
+                                .value_name("BRANCH")
+                                .required(true)
+                                .help(
+                                    "Target branch as a ref (e.g. 'refs/heads/main', 'refs/heads/feature/*' for wildcards)",
+                                ),
+                        )
+                        .arg(
+                            Arg::new("blocking")
+                                .long("blocking")
+                                .action(ArgAction::SetTrue)
+                                .overrides_with("no_blocking")
+                                .help(
+                                    "When true (default), PRs cannot be completed until the policy passes. When false, the policy is informational only. Defaults to true.",
+                                ),
+                        )
+                        .arg(
+                            Arg::new("no_blocking")
+                                .long("no-blocking")
+                                .action(ArgAction::SetTrue)
+                                .overrides_with("blocking")
+                                .help("Set the policy informational: the negative spelling of --blocking."),
+                        ),
+                )
+                .subcommand(
+                    Command::new("update")
+                        .about(
+                            "Modify an existing policy's blocking flag or enabled state. The policy type and scope are preserved from the existing policy.",
+                        )
+                        .arg(
+                            Arg::new("project")
+                                .value_name("PROJECT")
+                                .required(true)
+                                .help("Project name or ID"),
+                        )
+                        .arg(
+                            Arg::new("repo_id")
+                                .value_name("REPO_ID")
+                                .required(true)
+                                .help("Repository name or ID"),
+                        )
+                        .arg(
+                            Arg::new("policy_id")
+                                .value_name("POLICY_ID")
+                                .required(true)
+                                .value_parser(clap::value_parser!(i64))
+                                .help("Numeric policy configuration ID"),
+                        )
+                        .arg(
+                            Arg::new("blocking")
+                                .long("blocking")
+                                .action(ArgAction::SetTrue)
+                                .overrides_with("no_blocking")
+                                .help("Set whether the policy blocks PR completion. Omit to keep current value."),
+                        )
+                        .arg(
+                            Arg::new("no_blocking")
+                                .long("no-blocking")
+                                .action(ArgAction::SetTrue)
+                                .overrides_with("blocking")
+                                .help("Set whether the policy blocks PR completion to false. Omit to keep current value."),
+                        )
+                        .arg(
+                            Arg::new("enabled")
+                                .long("enabled")
+                                .action(ArgAction::SetTrue)
+                                .overrides_with("no_enabled")
+                                .help("Set whether the policy is active. Omit to keep current value."),
+                        )
+                        .arg(
+                            Arg::new("no_enabled")
+                                .long("no-enabled")
+                                .action(ArgAction::SetTrue)
+                                .overrides_with("enabled")
+                                .help("Set whether the policy is active to false. Omit to keep current value."),
+                        ),
+                )
+                .subcommand(
+                    Command::new("delete")
+                        .about(
+                            "Permanently remove a branch policy. The policy is removed from all branches it was scoped to (usually just one).",
+                        )
+                        .arg(
+                            Arg::new("project")
+                                .value_name("PROJECT")
+                                .required(true)
+                                .help("Project name or ID"),
+                        )
+                        .arg(
+                            Arg::new("repo_id")
+                                .value_name("REPO_ID")
+                                .required(true)
+                                .help("Repository name or ID"),
+                        )
+                        .arg(
+                            Arg::new("policy_id")
+                                .value_name("POLICY_ID")
+                                .required(true)
+                                .value_parser(clap::value_parser!(i64))
+                                .help("Numeric policy configuration ID"),
+                        ),
+                ),
+        )
+        .subcommand(
             Command::new("prs")
                 .about(
                     "Manage Azure DevOps pull requests (PRs). A PR is a request to merge code from one branch (source) into another (target), with required reviewers, policies, and discussion threads.",

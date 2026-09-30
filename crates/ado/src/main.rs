@@ -306,6 +306,76 @@ fn main() -> ExitCode {
                 _ => Err(AdoError::validation(MISSING_SUBCOMMAND)),
             }
         }
+        Some(("branch-policies", sub)) => {
+            let mut context = Context::load(globals);
+
+            match sub.subcommand() {
+                Some(("list", list)) => commands::branch_policies::list(
+                    &mut context,
+                    list.get_one::<String>("project")
+                        .expect("the positional is required")
+                        .as_str(),
+                    list.get_one::<String>("repo_id")
+                        .expect("the positional is required")
+                        .as_str(),
+                    list.get_one::<String>("branch").cloned(),
+                ),
+                Some(("show", show)) => commands::branch_policies::show(
+                    &mut context,
+                    show.get_one::<String>("project")
+                        .expect("the positional is required")
+                        .as_str(),
+                    show.get_one::<i64>("policy_id")
+                        .copied()
+                        .expect("the positional is required"),
+                ),
+                Some(("create", create)) => commands::branch_policies::create(
+                    &mut context,
+                    create
+                        .get_one::<String>("project")
+                        .expect("the positional is required")
+                        .as_str(),
+                    create
+                        .get_one::<String>("repo_id")
+                        .expect("the positional is required")
+                        .as_str(),
+                    create
+                        .get_one::<String>("type")
+                        .expect("the option is required")
+                        .as_str(),
+                    create
+                        .get_one::<String>("branch")
+                        .expect("the option is required")
+                        .as_str(),
+                    ado::args::negatable_flag(create, "blocking", "no_blocking"),
+                ),
+                Some(("update", update)) => commands::branch_policies::update(
+                    &mut context,
+                    update
+                        .get_one::<String>("project")
+                        .expect("the positional is required")
+                        .as_str(),
+                    update
+                        .get_one::<i64>("policy_id")
+                        .copied()
+                        .expect("the positional is required"),
+                    ado::args::negatable_flag(update, "blocking", "no_blocking"),
+                    ado::args::negatable_flag(update, "enabled", "no_enabled"),
+                ),
+                Some(("delete", delete)) => commands::branch_policies::delete(
+                    &mut context,
+                    delete
+                        .get_one::<String>("project")
+                        .expect("the positional is required")
+                        .as_str(),
+                    delete
+                        .get_one::<i64>("policy_id")
+                        .copied()
+                        .expect("the positional is required"),
+                ),
+                _ => Err(AdoError::validation(MISSING_SUBCOMMAND)),
+            }
+        }
         Some(("prs", sub)) => {
             let mut context = Context::load(globals);
 
