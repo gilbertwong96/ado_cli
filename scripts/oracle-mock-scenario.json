@@ -1127,6 +1127,29 @@
     {"method": "DELETE", "path": "/ado-harness/_apis/extensionmanagement/installedextensions/missing.thing", "status": 404, "json": {"message": "Extension not found."}},
     {"method": "PATCH", "path": "/ado-harness/_apis/extensionmanagement/installedextensions/mspremier.BuildQualityChecks", "request_body": {"publisherId": "mspremier", "extensionName": "BuildQualityChecks", "installState": {"flags": "none"}}, "json": {}},
     {"method": "PATCH", "path": "/ado-harness/_apis/extensionmanagement/installedextensions/octopus.octopus-deploy", "request_body": {"publisherId": "octopus", "extensionName": "octopus-deploy", "installState": {"flags": "disabled"}}, "json": {}},
-    {"method": "PATCH", "path": "/ado-harness/_apis/extensionmanagement/installedextensions/missing.thing", "status": 404, "json": {"message": "Extension not found."}}
+    {"method": "PATCH", "path": "/ado-harness/_apis/extensionmanagement/installedextensions/missing.thing", "status": 404, "json": {"message": "Extension not found."}},
+
+    {"method": "GET", "path": "/ado-harness/Alpha/_apis/git/importRequests", "fixture": "imports_list.json"},
+    {"method": "GET", "path": "/ado-harness/Empty/_apis/git/importRequests", "json": {"count": 0, "value": []}},
+    {"method": "GET", "path": "/missing/Alpha/_apis/git/importRequests", "status": 404, "json": {"message": "TF400813: The user is not authorized."}},
+    {"method": "GET", "path": "/broken/Alpha/_apis/git/importRequests", "status": 500, "json": {"message": "TF400813: The server is unavailable."}},
+    {"method": "GET", "path": "/ado-harness/Alpha/_apis/git/importRequests/imp-1", "fixture": "import_show.json"},
+    {"method": "GET", "path": "/ado-harness/Alpha/_apis/git/importRequests/imp-2", "json": {"id": "imp-2", "status": "failed", "parameters": {"gitSource": {"url": "https://github.com/owner/other.git"}}, "detailedStatus": {"allStepsSucceeded": false}}},
+    {"method": "GET", "path": "/ado-harness/Alpha/_apis/git/importRequests/missing", "status": 404, "json": {"message": "Import request not found."}},
+    {"method": "POST", "path": "/ado-harness/Alpha/_apis/git/repositories/NewRepo/importRequests", "request_body": {"parameters": {"gitSource": {"url": "https://github.com/owner/repo.git"}, "deleteServiceEndpointAfterImportIsDone": false}}, "json": {"id": "imp-new", "status": "queued", "url": "https://dev.azure.com/ado-harness/Alpha/_apis/git/repositories/NewRepo/importRequests/imp-new"}},
+    {"method": "POST", "path": "/ado-harness/Alpha/_apis/git/repositories/PrivateRepo/importRequests", "request_body": {"parameters": {"gitSource": {"url": "https://github.com/owner/repo.git", "user": "octocat", "password": "ghp_secret"}, "deleteServiceEndpointAfterImportIsDone": false}}, "json": {"id": "imp-private", "status": "queued", "url": "https://dev.azure.com/ado-harness/Alpha/_apis/git/repositories/PrivateRepo/importRequests/imp-private"}},
+    {"method": "POST", "path": "/ado-harness/Alpha/_apis/git/repositories/EmptyUrlRepo/importRequests", "request_body": {"parameters": {"gitSource": {"url": ""}, "deleteServiceEndpointAfterImportIsDone": false}}, "json": {"id": "imp-empty-url", "status": "queued", "url": "https://dev.azure.com/ado-harness/Alpha/_apis/git/repositories/EmptyUrlRepo/importRequests/imp-empty-url"}},
+    {"method": "POST", "path": "/missing/Alpha/_apis/git/repositories/NewRepo/importRequests", "status": 404, "json": {"message": "The project does not exist."}},
+    {"method": "POST", "path": "/broken/Alpha/_apis/git/repositories/NewRepo/importRequests", "status": 400, "json": {"message": "The repository 'NewRepo' already exists."}},
+
+    {"method": "GET", "path": "/ado-harness/_apis/settings/entries/banners", "fixture": "banner_show.json"},
+    {"method": "GET", "path": "/bare-org/_apis/settings/entries/banners", "json": {"id": "banners", "value": {}}},
+    {"method": "GET", "path": "/missing/_apis/settings/entries/banners", "status": 404, "json": {"message": "The settings entry does not exist."}},
+    {"method": "GET", "path": "/broken/_apis/settings/entries/banners", "status": 500, "json": {"message": "TF400813: The server is unavailable."}},
+    {"method": "PUT", "path": "/ado-harness/_apis/settings/entries/banners", "json": {"id": "banners", "value": {}}},
+    {"method": "PUT", "path": "/missing/_apis/settings/entries/banners", "status": 404, "json": {"message": "The settings entry does not exist."}},
+    {"method": "DELETE", "path": "/ado-harness/_apis/settings/entries/banners", "json": {}},
+    {"method": "DELETE", "path": "/missing/_apis/settings/entries/banners", "status": 404, "json": {"message": "The settings entry does not exist."}},
+    {"method": "DELETE", "path": "/broken/_apis/settings/entries/banners", "status": 500, "json": {"message": "TF400813: The server is unavailable."}}
   ]
 }

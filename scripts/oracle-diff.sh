@@ -831,6 +831,10 @@ run_mock_cases() {
     # their own temp cwd, so the path is absolute and shared.
     printf 'File body\n\n' >"$work/comments-body.md"
 
+    # `banners set --message @<file>`: the oracle sends this path literally and
+    # this build reads the file (D44), from the same absolute path on both sides.
+    printf 'Message from a file.\n\n' >"$work/banner-message.txt"
+
     # ── projects ──
 
     mock_case projects-list "projects list" projects list --json
@@ -3698,6 +3702,266 @@ run_mock_cases() {
     stdout_mode=text
     mock_case extensions-disable-no-name "extensions disable (no --name)" \
         extensions disable --publisher mspremier --json
+
+    # ── Wave 3: imports and organization banners (Task 5) ──
+    #
+    # The request surface is the modules': `imports list`'s `$top` pair (present
+    # for `0` too, because `0` is truthy in Elixir), `imports create`'s two-level
+    # body with the credential fields only when their options are given, and the
+    # org-scoped banners settings entry. Every case states both sides' spelling in
+    # the direction filters (C6). The two lists carry C12's 404/500 pair, in both
+    # modes. `banners show`'s 404 is not an error — the oracle answers its human
+    # sentence, exit 0, even under `--json`, where this build emits the empty-value
+    # envelope — and `banners set --message`'s `@<file>`/`-` forms are Ruling 4(b)'s
+    # repair, so their case pins D44: the oracle sends the literal string, this
+    # build reads the file/stdin.
+
+    expect_oracle_requests='length == 1 and (.[0].method == "GET") and any_path("/ado-harness/Alpha/_apis/git/importRequests") and qpair("api-version=7.1") and (.[0].query | split("&") | length == 1)'
+    expect_rust_requests='length == 1 and (.[0].method == "GET") and any_path("/ado-harness/Alpha/_apis/git/importRequests") and qpair("api-version=7.1") and (.[0].query | split("&") | length == 1)'
+    mock_case imports-list "imports list" \
+        imports list Alpha --json
+
+    expect_oracle_requests='length == 1 and any_path("/ado-harness/Empty/_apis/git/importRequests") and qpair("api-version=7.1")'
+    expect_rust_requests='length == 1 and any_path("/ado-harness/Empty/_apis/git/importRequests") and qpair("api-version=7.1")'
+    stdout_mode=text
+    mock_case imports-list-empty-human "imports list (empty project, human)" \
+        imports list Empty
+
+    expect_oracle_requests='length == 1 and any_path("/ado-harness/Alpha/_apis/git/importRequests") and qpair("%24top=1") and qpair("api-version=7.1")'
+    expect_rust_requests='length == 1 and any_path("/ado-harness/Alpha/_apis/git/importRequests") and qpair("%24top=1") and qpair("api-version=7.1")'
+    mock_case imports-list-top "imports list --top 1" \
+        imports list Alpha --top 1 --json
+
+    expect_oracle_requests='length == 1 and any_path("/ado-harness/Alpha/_apis/git/importRequests") and qpair("%24top=0") and qpair("api-version=7.1")'
+    expect_rust_requests='length == 1 and any_path("/ado-harness/Alpha/_apis/git/importRequests") and qpair("%24top=0") and qpair("api-version=7.1")'
+    mock_case imports-list-top-zero "imports list --top 0 (zero is a present option)" \
+        imports list Alpha --top 0 --json
+
+    case_org=missing
+    envelope_rule='D24: the error body stays the upstream bytes here, where the oracle re-renders the decoded map with inspect/2 (C12: the list-error row)'
+    expect_oracle_requests='length == 1 and any_path("/missing/Alpha/_apis/git/importRequests") and qpair("api-version=7.1")'
+    expect_rust_requests='length == 1 and any_path("/missing/Alpha/_apis/git/importRequests") and qpair("api-version=7.1")'
+    mock_case imports-list-404 "imports list (404)" \
+        imports list Alpha --json
+
+    case_org=broken
+    envelope_rule='D24: the error body stays the upstream bytes here, where the oracle re-renders the decoded map with inspect/2 (C12: the list-error row)'
+    expect_oracle_requests='length == 1 and any_path("/broken/Alpha/_apis/git/importRequests") and qpair("api-version=7.1")'
+    expect_rust_requests='length == 1 and any_path("/broken/Alpha/_apis/git/importRequests") and qpair("api-version=7.1")'
+    mock_case imports-list-500 "imports list (500)" \
+        imports list Alpha --json
+
+    case_org=missing
+    envelope_rule='D4: the oracle prints its human error line on stdout; this build writes the labelled line to stderr alone'
+    expect_oracle_requests='length == 1 and any_path("/missing/Alpha/_apis/git/importRequests") and qpair("api-version=7.1")'
+    expect_rust_requests='length == 1 and any_path("/missing/Alpha/_apis/git/importRequests") and qpair("api-version=7.1")'
+    stdout_mode=text
+    mock_case imports-list-404-human "imports list (404, human)" \
+        imports list Alpha
+
+    case_org=broken
+    envelope_rule='D4: the oracle prints its human error line on stdout; this build writes the labelled line to stderr alone'
+    stdout_mode=text
+    mock_case imports-list-500-human "imports list (500, human)" \
+        imports list Alpha
+
+    case_org=ado-harness
+    envelope_rule='D5: the oracle prints the command help on stdout before its usage error; this build writes clap’s message to stderr alone'
+    stdout_mode=text
+    mock_case imports-list-no-project "imports list (no project)" \
+        imports list --json
+
+    expect_oracle_requests='length == 1 and any_path("/ado-harness/Alpha/_apis/git/importRequests/imp-1") and qpair("api-version=7.1")'
+    expect_rust_requests='length == 1 and any_path("/ado-harness/Alpha/_apis/git/importRequests/imp-1") and qpair("api-version=7.1")'
+    mock_case imports-show "imports show" \
+        imports show Alpha imp-1 --json
+
+    expect_oracle_requests='length == 1 and any_path("/ado-harness/Alpha/_apis/git/importRequests/imp-1") and qpair("api-version=7.1")'
+    expect_rust_requests='length == 1 and any_path("/ado-harness/Alpha/_apis/git/importRequests/imp-1") and qpair("api-version=7.1")'
+    stdout_mode=text
+    mock_case imports-show-human "imports show (human)" \
+        imports show Alpha imp-1
+
+    expect_oracle_requests='length == 1 and any_path("/ado-harness/Alpha/_apis/git/importRequests/imp-2") and qpair("api-version=7.1")'
+    expect_rust_requests='length == 1 and any_path("/ado-harness/Alpha/_apis/git/importRequests/imp-2") and qpair("api-version=7.1")'
+    stdout_mode=text
+    mock_case imports-show-falsy-detail "imports show (the falsy detail line, human)" \
+        imports show Alpha imp-2
+
+    envelope_rule='D4: the frozen CLI writes the module wording to stderr with no envelope under --json where this build emits the error envelope'
+    expect_oracle_requests='length == 1 and any_path("/ado-harness/Alpha/_apis/git/importRequests/missing")'
+    expect_rust_requests='length == 1 and any_path("/ado-harness/Alpha/_apis/git/importRequests/missing")'
+    mock_case imports-show-404 "imports show (404)" \
+        imports show Alpha missing --json
+
+    envelope_rule='D33: the frozen create prints its human block under --json; this build emits the value envelope'
+    expect_oracle_requests='length == 1 and (.[0].method == "POST") and any_path("/ado-harness/Alpha/_apis/git/repositories/NewRepo/importRequests") and qpair("api-version=7.1")'
+    expect_rust_requests='length == 1 and (.[0].method == "POST") and any_path("/ado-harness/Alpha/_apis/git/repositories/NewRepo/importRequests") and qpair("api-version=7.1")'
+    mock_case imports-create "imports create" \
+        imports create Alpha NewRepo --url https://github.com/owner/repo.git --json
+
+    expect_oracle_requests='length == 1 and (.[0].method == "POST") and any_path("/ado-harness/Alpha/_apis/git/repositories/NewRepo/importRequests") and qpair("api-version=7.1")'
+    expect_rust_requests='length == 1 and (.[0].method == "POST") and any_path("/ado-harness/Alpha/_apis/git/repositories/NewRepo/importRequests") and qpair("api-version=7.1")'
+    stdout_mode=text
+    mock_case imports-create-human "imports create (human)" \
+        imports create Alpha NewRepo --url https://github.com/owner/repo.git
+
+    envelope_rule='D33: the frozen create prints its human block under --json; this build emits the value envelope'
+    expect_oracle_requests='length == 1 and (.[0].method == "POST") and any_path("/ado-harness/Alpha/_apis/git/repositories/PrivateRepo/importRequests") and qpair("api-version=7.1")'
+    expect_rust_requests='length == 1 and (.[0].method == "POST") and any_path("/ado-harness/Alpha/_apis/git/repositories/PrivateRepo/importRequests") and qpair("api-version=7.1")'
+    mock_case imports-create-credentials "imports create (the credential fields)" \
+        imports create Alpha PrivateRepo --url https://github.com/owner/repo.git --user octocat --password ghp_secret --json
+
+    envelope_rule='D33: the frozen create prints its human block under --json; this build emits the value envelope'
+    expect_oracle_requests='length == 1 and (.[0].method == "POST") and any_path("/ado-harness/Alpha/_apis/git/repositories/EmptyUrlRepo/importRequests") and qpair("api-version=7.1")'
+    expect_rust_requests='length == 1 and (.[0].method == "POST") and any_path("/ado-harness/Alpha/_apis/git/repositories/EmptyUrlRepo/importRequests") and qpair("api-version=7.1")'
+    mock_case imports-create-empty-url "imports create (a present empty --url)" \
+        imports create Alpha EmptyUrlRepo --url '' --json
+
+    status_rule='D34: a missing required option is a silent exit 0 in the oracle (the module’s Map.fetch! crash); this build is a loud usage error'
+    expect_statuses='0 1'
+    stdout_mode=text
+    mock_case imports-create-no-url "imports create (no --url)" \
+        imports create Alpha NewRepo --json
+
+    case_org=missing
+    envelope_rule='D24: the error body stays the upstream bytes here, where the oracle re-renders the decoded map with inspect/2'
+    expect_oracle_requests='length == 1 and (.[0].method == "POST") and any_path("/missing/Alpha/_apis/git/repositories/NewRepo/importRequests")'
+    expect_rust_requests='length == 1 and (.[0].method == "POST") and any_path("/missing/Alpha/_apis/git/repositories/NewRepo/importRequests")'
+    mock_case imports-create-404 "imports create (404)" \
+        imports create Alpha NewRepo --url https://github.com/owner/repo.git --json
+
+    case_org=broken
+    envelope_rule='D24: the error body stays the upstream bytes here, where the oracle re-renders the decoded map with inspect/2 (the message carries it too)'
+    expect_oracle_requests='length == 1 and (.[0].method == "POST") and any_path("/broken/Alpha/_apis/git/repositories/NewRepo/importRequests")'
+    expect_rust_requests='length == 1 and (.[0].method == "POST") and any_path("/broken/Alpha/_apis/git/repositories/NewRepo/importRequests")'
+    mock_case imports-create-400 "imports create (400)" \
+        imports create Alpha NewRepo --url https://github.com/owner/repo.git --json
+
+    case_org=ado-harness
+    expect_oracle_requests='length == 1 and any_path("/ado-harness/_apis/settings/entries/banners") and qpair("api-version=7.1")'
+    expect_rust_requests='length == 1 and any_path("/ado-harness/_apis/settings/entries/banners") and qpair("api-version=7.1")'
+    mock_case banners-show "banners show" \
+        banners show --json
+
+    expect_oracle_requests='length == 1 and any_path("/ado-harness/_apis/settings/entries/banners") and qpair("api-version=7.1")'
+    expect_rust_requests='length == 1 and any_path("/ado-harness/_apis/settings/entries/banners") and qpair("api-version=7.1")'
+    stdout_mode=text
+    mock_case banners-show-human "banners show (human)" \
+        banners show
+
+    case_org=bare-org
+    expect_oracle_requests='length == 1 and any_path("/bare-org/_apis/settings/entries/banners") and qpair("api-version=7.1")'
+    expect_rust_requests='length == 1 and any_path("/bare-org/_apis/settings/entries/banners") and qpair("api-version=7.1")'
+    mock_case banners-show-empty "banners show (an empty value)" \
+        banners show --json
+
+    case_org=bare-org
+    expect_oracle_requests='length == 1 and any_path("/bare-org/_apis/settings/entries/banners") and qpair("api-version=7.1")'
+    expect_rust_requests='length == 1 and any_path("/bare-org/_apis/settings/entries/banners") and qpair("api-version=7.1")'
+    stdout_mode=text
+    mock_case banners-show-empty-human "banners show (an empty value, human)" \
+        banners show
+
+    case_org=missing
+    envelope_rule='D4: the oracle’s halt_success path prints its human sentence under --json; this build emits the empty-value envelope'
+    expect_oracle_requests='length == 1 and any_path("/missing/_apis/settings/entries/banners") and qpair("api-version=7.1")'
+    expect_rust_requests='length == 1 and any_path("/missing/_apis/settings/entries/banners") and qpair("api-version=7.1")'
+    mock_case banners-show-404 "banners show (404 is not an error)" \
+        banners show --json
+
+    case_org=missing
+    expect_oracle_requests='length == 1 and any_path("/missing/_apis/settings/entries/banners") and qpair("api-version=7.1")'
+    expect_rust_requests='length == 1 and any_path("/missing/_apis/settings/entries/banners") and qpair("api-version=7.1")'
+    stdout_mode=text
+    mock_case banners-show-404-human "banners show (404, human)" \
+        banners show
+
+    case_org=broken
+    envelope_rule='D24: the error body stays the upstream bytes here, where the oracle re-renders the decoded map with inspect/2'
+    expect_oracle_requests='length == 1 and any_path("/broken/_apis/settings/entries/banners") and qpair("api-version=7.1")'
+    expect_rust_requests='length == 1 and any_path("/broken/_apis/settings/entries/banners") and qpair("api-version=7.1")'
+    mock_case banners-show-500 "banners show (500)" \
+        banners show --json
+
+    case_org=ado-harness
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the message envelope'
+    expect_oracle_requests='length == 1 and (.[0].method == "PUT") and any_path("/ado-harness/_apis/settings/entries/banners") and qpair("api-version=7.1")'
+    expect_rust_requests='length == 1 and (.[0].method == "PUT") and any_path("/ado-harness/_apis/settings/entries/banners") and qpair("api-version=7.1")'
+    mock_case banners-set "banners set" \
+        banners set --message 'Maintenance tonight' --json
+
+    expect_oracle_requests='length == 1 and (.[0].method == "PUT") and any_path("/ado-harness/_apis/settings/entries/banners") and qpair("api-version=7.1")'
+    expect_rust_requests='length == 1 and (.[0].method == "PUT") and any_path("/ado-harness/_apis/settings/entries/banners") and qpair("api-version=7.1")'
+    stdout_mode=text
+    mock_case banners-set-human "banners set (human)" \
+        banners set --message 'Maintenance tonight'
+
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the message envelope'
+    expect_oracle_requests='length == 1 and (.[0].method == "PUT") and any_path("/ado-harness/_apis/settings/entries/banners") and qpair("api-version=7.1")'
+    expect_rust_requests='length == 1 and (.[0].method == "PUT") and any_path("/ado-harness/_apis/settings/entries/banners") and qpair("api-version=7.1")'
+    mock_case banners-set-type-level "banners set --type --level" \
+        banners set --message 'Maintenance tonight' --type warning --level project --json
+
+    # Ruling 4(b): the oracle sends the literal `@<path>` string; this build reads
+    # the file (the `connections --access-token` convention), so the envelopes
+    # differ by the message and the requests differ by the whole body — one D44 row.
+    rest_rule='D44: the frozen `banners set` sends `@<path>` literally; this build reads the file (Ruling 4(b))'
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the message envelope (naming the resolved message)'
+    expect_oracle_requests='length == 1 and (.[0].method == "PUT") and any_body("banner-message.txt") and any_body("@")'
+    expect_rust_requests='length == 1 and (.[0].method == "PUT") and any_body("Message from a file.") and (any_body("@") | not)'
+    mock_case banners-set-at-file "banners set --message @<file>" \
+        banners set --message "@$work/banner-message.txt" --json
+
+    rest_rule='D44: the frozen `banners set` sends `-` literally; this build reads stdin (Ruling 4(b))'
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the message envelope (naming the resolved message)'
+    expect_oracle_requests='length == 1 and (.[0].method == "PUT") and any_body("\"message\":\"-\"")'
+    expect_rust_requests='length == 1 and (.[0].method == "PUT") and any_body("From stdin.")'
+    case_stdin=$'From stdin.'
+    mock_case banners-set-dash "banners set --message -" \
+        banners set --message - --json
+
+    status_rule='D34: a missing required option is a silent exit 0 in the oracle (the module’s Map.fetch! crash); this build is a loud usage error'
+    expect_statuses='0 1'
+    stdout_mode=text
+    mock_case banners-set-no-message "banners set (no --message)" \
+        banners set --json
+
+    case_org=missing
+    envelope_rule='D24: the error body stays the upstream bytes here, where the oracle re-renders the decoded map with inspect/2'
+    expect_oracle_requests='length == 1 and (.[0].method == "PUT") and any_path("/missing/_apis/settings/entries/banners")'
+    expect_rust_requests='length == 1 and (.[0].method == "PUT") and any_path("/missing/_apis/settings/entries/banners")'
+    mock_case banners-set-404 "banners set (404)" \
+        banners set --message 'Maintenance tonight' --json
+
+    case_org=ado-harness
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the message envelope'
+    expect_oracle_requests='length == 1 and (.[0].method == "DELETE") and any_path("/ado-harness/_apis/settings/entries/banners") and qpair("api-version=7.1")'
+    expect_rust_requests='length == 1 and (.[0].method == "DELETE") and any_path("/ado-harness/_apis/settings/entries/banners") and qpair("api-version=7.1")'
+    mock_case banners-delete "banners delete" \
+        banners delete --json
+
+    expect_oracle_requests='length == 1 and (.[0].method == "DELETE") and any_path("/ado-harness/_apis/settings/entries/banners") and qpair("api-version=7.1")'
+    expect_rust_requests='length == 1 and (.[0].method == "DELETE") and any_path("/ado-harness/_apis/settings/entries/banners") and qpair("api-version=7.1")'
+    stdout_mode=text
+    mock_case banners-delete-human "banners delete (human)" \
+        banners delete
+
+    case_org=missing
+    envelope_rule='D4: the frozen CLI writes the module wording to stderr with no envelope under --json where this build emits the error envelope'
+    expect_oracle_requests='length == 1 and (.[0].method == "DELETE") and any_path("/missing/_apis/settings/entries/banners")'
+    expect_rust_requests='length == 1 and (.[0].method == "DELETE") and any_path("/missing/_apis/settings/entries/banners")'
+    mock_case banners-delete-404 "banners delete (404)" \
+        banners delete --json
+
+    case_org=broken
+    # No rule: the frozen DELETE path keeps the upstream bytes (unlike its GET/PUT
+    # paths, which re-render the decoded map with inspect/2), so this envelope is
+    # byte-identical after jq -S and the case MATCHes.
+    expect_oracle_requests='length == 1 and (.[0].method == "DELETE") and any_path("/broken/_apis/settings/entries/banners")'
+    expect_rust_requests='length == 1 and (.[0].method == "DELETE") and any_path("/broken/_apis/settings/entries/banners")'
+    mock_case banners-delete-500 "banners delete (500)" \
+        banners delete --json
 
     mock_scenario_check
 }
