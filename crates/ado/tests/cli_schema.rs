@@ -122,6 +122,7 @@ fn schema_root_lists_exactly_the_shipped_subcommands() {
             "ado schema",
             "ado teams",
             "ado test-coverage",
+            "ado test-results",
             "ado users",
             "ado version",
             "ado whoami",
@@ -1776,4 +1777,94 @@ fn schema_banners_node_lists_every_shipped_subcommand() {
     let delete = find_node("banners delete").expect("the delete node");
     assert_eq!(option_names(&delete), GLOBALS, "delete declares no option");
     assert_eq!(delete["arguments"], json!([]));
+}
+
+/// The wave's Task 6 area: the module's three leaves and its two repaired
+/// filters, whose help text is the only spelling they can be passed under
+/// (Ruling 4(a) — the frozen `--build-id`/`--min-last-updated` cannot match).
+#[test]
+fn schema_test_results_node_lists_every_shipped_subcommand() {
+    let test_results = find_node("test-results").expect("the test-results node");
+
+    assert_eq!(
+        test_results["doc"],
+        json!(
+            "Manage Azure DevOps test results. Lists recent test runs, shows individual run details, and publishes results from standard format files (Cobertura XML, JUnit, etc.)."
+        )
+    );
+    assert_eq!(test_results["arguments"], json!([]));
+    assert_eq!(
+        subcommands(&test_results)
+            .iter()
+            .map(|sub| sub["name"].as_str().expect("a subcommand name"))
+            .collect::<Vec<_>>(),
+        [
+            "ado test-results list",
+            "ado test-results show",
+            "ado test-results publish"
+        ],
+        "the module's declaration order"
+    );
+
+    let list = find_node("test-results list").expect("the list node");
+    assert_eq!(
+        option_names(&list),
+        [
+            "build_id",
+            "json",
+            "min_last_updated",
+            "org",
+            "pat",
+            "server",
+            "top",
+            "verbose"
+        ],
+        "the module's two filters and --top"
+    );
+    assert_eq!(
+        argument(&list, "project")["required"],
+        json!(true),
+        "CliMate enforces the positional the schema marks false (D23)"
+    );
+    assert_eq!(option(&list, "top")["doc"], json!("Max runs to return (default: 50)"));
+    assert_eq!(
+        option(&list, "build_id")["doc"],
+        json!("Filter by build ID")
+    );
+    assert_eq!(
+        option(&list, "min_last_updated")["doc"],
+        json!("ISO date filter for last updated")
+    );
+
+    let show = find_node("test-results show").expect("the show node");
+    assert_eq!(option_names(&show), GLOBALS, "show declares no option");
+    assert_eq!(
+        show["arguments"]
+            .as_array()
+            .expect("an argument array")
+            .iter()
+            .map(|argument| argument["name"].as_str().expect("an argument name"))
+            .collect::<Vec<_>>(),
+        ["project", "run_id"],
+        "the module's two positionals, in its declaration order"
+    );
+    assert_eq!(argument(&show, "run_id")["type"], json!("string"));
+    assert_eq!(argument(&show, "run_id")["required"], json!(true));
+
+    let publish = find_node("test-results publish").expect("the publish node");
+    assert_eq!(
+        option_names(&publish),
+        [
+            "build_id", "file", "json", "name", "org", "pat", "server", "verbose"
+        ]
+    );
+    assert_eq!(option(&publish, "name")["required"], json!(true));
+    assert_eq!(option(&publish, "file")["required"], json!(true));
+    assert_eq!(
+        option(&publish, "build_id")["doc"],
+        json!(
+            "Numeric build ID to attach results to. If omitted, results are published as a standalone run (not linked to any build)."
+        )
+    );
+    assert_eq!(argument(&publish, "project")["required"], json!(true));
 }
