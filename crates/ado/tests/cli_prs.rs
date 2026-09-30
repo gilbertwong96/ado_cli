@@ -4414,6 +4414,44 @@ fn reviewers_list_search_with_no_match_is_an_empty_list() {
     );
 }
 
+/// D41's shape: a 200 whose body has no `value` key. The frozen `list_reviewers/1`
+/// matches `{:ok, %{"value" => …}}` with no fallback, so its `CaseClauseError` is
+/// swallowed into exit 0 with both streams empty; this build's `Client::list`
+/// passes the body through and `items/1` wraps it as one element, so the document
+/// is a one-item list rather than nothing.
+#[test]
+fn reviewers_list_without_a_value_key_wraps_the_body_as_one_item() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "GET",
+        &reviewers_route(138),
+        MockResponse::json(200, json!({"count": 0, "message": "no value here"})),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "prs",
+            "reviewers",
+            "list",
+            "Alpha",
+            "Alpha.Core",
+            "138",
+            "--json",
+        ],
+    );
+
+    assert_success(&output);
+    let envelope: Value = serde_json::from_str(&stdout_of(&output)).expect("the list envelope");
+    assert_eq!(
+        envelope,
+        json!({"ok": true, "count": 1, "items": [{"count": 0, "message": "no value here"}]}),
+        "D41: the whole body is wrapped as one item (where the oracle prints nothing)"
+    );
+}
+
 #[test]
 fn reviewers_list_404_is_the_not_found_envelope_with_the_upstream_body() {
     let home = TempHome::new();
