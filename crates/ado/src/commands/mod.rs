@@ -1,3 +1,4 @@
+pub mod agent_pools;
 pub mod areas;
 pub mod artifacts;
 pub mod branch_policies;
@@ -16,6 +17,7 @@ pub mod releases;
 pub mod repos;
 pub mod schema;
 pub mod teams;
+pub mod test_coverage;
 pub mod users;
 pub mod version;
 pub mod whoami;

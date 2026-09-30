@@ -99,6 +99,7 @@ fn schema_root_lists_exactly_the_shipped_subcommands() {
     assert_eq!(
         names,
         [
+            "ado agent-pools",
             "ado areas",
             "ado branch-policies",
             "ado completion",
@@ -116,6 +117,7 @@ fn schema_root_lists_exactly_the_shipped_subcommands() {
             "ado repos",
             "ado schema",
             "ado teams",
+            "ado test-coverage",
             "ado users",
             "ado version",
             "ado whoami",
@@ -1384,4 +1386,88 @@ fn schema_packages_releases_and_wikis_nodes_are_complete() {
             "pages {leaf} marks --content required too"
         );
     }
+}
+
+/// Task 2's two areas. Both group nodes are already the runnable hyphenated
+/// spelling, so the node names are the oracle's; the integer positionals report
+/// `type: "string"`/`required: true` where the oracle's schema says
+/// `integer`/`false` (D23's two bullets), and the options are the ones the
+/// frozen schema declares (`queues list --pool`; `test-coverage show`'s `--json`
+/// is this build's global).
+#[test]
+fn schema_agent_pools_and_test_coverage_nodes_list_every_shipped_subcommand() {
+    let agent_pools = find_node("agent-pools").expect("the agent-pools node");
+
+    assert_eq!(
+        subcommands(&agent_pools)
+            .iter()
+            .map(|sub| sub["name"].as_str().expect("a subcommand name"))
+            .collect::<Vec<_>>(),
+        [
+            "ado agent-pools list",
+            "ado agent-pools show",
+            "ado agent-pools queues"
+        ]
+    );
+    assert_eq!(
+        subcommands(&find_node("agent-pools queues").expect("the queues node"))
+            .iter()
+            .map(|sub| sub["name"].as_str().expect("a subcommand name"))
+            .collect::<Vec<_>>(),
+        ["ado agent-pools queues list"]
+    );
+
+    let show = find_node("agent-pools show").expect("the show node");
+    assert_eq!(argument(&show, "pool_id")["type"], json!("string"));
+    assert_eq!(argument(&show, "pool_id")["required"], json!(true));
+    assert_eq!(
+        option_names(&show),
+        GLOBALS,
+        "show declares no option of its own"
+    );
+
+    let queues_list = find_node("agent-pools queues list").expect("the queues list node");
+    assert_eq!(
+        option_names(&queues_list),
+        ["json", "org", "pat", "pool", "server", "verbose"],
+        "--pool is the module's one option"
+    );
+    assert_eq!(option(&queues_list, "pool")["type"], json!("string"));
+    assert_eq!(
+        option(&queues_list, "pool")["doc"],
+        json!("Filter by numeric agent pool ID")
+    );
+    assert_eq!(argument(&queues_list, "project")["required"], json!(true));
+
+    let coverage = find_node("test-coverage").expect("the test-coverage node");
+    assert_eq!(
+        subcommands(&coverage)
+            .iter()
+            .map(|sub| sub["name"].as_str().expect("a subcommand name"))
+            .collect::<Vec<_>>(),
+        ["ado test-coverage show"]
+    );
+
+    let coverage_show = find_node("test-coverage show").expect("the show node");
+    assert_eq!(
+        coverage_show["arguments"]
+            .as_array()
+            .expect("an argument array")
+            .iter()
+            .map(|argument| argument["name"].as_str().expect("an argument name"))
+            .collect::<Vec<_>>(),
+        ["project", "build_id"],
+        "the module's two positionals, in its declaration order"
+    );
+    for name in ["project", "build_id"] {
+        assert_eq!(
+            argument(&coverage_show, name)["required"],
+            json!(true),
+            "{name}"
+        );
+    }
+    assert_eq!(
+        argument(&coverage_show, "build_id")["type"],
+        json!("string")
+    );
 }

@@ -62,6 +62,56 @@ pub fn command() -> Command {
         )
         .subcommand(Command::new("logout").about("Remove stored credentials."))
         .subcommand(
+            Command::new("agent-pools")
+                .about(
+                    "Manage Azure DevOps agent pools and queues. Pools host agents; queues are project-scoped views into pools used for pipeline runs.",
+                )
+                .subcommand(
+                    Command::new("list")
+                        .about(
+                            "List every agent pool in the organization. Output is a table by default (ID, Name, Auto-provision, Type); pass --json for a machine-readable array. Use this to discover pool IDs for use with `pipelines-builds queue --pool` or for agent management.",
+                        ),
+                )
+                .subcommand(
+                    Command::new("show")
+                        .about(
+                            "Show details of an agent pool, including its agents and their status. The pool ID is an integer (not a name); use `ado agent-pools list` to look it up.",
+                        )
+                        .arg(
+                            Arg::new("pool_id")
+                                .value_name("POOL_ID")
+                                .required(true)
+                                .value_parser(clap::value_parser!(i64))
+                                .help("Numeric agent pool ID"),
+                        ),
+                )
+                .subcommand(
+                    Command::new("queues")
+                        .about(
+                            "Manage agent queues. A queue is a project-scoped alias for a pool — pipelines run on a queue, not a pool directly.",
+                        )
+                        .subcommand(
+                            Command::new("list")
+                                .about(
+                                    "List agent queues in a project. Output is a table (ID, Name, Pool); pass --json for raw data. Use --pool to filter by a specific pool's queues.",
+                                )
+                                .arg(
+                                    Arg::new("project")
+                                        .value_name("PROJECT")
+                                        .required(true)
+                                        .help("Project name or ID"),
+                                )
+                                .arg(
+                                    Arg::new("pool")
+                                        .long("pool")
+                                        .value_name("POOL_ID")
+                                        .value_parser(clap::value_parser!(i64))
+                                        .help("Filter by numeric agent pool ID"),
+                                ),
+                        ),
+                ),
+        )
+        .subcommand(
             Command::new("areas")
                 .about(
                     "Manage Azure DevOps area paths (classification nodes). Areas organize work items into a hierarchy (e.g. 'Project\\Team\\Feature') for filtering and reporting.",
@@ -2010,6 +2060,31 @@ pub fn command() -> Command {
                                         .required(true)
                                         .help("Team name or ID"),
                                 ),
+                        ),
+                ),
+        )
+        .subcommand(
+            Command::new("test-coverage")
+                .about(
+                    "Fetch code coverage data from Azure DevOps. Coverage is reported per build; show it by build ID. Output is a bar chart (module name + visual bar + percentage). Pass --json for raw data.",
+                )
+                .subcommand(
+                    Command::new("show")
+                        .about(
+                            "Show code coverage summary for a build: per-module coverage bars, total lines/covered lines, and overall percentage. Requires a build ID (the YAML pipeline or classic build that produced the coverage data).",
+                        )
+                        .arg(
+                            Arg::new("project")
+                                .value_name("PROJECT")
+                                .required(true)
+                                .help("Project name or ID where the build ran"),
+                        )
+                        .arg(
+                            Arg::new("build_id")
+                                .value_name("BUILD_ID")
+                                .required(true)
+                                .value_parser(clap::value_parser!(i64))
+                                .help("Numeric build ID that has coverage data attached"),
                         ),
                 ),
         )

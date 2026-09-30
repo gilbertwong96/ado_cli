@@ -59,6 +59,30 @@ fn main() -> ExitCode {
             )
         }
         Some(("logout", _)) => commands::logout::run(&mut Context::load(globals)),
+        Some(("agent-pools", sub)) => {
+            let mut context = Context::load(globals);
+
+            match sub.subcommand() {
+                Some(("list", _)) => commands::agent_pools::list(&mut context),
+                Some(("show", show)) => commands::agent_pools::show(
+                    &mut context,
+                    show.get_one::<i64>("pool_id")
+                        .copied()
+                        .expect("the positional is required"),
+                ),
+                Some(("queues", queues)) => match queues.subcommand() {
+                    Some(("list", list)) => commands::agent_pools::queues_list(
+                        &mut context,
+                        list.get_one::<String>("project")
+                            .expect("the positional is required")
+                            .as_str(),
+                        list.get_one::<i64>("pool").copied(),
+                    ),
+                    _ => Err(AdoError::validation(MISSING_SUBCOMMAND)),
+                },
+                _ => Err(AdoError::validation(MISSING_SUBCOMMAND)),
+            }
+        }
         Some(("areas", sub)) => {
             let mut context = Context::load(globals);
 
@@ -871,6 +895,22 @@ fn main() -> ExitCode {
                     ),
                     _ => Err(AdoError::validation(MISSING_SUBCOMMAND)),
                 },
+                _ => Err(AdoError::validation(MISSING_SUBCOMMAND)),
+            }
+        }
+        Some(("test-coverage", sub)) => {
+            let mut context = Context::load(globals);
+
+            match sub.subcommand() {
+                Some(("show", show)) => commands::test_coverage::show(
+                    &mut context,
+                    show.get_one::<String>("project")
+                        .expect("the positional is required")
+                        .as_str(),
+                    show.get_one::<i64>("build_id")
+                        .copied()
+                        .expect("the positional is required"),
+                ),
                 _ => Err(AdoError::validation(MISSING_SUBCOMMAND)),
             }
         }
