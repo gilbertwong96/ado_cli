@@ -105,18 +105,21 @@ fn schema_root_lists_exactly_the_shipped_subcommands() {
             "ado iterations",
             "ado login",
             "ado logout",
+            "ado packages",
             "ado pipelines",
             "ado pipelines-artifacts",
             "ado pipelines-builds",
             "ado pipelines-folders",
             "ado projects",
             "ado prs",
+            "ado releases",
             "ado repos",
             "ado schema",
             "ado teams",
             "ado users",
             "ado version",
             "ado whoami",
+            "ado wikis",
             "ado workitems"
         ]
     );
@@ -1254,4 +1257,131 @@ fn schema_plain_matches_the_documented_shape() {
         !output.stdout.contains(&0x1B),
         "stdout contains an ESC byte: {text:?}"
     );
+}
+
+/// The Task 15 tree: `packages` (three leaves, the only area with a
+/// three-positional command and a four-positional `show`), `releases` (the two
+/// leaves and the three list filters, whose runnable spelling is
+/// `--definition-id` where the schema says `definition_id`), and `wikis` with
+/// its `pages` grandchild — one level deeper than the parents around it. The
+/// three page leaves mark `--path`/`--content` required where the oracle's
+/// `Map.fetch!` makes a missing one a silent exit 0 (D34's loud half).
+#[test]
+fn schema_packages_releases_and_wikis_nodes_are_complete() {
+    let packages = find_node("packages").expect("the packages node");
+    assert_eq!(
+        subcommands(&packages)
+            .iter()
+            .map(|sub| sub["name"].as_str().expect("a subcommand name"))
+            .collect::<Vec<_>>(),
+        [
+            "ado packages list",
+            "ado packages versions",
+            "ado packages show"
+        ]
+    );
+    assert_eq!(
+        subcommands(&packages)
+            .iter()
+            .map(|sub| sub["arguments"]
+                .as_array()
+                .expect("an argument array")
+                .len())
+            .collect::<Vec<_>>(),
+        [2, 3, 4],
+        "the three shapes: list takes two positionals, versions three, show four"
+    );
+
+    let releases = find_node("releases").expect("the releases node");
+    assert_eq!(
+        subcommands(&releases)
+            .iter()
+            .map(|sub| sub["name"].as_str().expect("a subcommand name"))
+            .collect::<Vec<_>>(),
+        ["ado releases list", "ado releases show"]
+    );
+    assert_eq!(
+        option_names(&find_node("releases list").expect("the list node")),
+        [
+            "definition-id",
+            "json",
+            "org",
+            "pat",
+            "server",
+            "status",
+            "top",
+            "verbose"
+        ],
+        "the runnable `--definition-id` spelling, not the schema's `definition_id`"
+    );
+    assert_eq!(
+        argument(
+            &find_node("releases show").expect("the show node"),
+            "release_id"
+        )["type"],
+        json!("string"),
+        "this build's schema reports a value-parser as a string (D23)"
+    );
+
+    let wikis = find_node("wikis").expect("the wikis node");
+    assert_eq!(
+        subcommands(&wikis)
+            .iter()
+            .map(|sub| sub["name"].as_str().expect("a subcommand name"))
+            .collect::<Vec<_>>(),
+        ["ado wikis list", "ado wikis show", "ado wikis pages"]
+    );
+    assert_eq!(
+        subcommands(&find_node("wikis pages").expect("the pages node"))
+            .iter()
+            .map(|sub| sub["name"].as_str().expect("a subcommand name"))
+            .collect::<Vec<_>>(),
+        [
+            "ado wikis pages list",
+            "ado wikis pages show",
+            "ado wikis pages create",
+            "ado wikis pages update"
+        ],
+        "the nested leaf the invocations table warns about"
+    );
+
+    let cases: [(&str, &[&str]); 4] = [
+        ("list", &["json", "org", "pat", "path", "server", "verbose"]),
+        ("show", &["json", "org", "pat", "path", "server", "verbose"]),
+        (
+            "create",
+            &["content", "json", "org", "pat", "path", "server", "verbose"],
+        ),
+        (
+            "update",
+            &["content", "json", "org", "pat", "path", "server", "verbose"],
+        ),
+    ];
+
+    for (leaf, expected) in cases {
+        let node = find_node(&format!("wikis pages {leaf}")).expect("a page leaf");
+        assert_eq!(
+            option_names(&node),
+            expected,
+            "pages {leaf} carries its options and the five globals"
+        );
+    }
+
+    for leaf in ["show", "create", "update"] {
+        let node = find_node(&format!("wikis pages {leaf}")).expect("a page leaf");
+        assert_eq!(
+            option(&node, "path")["required"],
+            json!(true),
+            "pages {leaf} marks --path required where the oracle's Map.fetch! is silent (D34)"
+        );
+    }
+
+    for leaf in ["create", "update"] {
+        let node = find_node(&format!("wikis pages {leaf}")).expect("a page leaf");
+        assert_eq!(
+            option(&node, "content")["required"],
+            json!(true),
+            "pages {leaf} marks --content required too"
+        );
+    }
 }
