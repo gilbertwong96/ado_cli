@@ -38,7 +38,10 @@ pub fn show(context: &mut Context, project: &str, team_id: &str) -> Result<Repor
         Ok(team) => {
             Ok(context.json_or_report(ok_value(team.clone()), || Report::Text(team_detail(&team))))
         }
-        Err(error) if error.code == ErrorCode::NotFound => Err(not_found(error, team_id)),
+        Err(error) if error.code == ErrorCode::NotFound => Err(AdoError {
+            message: format!("Team '{team_id}' not found"),
+            ..error
+        }),
         Err(error) => Err(error),
     }
 }
@@ -89,12 +92,16 @@ pub fn update(
         Ok(team) => Ok(context.json_or_report(ok_value(team.clone()), || {
             Report::Text(format!("Team '{}' updated.", value_text(team.get("name"))))
         })),
-        Err(error) if error.code == ErrorCode::NotFound => Err(not_found(error, team_id)),
+        Err(error) if error.code == ErrorCode::NotFound => Err(AdoError {
+            message: format!("Team '{team_id}' not found"),
+            ..error
+        }),
         Err(error) => Err(error),
     }
 }
 
 /// `ado teams delete`: the module's plain `DELETE`, without a prompt (R1/R5).
+/// A 404 takes the module's own wording.
 pub fn delete(context: &mut Context, project: &str, team_id: &str) -> Result<Report, AdoError> {
     let path = team_path(project, team_id);
 
@@ -104,7 +111,10 @@ pub fn delete(context: &mut Context, project: &str, team_id: &str) -> Result<Rep
 
             Ok(context.json_or_report(ok_message(&message), || Report::Text(message)))
         }
-        Err(error) if error.code == ErrorCode::NotFound => Err(not_found(error, team_id)),
+        Err(error) if error.code == ErrorCode::NotFound => Err(AdoError {
+            message: format!("Team '{team_id}' not found"),
+            ..error
+        }),
         Err(error) => Err(error),
     }
 }
@@ -178,15 +188,6 @@ fn update_body(name: Option<String>, description: Option<String>) -> Value {
     }
 
     Value::Object(body)
-}
-
-/// `halt_error("Team '<id>' not found")` keeps the module's wording on the
-/// classified error, so `--json` carries it in the envelope (D4's class).
-fn not_found(error: AdoError, team_id: &str) -> AdoError {
-    AdoError {
-        message: format!("Team '{team_id}' not found"),
-        ..error
-    }
 }
 
 /// The module's `print_teams_table/1` columns (ID, Name, Description), with the

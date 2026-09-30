@@ -53,7 +53,10 @@ pub fn show(context: &mut Context, project: &str, policy_id: i64) -> Result<Repo
         Ok(policy) => Ok(context.json_or_report(ok_value(policy.clone()), || {
             Report::Text(policy_detail(&policy))
         })),
-        Err(error) if error.code == ErrorCode::NotFound => Err(not_found(error, policy_id)),
+        Err(error) if error.code == ErrorCode::NotFound => Err(AdoError {
+            message: format!("Policy #{policy_id} not found"),
+            ..error
+        }),
         Err(error) => Err(error),
     }
 }
@@ -100,7 +103,12 @@ pub fn update(
 
     let existing = match context.client()?.get(&path, &[]) {
         Ok(existing) => existing,
-        Err(error) if error.code == ErrorCode::NotFound => return Err(not_found(error, policy_id)),
+        Err(error) if error.code == ErrorCode::NotFound => {
+            return Err(AdoError {
+                message: format!("Policy #{policy_id} not found"),
+                ..error
+            });
+        }
         Err(error) => return Err(error),
     };
 
@@ -188,15 +196,6 @@ fn update_body(existing: &Value, blocking: Option<bool>, enabled: Option<bool>) 
 fn flag_or_existing(flag: Option<bool>, existing: &Value, key: &str) -> Value {
     flag.map(Value::Bool)
         .unwrap_or_else(|| existing.get(key).cloned().unwrap_or(Value::Null))
-}
-
-/// `halt_error("Policy #<id> not found")` keeps the module's wording on the
-/// classified error (D4's class).
-fn not_found(error: AdoError, policy_id: i64) -> AdoError {
-    AdoError {
-        message: format!("Policy #{policy_id} not found"),
-        ..error
-    }
 }
 
 /// The module's `print_policies_table/1` columns (ID, Type, Branch, Blocking,

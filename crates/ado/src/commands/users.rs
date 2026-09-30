@@ -46,7 +46,10 @@ pub fn show(context: &mut Context, user_id: &str) -> Result<Report, AdoError> {
         Ok(user) => {
             Ok(context.json_or_report(ok_value(user.clone()), || Report::Text(user_detail(&user))))
         }
-        Err(error) if error.code == ErrorCode::NotFound => Err(not_found(error, user_id)),
+        Err(error) if error.code == ErrorCode::NotFound => Err(AdoError {
+            message: format!("User '{user_id}' not found"),
+            ..error
+        }),
         Err(error) => Err(error),
     }
 }
@@ -73,6 +76,7 @@ pub fn add(
 }
 
 /// `ado users remove`: the module's plain `DELETE`, without a prompt (R1/R5).
+/// A 404 takes the module's own wording.
 pub fn remove(context: &mut Context, user_id: &str) -> Result<Report, AdoError> {
     let path = user_path(user_id);
 
@@ -82,7 +86,10 @@ pub fn remove(context: &mut Context, user_id: &str) -> Result<Report, AdoError> 
 
             Ok(context.json_or_report(ok_message(&message), || Report::Text(message)))
         }
-        Err(error) if error.code == ErrorCode::NotFound => Err(not_found(error, user_id)),
+        Err(error) if error.code == ErrorCode::NotFound => Err(AdoError {
+            message: format!("User '{user_id}' not found"),
+            ..error
+        }),
         Err(error) => Err(error),
     }
 }
@@ -109,15 +116,6 @@ fn add_body(email: &str, license: &str) -> Value {
         "accessLevel": {"accountLicenseType": license},
         "user": {"principalName": email, "subjectKind": "user"},
     })
-}
-
-/// `halt_error("User '<id>' not found")` keeps the module's wording on the
-/// classified error, so `--json` carries it in the envelope (D4's class).
-fn not_found(error: AdoError, user_id: &str) -> AdoError {
-    AdoError {
-        message: format!("User '{user_id}' not found"),
-        ..error
-    }
 }
 
 /// The module's `print_users_table/1` columns (ID, Email, License), with the

@@ -55,7 +55,10 @@ pub fn show(
         Ok(iteration) => Ok(context.json_or_report(ok_value(iteration.clone()), || {
             Report::Text(iteration_detail(&iteration))
         })),
-        Err(error) if error.code == ErrorCode::NotFound => Err(not_found(error)),
+        Err(error) if error.code == ErrorCode::NotFound => Err(AdoError {
+            message: "Iteration not found".to_owned(),
+            ..error
+        }),
         Err(error) => Err(error),
     }
 }
@@ -113,12 +116,16 @@ pub fn update(
                 value_text(iteration.get("name"))
             ))
         })),
-        Err(error) if error.code == ErrorCode::NotFound => Err(not_found(error)),
+        Err(error) if error.code == ErrorCode::NotFound => Err(AdoError {
+            message: "Iteration not found".to_owned(),
+            ..error
+        }),
         Err(error) => Err(error),
     }
 }
 
 /// `ado iterations delete`: the module's plain `DELETE`, without a prompt (R1).
+/// A 404 takes the module's own wording.
 pub fn delete(
     context: &mut Context,
     project: &str,
@@ -133,7 +140,10 @@ pub fn delete(
 
             Ok(context.json_or_report(ok_message(&message), || Report::Text(message)))
         }
-        Err(error) if error.code == ErrorCode::NotFound => Err(not_found(error)),
+        Err(error) if error.code == ErrorCode::NotFound => Err(AdoError {
+            message: "Iteration not found".to_owned(),
+            ..error
+        }),
         Err(error) => Err(error),
     }
 }
@@ -209,15 +219,6 @@ fn insert_attributes(body: &mut Value, start_date: Option<&str>, finish_date: Op
     body.as_object_mut()
         .expect("the iteration body is an object")
         .insert("attributes".to_owned(), Value::Object(attributes));
-}
-
-/// `halt_error("Iteration not found")` keeps the module's wording on the
-/// classified error, so `--json` carries it in the envelope (D4's class).
-fn not_found(error: AdoError) -> AdoError {
-    AdoError {
-        message: "Iteration not found".to_owned(),
-        ..error
-    }
 }
 
 /// The module's `print_iterations_table/1` table: ID, Name, Start, Finish, with
