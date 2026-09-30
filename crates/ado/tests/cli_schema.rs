@@ -103,6 +103,7 @@ fn schema_root_lists_exactly_the_shipped_subcommands() {
             "ado areas",
             "ado branch-policies",
             "ado completion",
+            "ado connections",
             "ado iterations",
             "ado login",
             "ado logout",
@@ -1470,4 +1471,93 @@ fn schema_agent_pools_and_test_coverage_nodes_list_every_shipped_subcommand() {
         argument(&coverage_show, "build_id")["type"],
         json!("string")
     );
+}
+
+/// Task 3's area: the five `connections` leaves, their positionals (the module's
+/// `create` takes name/type/url **positionally** — the moduledoc's `--name`
+/// spellings are not flags) and the D23 metadata this build reports.
+#[test]
+fn schema_connections_node_lists_every_shipped_subcommand() {
+    let connections = find_node("connections").expect("the connections node");
+
+    assert_eq!(
+        subcommands(&connections)
+            .iter()
+            .map(|sub| sub["name"].as_str().expect("a subcommand name"))
+            .collect::<Vec<_>>(),
+        [
+            "ado connections list",
+            "ado connections show",
+            "ado connections create",
+            "ado connections update",
+            "ado connections delete"
+        ]
+    );
+    assert_eq!(
+        connections["doc"],
+        json!(
+            "Manage service connections (a.k.a. service endpoints). A service connection stores credentials for external services (Azure subscriptions, GitHub repos, Docker registries, Kubernetes clusters) so pipelines can access them without re-entering secrets."
+        ),
+        "the oracle's group doc verbatim"
+    );
+
+    let list = find_node("connections list").expect("the list node");
+    assert_eq!(
+        option_names(&list),
+        ["json", "org", "pat", "server", "type", "verbose"],
+        "--type is the module's one option"
+    );
+    assert_eq!(option(&list, "type")["type"], json!("string"));
+    assert_eq!(argument(&list, "project")["required"], json!(true));
+
+    let create = find_node("connections create").expect("the create node");
+    assert_eq!(
+        create["arguments"]
+            .as_array()
+            .expect("an argument array")
+            .iter()
+            .map(|argument| argument["name"].as_str().expect("an argument name"))
+            .collect::<Vec<_>>(),
+        ["project", "name", "type", "url"],
+        "the oracle's positional order; --name/--type/--url are not flags"
+    );
+    assert_eq!(
+        option_names(&create),
+        [
+            "access-token",
+            "data",
+            "description",
+            "json",
+            "org",
+            "pat",
+            "ready",
+            "scheme",
+            "server",
+            "verbose"
+        ],
+        "the five module options; D17's hyphenated spelling, not the keyword name"
+    );
+    assert_eq!(option(&create, "ready")["type"], json!("boolean"));
+    assert_eq!(option(&create, "ready")["default"], json!("false"));
+
+    let update = find_node("connections update").expect("the update node");
+    assert_eq!(
+        option_names(&update),
+        [
+            "access-token",
+            "data",
+            "description",
+            "json",
+            "name",
+            "org",
+            "pat",
+            "server",
+            "url",
+            "verbose"
+        ]
+    );
+
+    let delete = find_node("connections delete").expect("the delete node");
+    assert_eq!(option_names(&delete), ["force", "json", "org", "pat", "server", "verbose"]);
+    assert_eq!(option(&delete, "force")["type"], json!("boolean"));
 }
