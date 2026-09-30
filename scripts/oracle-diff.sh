@@ -3256,6 +3256,228 @@ run_mock_cases() {
     mock_case test-coverage-noninteger "test-coverage show (non-integer build_id)" \
         test-coverage show Alpha not-an-integer
 
+    # ── Wave 3: service connections (Task 3) ──
+    #
+    # The area's argv is the oracle schema's, not the moduledoc's: `create` takes
+    # NAME TYPE URL **positionally** (`--name/--type/--url` are `invalid option`
+    # there, and clap refuses the same three), while `update` keeps its three as
+    # options. Every write route carries the `request_body` pin the capture
+    # produced — including `--data`'s nesting under `"data"` and the token at
+    # `authorization.parameters.accessToken` — so a body regression fails the
+    # route's verdict even when both sides regress together. `--type` is a query
+    # pair on the wire, not a client-side filter. The `--json` success paths are
+    # the oracle's human line there and this build's value/message envelope (D33);
+    # the module's own 404s and local errors (`update`'s empty-body guard, the
+    # `--data` messages, an unreadable secret file) are stderr-only there and an
+    # envelope here (D4); a missing positional is D5. The `delete` cases are the
+    # wave's fourth prompt: `prompt-text`/`prompt-json` strip the oracle's question
+    # and assert D31 — the question is on the oracle's stdout, this build's on
+    # stderr — while `n`/EOF/`--force` carry D30/D32 as Wave 2 pinned them. The
+    # last case is the one unported spelling this task found: the oracle's
+    # booleans also take `--flag=false`/`--no-flag` and this build's clap flags do
+    # not (recorded in the task report, not repaired here).
+
+    expect_oracle_requests='length == 1 and any_path("/ado-harness/Alpha/_apis/serviceendpoint/endpoints") and qpair("api-version=7.1")'
+    expect_rust_requests='length == 1 and any_path("/ado-harness/Alpha/_apis/serviceendpoint/endpoints") and qpair("api-version=7.1")'
+    mock_case connections-list "connections list" \
+        connections list Alpha --json
+
+    expect_oracle_requests='length == 1 and any_path("/ado-harness/Alpha/_apis/serviceendpoint/endpoints") and qpair("api-version=7.1") and qpair("type=github")'
+    expect_rust_requests='length == 1 and any_path("/ado-harness/Alpha/_apis/serviceendpoint/endpoints") and qpair("api-version=7.1") and qpair("type=github")'
+    mock_case connections-list-type "connections list --type" \
+        connections list Alpha --type github --json
+
+    stdout_mode=text
+    mock_case connections-list-empty-human "connections list (empty, human)" \
+        connections list Empty
+
+    envelope_rule='D24: the error body stays the upstream bytes here, where the oracle re-renders the decoded map with inspect/2 (C12: the list-error pair)'
+    expect_oracle_requests='length == 1 and any_path("/ado-harness/Missing/_apis/serviceendpoint/endpoints") and qpair("api-version=7.1")'
+    expect_rust_requests='length == 1 and any_path("/ado-harness/Missing/_apis/serviceendpoint/endpoints") and qpair("api-version=7.1")'
+    mock_case connections-list-404 "connections list (404)" \
+        connections list Missing --json
+
+    envelope_rule='D24: the error body stays the upstream bytes here, where the oracle re-renders the decoded map with inspect/2 (C12: the list-error pair)'
+    expect_oracle_requests='length == 1 and any_path("/ado-harness/Broken/_apis/serviceendpoint/endpoints") and qpair("api-version=7.1")'
+    expect_rust_requests='length == 1 and any_path("/ado-harness/Broken/_apis/serviceendpoint/endpoints") and qpair("api-version=7.1")'
+    mock_case connections-list-500 "connections list (500)" \
+        connections list Broken --json
+
+    envelope_rule='D4: the oracle prints its human error line on stdout; this build writes the labelled line to stderr alone'
+    expect_oracle_requests='length == 1 and any_path("/ado-harness/Missing/_apis/serviceendpoint/endpoints")'
+    expect_rust_requests='length == 1 and any_path("/ado-harness/Missing/_apis/serviceendpoint/endpoints")'
+    stdout_mode=text
+    mock_case connections-list-404-human "connections list (404, human)" \
+        connections list Missing
+
+    envelope_rule='D5: the oracle prints the command help on stdout before its usage error; this build writes clap’s message to stderr alone'
+    stdout_mode=text
+    mock_case connections-list-no-project "connections list (no project)" \
+        connections list --json
+
+    expect_oracle_requests='length == 1 and any_path("/ado-harness/Alpha/_apis/serviceendpoint/endpoints/c1") and qpair("api-version=7.1")'
+    expect_rust_requests='length == 1 and any_path("/ado-harness/Alpha/_apis/serviceendpoint/endpoints/c1") and qpair("api-version=7.1")'
+    mock_case connections-show "connections show" \
+        connections show Alpha c1 --json
+
+    stdout_mode=text
+    mock_case connections-show-human "connections show (human)" \
+        connections show Alpha c1
+
+    envelope_rule='D4: the frozen CLI writes the 404 to stderr with no envelope under --json where this build emits the error envelope'
+    expect_oracle_requests='length == 1 and any_path("/ado-harness/Alpha/_apis/serviceendpoint/endpoints/missing")'
+    expect_rust_requests='length == 1 and any_path("/ado-harness/Alpha/_apis/serviceendpoint/endpoints/missing")'
+    mock_case connections-show-404 "connections show (404)" \
+        connections show Alpha missing --json
+
+    envelope_rule='D5: the oracle prints the command help on stdout before its usage error; this build writes clap’s message to stderr alone'
+    stdout_mode=text
+    mock_case connections-show-no-id "connections show (no connection_id)" \
+        connections show Alpha --json
+
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the value envelope'
+    expect_oracle_requests='length == 1 and (.[0].method == "POST") and any_path("/ado-harness/Alpha/_apis/serviceendpoint/endpoints") and qpair("api-version=7.1")'
+    expect_rust_requests='length == 1 and (.[0].method == "POST") and any_path("/ado-harness/Alpha/_apis/serviceendpoint/endpoints") and qpair("api-version=7.1")'
+    mock_case connections-create "connections create" \
+        connections create Alpha GitHub github https://github.com --json
+
+    expect_oracle_requests='length == 1 and (.[0].method == "POST") and any_path("/ado-harness/Alpha/_apis/serviceendpoint/endpoints")'
+    expect_rust_requests='length == 1 and (.[0].method == "POST") and any_path("/ado-harness/Alpha/_apis/serviceendpoint/endpoints")'
+    stdout_mode=text
+    mock_case connections-create-human "connections create (human)" \
+        connections create Alpha GitHub github https://github.com
+
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the value envelope'
+    expect_oracle_requests='length == 1 and (.[0].method == "POST") and any_path("/ado-harness/Full/_apis/serviceendpoint/endpoints")'
+    expect_rust_requests='length == 1 and (.[0].method == "POST") and any_path("/ado-harness/Full/_apis/serviceendpoint/endpoints")'
+    mock_case connections-create-full "connections create (every option)" \
+        connections create Full GitHub github https://github.com \
+        --description "A GitHub PAT" --scheme Token --access-token ghp_xxx \
+        --data '{"subscriptionId":"s1"}' --ready --json
+
+    case_stdin=$'ghp_from_stdin\n'
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the value envelope'
+    expect_oracle_requests='length == 1 and (.[0].method == "POST") and any_path("/ado-harness/Stdin/_apis/serviceendpoint/endpoints")'
+    expect_rust_requests='length == 1 and (.[0].method == "POST") and any_path("/ado-harness/Stdin/_apis/serviceendpoint/endpoints")'
+    mock_case connections-create-token-stdin "connections create --access-token -" \
+        connections create Stdin GitHub github https://github.com --access-token - --json
+
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the value envelope'
+    expect_oracle_requests='length == 1 and (.[0].method == "POST") and any_path("/ado-harness/TokenFile/_apis/serviceendpoint/endpoints")'
+    expect_rust_requests='length == 1 and (.[0].method == "POST") and any_path("/ado-harness/TokenFile/_apis/serviceendpoint/endpoints")'
+    mock_case connections-create-token-file "connections create --access-token @file" \
+        connections create TokenFile GitHub github https://github.com \
+        --access-token "@$root/crates/ado-testkit/fixtures/connection_token.txt" --json
+
+    envelope_rule='D4: the frozen CLI writes the local error to stderr with no envelope under --json where this build emits the error envelope'
+    mock_case connections-create-token-absent "connections create --access-token @absent" \
+        connections create Alpha GitHub github https://github.com \
+        --access-token "@$root/crates/ado-testkit/fixtures/absent.txt" --json
+
+    envelope_rule='D4: the frozen CLI writes the local error to stderr with no envelope under --json where this build emits the error envelope'
+    mock_case connections-create-data-invalid "connections create --data not-json" \
+        connections create Alpha GitHub github https://github.com --data notjson --json
+
+    envelope_rule='D4: the frozen CLI writes the 404 to stderr with no envelope under --json where this build emits the error envelope'
+    expect_oracle_requests='length == 1 and (.[0].method == "POST") and any_path("/ado-harness/Missing/_apis/serviceendpoint/endpoints")'
+    expect_rust_requests='length == 1 and (.[0].method == "POST") and any_path("/ado-harness/Missing/_apis/serviceendpoint/endpoints")'
+    mock_case connections-create-404 "connections create (404)" \
+        connections create Missing GitHub github https://github.com --json
+
+    envelope_rule='D5: the oracle prints the command help on stdout before its usage error; this build writes clap’s message to stderr alone'
+    stdout_mode=text
+    mock_case connections-create-no-url "connections create (no url)" \
+        connections create Alpha GitHub github --json
+
+    status_rule='the unported boolean spelling: the oracle parses --ready=false, this build’s clap refuses it'
+    expect_statuses='0 1'
+    rest_rule='the unported boolean spelling: the oracle proceeds with isReady=false, this build refuses the flag and sends nothing'
+    expect_oracle_requests='length == 1 and (.[0].method == "POST") and any_path("/ado-harness/Alpha/_apis/serviceendpoint/endpoints")'
+    expect_rust_requests='length == 0'
+    envelope_rule='D5: the oracle prints its human success line, this build writes clap’s usage error to stderr alone'
+    stdout_mode=text
+    mock_case connections-create-ready-eq-false "connections create --ready=false (unported boolean spelling)" \
+        connections create Alpha GitHub github https://github.com --ready=false
+
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the value envelope'
+    expect_oracle_requests='length == 1 and (.[0].method == "PUT") and any_path("/ado-harness/Alpha/_apis/serviceendpoint/endpoints/c1")'
+    expect_rust_requests='length == 1 and (.[0].method == "PUT") and any_path("/ado-harness/Alpha/_apis/serviceendpoint/endpoints/c1")'
+    mock_case connections-update "connections update --name" \
+        connections update Alpha c1 --name Renamed --json
+
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the value envelope'
+    expect_oracle_requests='length == 1 and (.[0].method == "PUT") and any_path("/ado-harness/Full/_apis/serviceendpoint/endpoints/c1")'
+    expect_rust_requests='length == 1 and (.[0].method == "PUT") and any_path("/ado-harness/Full/_apis/serviceendpoint/endpoints/c1")'
+    mock_case connections-update-full "connections update (every option)" \
+        connections update Full c1 --name Renamed --description Renamed \
+        --url https://github.com/new --access-token ghp_new \
+        --data '{"subscriptionId":"s2"}' --json
+
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the value envelope'
+    expect_oracle_requests='length == 1 and (.[0].method == "PUT") and any_path("/ado-harness/Token/_apis/serviceendpoint/endpoints/c1")'
+    expect_rust_requests='length == 1 and (.[0].method == "PUT") and any_path("/ado-harness/Token/_apis/serviceendpoint/endpoints/c1")'
+    mock_case connections-update-token "connections update --access-token" \
+        connections update Token c1 --access-token ghp_new --json
+
+    envelope_rule='D4: the frozen CLI writes the guard to stderr with no envelope under --json where this build emits the error envelope'
+    mock_case connections-update-guard "connections update (no options)" \
+        connections update Alpha c1 --json
+
+    envelope_rule='D4: the frozen CLI writes the 404 to stderr with no envelope under --json where this build emits the error envelope'
+    expect_oracle_requests='length == 1 and (.[0].method == "PUT") and any_path("/ado-harness/Alpha/_apis/serviceendpoint/endpoints/missing")'
+    expect_rust_requests='length == 1 and (.[0].method == "PUT") and any_path("/ado-harness/Alpha/_apis/serviceendpoint/endpoints/missing")'
+    mock_case connections-update-404 "connections update (404)" \
+        connections update Alpha missing --name X --json
+
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the message envelope'
+    expect_oracle_requests='length == 1 and (.[0].method == "DELETE") and any_path("/ado-harness/Alpha/_apis/serviceendpoint/endpoints/c1")'
+    expect_rust_requests='length == 1 and (.[0].method == "DELETE") and any_path("/ado-harness/Alpha/_apis/serviceendpoint/endpoints/c1")'
+    mock_case connections-delete-force "connections delete --force" \
+        connections delete Alpha c1 --force --json
+
+    expect_oracle_requests='length == 1 and (.[0].method == "DELETE") and any_path("/ado-harness/Alpha/_apis/serviceendpoint/endpoints/c1")'
+    expect_rust_requests='length == 1 and (.[0].method == "DELETE") and any_path("/ado-harness/Alpha/_apis/serviceendpoint/endpoints/c1")'
+    stdout_mode=text
+    mock_case connections-delete-force-human "connections delete --force (human)" \
+        connections delete Alpha c1 --force
+
+    case_stdin=$'y\n'
+    expect_oracle_requests='length == 1 and (.[0].method == "DELETE") and any_path("/ado-harness/Alpha/_apis/serviceendpoint/endpoints/c1")'
+    expect_rust_requests='length == 1 and (.[0].method == "DELETE") and any_path("/ado-harness/Alpha/_apis/serviceendpoint/endpoints/c1")'
+    stdout_mode=prompt-text
+    mock_case connections-delete-confirmed "connections delete (confirmed)" \
+        connections delete Alpha c1
+
+    case_stdin=$'y\n'
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the message envelope'
+    expect_oracle_requests='length == 1 and (.[0].method == "DELETE") and any_path("/ado-harness/Alpha/_apis/serviceendpoint/endpoints/c1")'
+    expect_rust_requests='length == 1 and (.[0].method == "DELETE") and any_path("/ado-harness/Alpha/_apis/serviceendpoint/endpoints/c1")'
+    stdout_mode=prompt-json
+    mock_case connections-delete-confirmed-json "connections delete (confirmed, --json)" \
+        connections delete Alpha c1 --json
+
+    case_stdin=$'n\n'
+    stdout_mode=prompt-text
+    mock_case connections-delete-refused "connections delete (refused)" \
+        connections delete Alpha c1
+
+    case_stdin=$'n\n'
+    stdout_mode=prompt-text
+    mock_case connections-delete-refused-json "connections delete (refused, --json)" \
+        connections delete Alpha c1 --json
+
+    status_rule='D30: the frozen CLI exits 0 on an unanswered prompt; this build refuses with exit 1'
+    expect_statuses='0 1'
+    stdout_mode=prompt-text
+    mock_case connections-delete-eof "connections delete (EOF)" \
+        connections delete Alpha c1
+
+    envelope_rule='D4: the frozen CLI writes the 404 to stderr with no envelope under --json where this build emits the error envelope'
+    expect_oracle_requests='length == 1 and (.[0].method == "DELETE") and any_path("/ado-harness/Alpha/_apis/serviceendpoint/endpoints/missing")'
+    expect_rust_requests='length == 1 and (.[0].method == "DELETE") and any_path("/ado-harness/Alpha/_apis/serviceendpoint/endpoints/missing")'
+    mock_case connections-delete-404 "connections delete (404)" \
+        connections delete Alpha missing --force --json
+
     mock_scenario_check
 }
 

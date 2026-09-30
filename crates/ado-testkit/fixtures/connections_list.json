@@ -1,0 +1,7 @@
+{
+  "count": 2,
+  "value": [
+    {"id": "c1", "name": "GitHub", "type": "github"},
+    {"id": "c2", "name": "K8s", "type": "kubernetes"}
+  ]
+}

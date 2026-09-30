@@ -1,0 +1,7 @@
+{
+  "id": "new-id",
+  "name": "GitHub",
+  "type": "github",
+  "url": "https://github.com",
+  "isReady": true
+}

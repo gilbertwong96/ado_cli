@@ -1031,6 +1031,88 @@
     {"method": "GET", "path": "/ado-harness/Empty/_apis/test/codecoverage", "json": {"coverageData": []}},
     {"method": "GET", "path": "/ado-harness/NoCoverage/_apis/test/codecoverage", "json": {"count": 0, "value": []}},
     {"method": "GET", "path": "/ado-harness/Missing/_apis/test/codecoverage", "status": 404, "json": {"message": "TF400813: The user is not authorized."}},
-    {"method": "GET", "path": "/ado-harness/Broken/_apis/test/codecoverage", "status": 500, "json": {"message": "TF400813: The server is unavailable."}}
+    {"method": "GET", "path": "/ado-harness/Broken/_apis/test/codecoverage", "status": 500, "json": {"message": "TF400813: The server is unavailable."}},
+
+    {"method": "GET", "path": "/ado-harness/Alpha/_apis/serviceendpoint/endpoints", "fixture": "connections_list.json"},
+    {"method": "GET", "path": "/ado-harness/Empty/_apis/serviceendpoint/endpoints", "json": {"count": 0, "value": []}},
+    {"method": "GET", "path": "/ado-harness/Missing/_apis/serviceendpoint/endpoints", "status": 404, "json": {"message": "TF400813: The user is not authorized."}},
+    {"method": "GET", "path": "/ado-harness/Broken/_apis/serviceendpoint/endpoints", "status": 500, "json": {"message": "TF400813: The server is unavailable."}},
+
+    {"method": "GET", "path": "/ado-harness/Alpha/_apis/serviceendpoint/endpoints/c1", "fixture": "connection_show.json"},
+    {"method": "GET", "path": "/ado-harness/Alpha/_apis/serviceendpoint/endpoints/missing", "status": 404, "json": {"message": "Service connection not found."}},
+
+    {
+      "method": "POST",
+      "path": "/ado-harness/Alpha/_apis/serviceendpoint/endpoints",
+      "request_body": {
+        "name": "GitHub", "type": "github", "url": "https://github.com",
+        "authorization": {"scheme": "Token", "parameters": {}},
+        "isReady": false,
+        "serviceEndpointProjectReferences": [{"projectReference": {"name": "Alpha"}, "name": "GitHub"}]
+      },
+      "fixture": "connection_created.json"
+    },
+    {
+      "method": "POST",
+      "path": "/ado-harness/Full/_apis/serviceendpoint/endpoints",
+      "request_body": {
+        "name": "GitHub", "type": "github", "url": "https://github.com",
+        "description": "A GitHub PAT",
+        "authorization": {"scheme": "Token", "parameters": {"accessToken": "ghp_xxx"}},
+        "isReady": true, "data": {"subscriptionId": "s1"},
+        "serviceEndpointProjectReferences": [{"projectReference": {"name": "Full"}, "name": "GitHub"}]
+      },
+      "fixture": "connection_created.json"
+    },
+    {
+      "method": "POST",
+      "path": "/ado-harness/Stdin/_apis/serviceendpoint/endpoints",
+      "request_body": {
+        "name": "GitHub", "type": "github", "url": "https://github.com",
+        "authorization": {"scheme": "Token", "parameters": {"accessToken": "ghp_from_stdin"}},
+        "isReady": false,
+        "serviceEndpointProjectReferences": [{"projectReference": {"name": "Stdin"}, "name": "GitHub"}]
+      },
+      "fixture": "connection_created.json"
+    },
+    {
+      "method": "POST",
+      "path": "/ado-harness/TokenFile/_apis/serviceendpoint/endpoints",
+      "request_body": {
+        "name": "GitHub", "type": "github", "url": "https://github.com",
+        "authorization": {"scheme": "Token", "parameters": {"accessToken": "ghp_from_file"}},
+        "isReady": false,
+        "serviceEndpointProjectReferences": [{"projectReference": {"name": "TokenFile"}, "name": "GitHub"}]
+      },
+      "fixture": "connection_created.json"
+    },
+    {"method": "POST", "path": "/ado-harness/Missing/_apis/serviceendpoint/endpoints", "status": 404, "json": {"message": "The project does not exist."}},
+
+    {
+      "method": "PUT",
+      "path": "/ado-harness/Alpha/_apis/serviceendpoint/endpoints/c1",
+      "request_body": {"name": "Renamed"},
+      "fixture": "connection_show.json"
+    },
+    {
+      "method": "PUT",
+      "path": "/ado-harness/Full/_apis/serviceendpoint/endpoints/c1",
+      "request_body": {
+        "name": "Renamed", "description": "Renamed", "url": "https://github.com/new",
+        "authorization": {"scheme": "Token", "parameters": {"accessToken": "ghp_new"}},
+        "data": {"subscriptionId": "s2"}
+      },
+      "fixture": "connection_show.json"
+    },
+    {
+      "method": "PUT",
+      "path": "/ado-harness/Token/_apis/serviceendpoint/endpoints/c1",
+      "request_body": {"authorization": {"scheme": "Token", "parameters": {"accessToken": "ghp_new"}}},
+      "fixture": "connection_show.json"
+    },
+    {"method": "PUT", "path": "/ado-harness/Alpha/_apis/serviceendpoint/endpoints/missing", "status": 404, "json": {"message": "Service connection not found."}},
+
+    {"method": "DELETE", "path": "/ado-harness/Alpha/_apis/serviceendpoint/endpoints/c1", "json": {}},
+    {"method": "DELETE", "path": "/ado-harness/Alpha/_apis/serviceendpoint/endpoints/missing", "status": 404, "json": {"message": "Service connection not found."}}
   ]
 }
