@@ -12,6 +12,7 @@ clap = { workspace = true }
 clap_complete = { workspace = true }
 comfy-table = { workspace = true }
 serde_json = { workspace = true }
+signal-hook = { workspace = true }
 
 [dev-dependencies]
 ado-testkit = { path = "../ado-testkit" }

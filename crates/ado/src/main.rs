@@ -9,6 +9,7 @@ use ado::cli;
 use ado::commands;
 use ado::context::Context;
 use ado::output::{Report, WriteFailure, render_error_to, render_to, write_bytes};
+use ado_core::envelope::ok_message;
 use ado_core::error::AdoError;
 
 /// CliMate's framework wording for a bare `ado`; the Elixir oracle prints the
@@ -281,6 +282,31 @@ fn main() -> ExitCode {
                         .expect("the option is required")
                         .as_str(),
                 ),
+                _ => Err(AdoError::validation(MISSING_SUBCOMMAND)),
+            }
+        }
+        Some(("ci", sub)) => {
+            let mut context = Context::load(globals);
+
+            match sub.subcommand() {
+                Some(("watch", watch)) => {
+                    let args = commands::ci::WatchArgs {
+                        project: watch
+                            .get_one::<String>("project")
+                            .expect("the positional is required")
+                            .as_str(),
+                        build_id: watch.get_one::<i64>("build_id").copied(),
+                        latest: watch.get_flag("latest"),
+                        definition: watch.get_one::<i64>("definition").copied(),
+                        branch: watch.get_one::<String>("branch").map(String::as_str),
+                        poll_interval: watch.get_one::<i64>("poll-interval").copied(),
+                    };
+
+                    return match commands::ci::watch(&mut context, args, &mut io::stdout().lock()) {
+                        Ok(outcome) => emit_watch(outcome, json),
+                        Err(error) => emit_error(&error, json),
+                    };
+                }
                 _ => Err(AdoError::validation(MISSING_SUBCOMMAND)),
             }
         }
@@ -1806,6 +1832,26 @@ fn missing_subcommand(json: bool) -> ExitCode {
         Ok(()) => emit_error_to(&mut stdout, &mut stderr, &error, false),
         Err(WriteFailure::BrokenPipe) => ExitCode::SUCCESS,
         Err(WriteFailure::Other(message)) => fail_to(&mut stderr, &message),
+    }
+}
+
+/// The watcher's exit contract (Ruling 3): the final sentence is written like any
+/// other report, and the process status is the outcome's — 0 succeeded, 1 build
+/// failed, 2 cancelled or interrupted. A closed pipe stays the silent success
+/// every write path gives it (spec §6.4).
+fn emit_watch(outcome: commands::ci::WatchOutcome, json: bool) -> ExitCode {
+    let report = if outcome.message.is_empty() {
+        Report::Text(String::new())
+    } else if json {
+        Report::Json(ok_message(&outcome.message))
+    } else {
+        Report::Text(format!("\n{}", outcome.message))
+    };
+
+    match render_to(&mut io::stdout().lock(), &report, json) {
+        Ok(()) => ExitCode::from(outcome.exit_code),
+        Err(WriteFailure::BrokenPipe) => ExitCode::SUCCESS,
+        Err(WriteFailure::Other(message)) => fail_to(&mut io::stderr().lock(), &message),
     }
 }
 

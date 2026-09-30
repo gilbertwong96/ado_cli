@@ -616,6 +616,57 @@ pub fn command() -> Command {
                 ),
         )
         .subcommand(
+            Command::new("ci")
+                .about(
+                    "Watch Azure DevOps pipelines in real-time. Streams live build status (job/step progress) and per-line log output to your terminal, like `gh run watch` or `kubectl logs -f`. Exits when the build completes or on Ctrl+C.",
+                )
+                .subcommand(
+                    Command::new("watch")
+                        .about(
+                            "Stream live status and per-line log output for an Azure DevOps build. The build status is polled every 2s (configurable via --poll-interval), and new log lines are printed as they appear. Exits with code 0 on success, 1 on build failure, 2 on cancellation.",
+                        )
+                        .arg(
+                            Arg::new("project")
+                                .value_name("PROJECT")
+                                .required(true)
+                                .help("Project name or ID"),
+                        )
+                        .arg(
+                            Arg::new("build_id")
+                                .value_name("BUILD_ID")
+                                .value_parser(clap::value_parser!(i64))
+                                .allow_negative_numbers(true)
+                                .help("Numeric build ID to watch. If omitted, you must pass --latest (optionally with --definition and --branch) to auto-pick the most recent build."),
+                        )
+                        .arg(
+                            Arg::new("latest")
+                                .long("latest")
+                                .action(clap::ArgAction::SetTrue)
+                                .help("Watch the most recent build instead of a specific ID. Combine with --definition and --branch to filter. Useful in CI scripts to follow the build that just started."),
+                        )
+                        .arg(
+                            Arg::new("definition")
+                                .long("definition")
+                                .value_name("ID")
+                                .value_parser(clap::value_parser!(i64))
+                                .help("With --latest, restrict to this pipeline definition ID. Without --latest, ignored."),
+                        )
+                        .arg(
+                            Arg::new("branch")
+                                .long("branch")
+                                .value_name("REF")
+                                .help("With --latest, restrict to this branch as a full ref (e.g. 'refs/heads/main'). Without --latest, ignored."),
+                        )
+                        .arg(
+                            Arg::new("poll-interval")
+                                .long("poll-interval")
+                                .value_name("MS")
+                                .value_parser(clap::value_parser!(i64))
+                                .help("How often to poll the build status, in milliseconds. Default 2000 (2s). Values below 250 are clamped to 2000. Lower values update faster but use more API quota."),
+                        ),
+                ),
+        )
+        .subcommand(
             Command::new("banners")
                 .about(
                     "Manage the organization-wide notification banner that appears at the top of the Azure DevOps web UI for every user. Useful for maintenance windows or org-wide announcements.",
