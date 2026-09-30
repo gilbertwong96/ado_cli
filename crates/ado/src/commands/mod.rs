@@ -4,6 +4,7 @@ pub mod artifacts;
 pub mod branch_policies;
 pub mod builds;
 pub mod completion;
+pub mod connections;
 pub mod download;
 pub mod items;
 pub mod iterations;

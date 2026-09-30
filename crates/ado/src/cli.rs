@@ -230,6 +230,202 @@ pub fn command() -> Command {
                 ),
         )
         .subcommand(
+            Command::new("connections")
+                .about(
+                    "Manage service connections (a.k.a. service endpoints). A service connection stores credentials for external services (Azure subscriptions, GitHub repos, Docker registries, Kubernetes clusters) so pipelines can access them without re-entering secrets.",
+                )
+                .subcommand(
+                    Command::new("list")
+                        .about(
+                            "List service connections in a project. Output is a table (ID, Name, Type). Use --type to filter to a specific kind (e.g. 'github', 'kubernetes', 'azure'). Pass --json for raw data.",
+                        )
+                        .arg(
+                            Arg::new("project")
+                                .value_name("PROJECT")
+                                .required(true)
+                                .help("Project name or ID"),
+                        )
+                        .arg(
+                            Arg::new("type")
+                                .long("type")
+                                .value_name("TYPE")
+                                .help(
+                                    "Filter by connection type. Common values: 'github', 'azure' (Azure subscription), 'kubernetes' (K8s service account), 'dockerregistry', 'bitbucket', 'git'. Pass the Azure DevOps type ID string exactly as shown in the web UI.",
+                                ),
+                        ),
+                )
+                .subcommand(
+                    Command::new("show")
+                        .about(
+                            "Show details of a service connection: ID, name, type, target URL, and ready state. Secrets (passwords, tokens) are NEVER returned by this command — even with --json.",
+                        )
+                        .arg(
+                            Arg::new("project")
+                                .value_name("PROJECT")
+                                .required(true)
+                                .help("Project name or ID"),
+                        )
+                        .arg(
+                            Arg::new("connection_id")
+                                .value_name("CONNECTION_ID")
+                                .required(true)
+                                .help("Service connection ID (UUID from `list`)"),
+                        ),
+                )
+                .subcommand(
+                    Command::new("create")
+                        .about(
+                            "Create a new service connection. The minimum required fields are name, type, and url. Pass --access-token to set the credential for the most common schemes (Token, e.g. GitHub PATs). Use --data with a JSON string for type-specific fields (e.g. subscriptionId for Azure RM, clusterUrl for Kubernetes). Returns the created connection object: 'id' (UUID), 'name', 'type', 'url', 'isReady' (boolean). Secrets are never returned — even with --json.",
+                        )
+                        .arg(
+                            Arg::new("project")
+                                .value_name("PROJECT")
+                                .required(true)
+                                .help("Project name or ID"),
+                        )
+                        .arg(
+                            Arg::new("name")
+                                .value_name("NAME")
+                                .required(true)
+                                .help(
+                                    "Service connection name. Must be unique within the project (1-256 chars). Visible in pipeline agent job UIs.",
+                                ),
+                        )
+                        .arg(
+                            Arg::new("type")
+                                .value_name("TYPE")
+                                .required(true)
+                                .help(
+                                    "Service connection type (e.g. 'github', 'azure', 'kubernetes', 'dockerregistry', 'git'). For Azure RM, the value is the long type ID — use --data to set the rest.",
+                                ),
+                        )
+                        .arg(
+                            Arg::new("url")
+                                .value_name("URL")
+                                .required(true)
+                                .help(
+                                    "Target URL the connection authenticates against (e.g. 'https://github.com' for GitHub PAT).",
+                                ),
+                        )
+                        .arg(
+                            Arg::new("description")
+                                .long("description")
+                                .value_name("DESC")
+                                .help(
+                                    "Optional human-readable description shown in the service connection list.",
+                                ),
+                        )
+                        .arg(
+                            Arg::new("scheme")
+                                .long("scheme")
+                                .value_name("SCHEME")
+                                .help(
+                                    "Authorization scheme. Common values: 'Token' (default — sets accessToken parameter), 'UsernamePassword', 'None', 'Certificate'. Ignored if --data supplies the entire authorization object.",
+                                ),
+                        )
+                        .arg(
+                            Arg::new("access-token")
+                                .long("access-token")
+                                .value_name("TOKEN")
+                                .help(
+                                    "Credential value. Accepts three forms: a literal string, `-` to read from stdin (no shell history), or `@path/to/file` to read from a file (trailing newline is stripped). Recommended: `echo \"$MY_PAT\" | ado connections create ... --access-token -`",
+                                ),
+                        )
+                        .arg(
+                            Arg::new("data")
+                                .long("data")
+                                .value_name("JSON")
+                                .help(
+                                    "JSON object with type-specific fields merged into the request body (e.g. '{\"subscriptionId\":\"...\",\"subscriptionName\":\"...\"}' for Azure RM). The top-level keys 'name', 'type', 'url', and 'authorization' are reserved; use the dedicated flags for those.",
+                                ),
+                        )
+                        .arg(
+                            Arg::new("ready")
+                                .long("ready")
+                                .action(ArgAction::SetTrue)
+                                .help(
+                                    "Validate the connection during create (sets isReady=true). The API will attempt to authenticate and may fail if the credentials are wrong. Default: false — create succeeds even if auth fails, you can authorize later.",
+                                ),
+                        ),
+                )
+                .subcommand(
+                    Command::new("update")
+                        .about(
+                            "Update an existing service connection. Pass any of --name, --description, --url, --access-token, or --data; at least one is required. To rotate credentials, pass --access-token (or --data for UsernamePassword / Certificate). Returns the updated connection object: 'id' (UUID), 'name', 'type', 'url', 'isReady' (boolean).",
+                        )
+                        .arg(
+                            Arg::new("project")
+                                .value_name("PROJECT")
+                                .required(true)
+                                .help("Project name or ID"),
+                        )
+                        .arg(
+                            Arg::new("connection_id")
+                                .value_name("CONNECTION_ID")
+                                .required(true)
+                                .help("Service connection ID (UUID from `list`)"),
+                        )
+                        .arg(
+                            Arg::new("name")
+                                .long("name")
+                                .value_name("NAME")
+                                .help("New service connection name"),
+                        )
+                        .arg(
+                            Arg::new("description")
+                                .long("description")
+                                .value_name("DESC")
+                                .help("New service connection description"),
+                        )
+                        .arg(
+                            Arg::new("url")
+                                .long("url")
+                                .value_name("URL")
+                                .help("New target URL"),
+                        )
+                        .arg(
+                            Arg::new("access-token")
+                                .long("access-token")
+                                .value_name("TOKEN")
+                                .help(
+                                    "Replace the credential. Same forms as create: literal value, `-` (stdin), or `@path` (from file).",
+                                ),
+                        )
+                        .arg(
+                            Arg::new("data")
+                                .long("data")
+                                .value_name("JSON")
+                                .help(
+                                    "JSON object merged into the request body. Use this to update type-specific fields (e.g. subscriptionId, clusterUrl).",
+                                ),
+                        ),
+                )
+                .subcommand(
+                    Command::new("delete")
+                        .about(
+                            "Permanently delete a service connection. IRREVERSIBLE: any pipeline that references the connection will fail until the reference is updated. Use --force in scripts to skip the interactive confirmation prompt.",
+                        )
+                        .arg(
+                            Arg::new("project")
+                                .value_name("PROJECT")
+                                .required(true)
+                                .help("Project name or ID"),
+                        )
+                        .arg(
+                            Arg::new("connection_id")
+                                .value_name("CONNECTION_ID")
+                                .required(true)
+                                .help("Service connection ID (UUID from `list`)"),
+                        )
+                        .arg(
+                            Arg::new("force")
+                                .long("force")
+                                .action(ArgAction::SetTrue)
+                                .help("Skip the interactive confirmation prompt (use in scripts/CI)."),
+                        ),
+                ),
+        )
+        .subcommand(
             Command::new("iterations")
                 .about(
                     "Manage Azure DevOps iterations (sprints). Iterations are time-boxed containers for work items used in Scrum-like workflows. They belong to a specific team (a project can have multiple teams with different sprint cadences).",

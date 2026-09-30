@@ -144,6 +144,85 @@ fn main() -> ExitCode {
                 _ => Err(AdoError::validation(MISSING_SUBCOMMAND)),
             }
         }
+        Some(("connections", sub)) => {
+            let mut context = Context::load(globals);
+
+            match sub.subcommand() {
+                Some(("list", list)) => commands::connections::list(
+                    &mut context,
+                    list.get_one::<String>("project")
+                        .expect("the positional is required")
+                        .as_str(),
+                    list.get_one::<String>("type").cloned(),
+                ),
+                Some(("show", show)) => commands::connections::show(
+                    &mut context,
+                    show.get_one::<String>("project")
+                        .expect("the positional is required")
+                        .as_str(),
+                    show.get_one::<String>("connection_id")
+                        .expect("the positional is required")
+                        .as_str(),
+                ),
+                Some(("create", create)) => commands::connections::create(
+                    &mut context,
+                    create
+                        .get_one::<String>("project")
+                        .expect("the positional is required")
+                        .as_str(),
+                    create
+                        .get_one::<String>("name")
+                        .expect("the positional is required")
+                        .as_str(),
+                    create
+                        .get_one::<String>("type")
+                        .expect("the positional is required")
+                        .as_str(),
+                    create
+                        .get_one::<String>("url")
+                        .expect("the positional is required")
+                        .as_str(),
+                    commands::connections::CreateOptions {
+                        description: create.get_one::<String>("description").cloned(),
+                        scheme: create.get_one::<String>("scheme").cloned(),
+                        access_token: create.get_one::<String>("access-token").cloned(),
+                        data: create.get_one::<String>("data").cloned(),
+                        ready: create.get_flag("ready"),
+                    },
+                ),
+                Some(("update", update)) => commands::connections::update(
+                    &mut context,
+                    update
+                        .get_one::<String>("project")
+                        .expect("the positional is required")
+                        .as_str(),
+                    update
+                        .get_one::<String>("connection_id")
+                        .expect("the positional is required")
+                        .as_str(),
+                    commands::connections::UpdateOptions {
+                        name: update.get_one::<String>("name").cloned(),
+                        description: update.get_one::<String>("description").cloned(),
+                        url: update.get_one::<String>("url").cloned(),
+                        access_token: update.get_one::<String>("access-token").cloned(),
+                        data: update.get_one::<String>("data").cloned(),
+                    },
+                ),
+                Some(("delete", delete)) => commands::connections::delete(
+                    &mut context,
+                    delete
+                        .get_one::<String>("project")
+                        .expect("the positional is required")
+                        .as_str(),
+                    delete
+                        .get_one::<String>("connection_id")
+                        .expect("the positional is required")
+                        .as_str(),
+                    delete.get_flag("force"),
+                ),
+                _ => Err(AdoError::validation(MISSING_SUBCOMMAND)),
+            }
+        }
         Some(("iterations", sub)) => {
             let mut context = Context::load(globals);
 

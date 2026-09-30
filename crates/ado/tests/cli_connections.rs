@@ -196,7 +196,11 @@ fn list_404_is_the_classified_envelope() {
         ),
     );
 
-    let output = run(&home, &server, &["connections", "list", "Missing", "--json"]);
+    let output = run(
+        &home,
+        &server,
+        &["connections", "list", "Missing", "--json"],
+    );
 
     assert_eq!(
         output.status.code(),
@@ -280,13 +284,19 @@ fn list_404_human_writes_the_labelled_line_to_stderr() {
 fn show_emits_the_value_envelope_and_the_detail() {
     let home = TempHome::new();
     let server = MockServer::start();
-    server.expect(
-        "GET",
-        &format!("{ENDPOINTS}/c1"),
-        MockResponse::json(200, connection()),
-    );
+    for _ in 0..2 {
+        server.expect(
+            "GET",
+            &format!("{ENDPOINTS}/c1"),
+            MockResponse::json(200, connection()),
+        );
+    }
 
-    let output = run(&home, &server, &["connections", "show", "Alpha", "c1", "--json"]);
+    let output = run(
+        &home,
+        &server,
+        &["connections", "show", "Alpha", "c1", "--json"],
+    );
 
     assert_success(&output);
     assert_eq!(
@@ -317,35 +327,45 @@ fn show_emits_the_value_envelope_and_the_detail() {
 }
 
 #[test]
-fn show_404_reports_the_modules_wording_and_no_envelope() {
+fn show_404_reports_the_modules_wording() {
     let home = TempHome::new();
     let server = MockServer::start();
-    server.expect(
-        "GET",
-        &format!("{ENDPOINTS}/missing"),
-        MockResponse::json(404, json!({"message": "Not found"})),
-    );
-
-    for json in [true, false] {
-        let mut args = vec!["connections", "show", "Alpha", "missing"];
-
-        if json {
-            args.push("--json");
-        }
-
-        let output = run(&home, &server, &args);
-
-        assert_eq!(output.status.code(), Some(1), "json={json}");
-        assert!(
-            stdout_of(&output).is_empty(),
-            "the module's halt_error writes stderr only, even under --json (D4): {}",
-            stdout_of(&output)
-        );
-        assert_eq!(
-            stderr_of(&output).trim(),
-            "Service connection 'missing' not found"
+    for _ in 0..2 {
+        server.expect(
+            "GET",
+            &format!("{ENDPOINTS}/missing"),
+            MockResponse::json(404, json!({"message": "Not found"})),
         );
     }
+
+    let json = run(
+        &home,
+        &server,
+        &["connections", "show", "Alpha", "missing", "--json"],
+    );
+
+    assert_eq!(json.status.code(), Some(1));
+    let envelope = envelope(&json);
+
+    assert_eq!(envelope["error"]["code"], json!("not_found"));
+    assert_eq!(envelope["error"]["status"], json!(404));
+    assert_eq!(
+        envelope["error"]["message"],
+        json!("Service connection 'missing' not found"),
+        "the module's own wording where the frozen CLI halts on stderr with no envelope (D4)"
+    );
+
+    let human = run(&home, &server, &["connections", "show", "Alpha", "missing"]);
+
+    assert_eq!(human.status.code(), Some(1));
+    assert!(
+        stdout_of(&human).is_empty(),
+        "the human error is not stdout"
+    );
+    assert_eq!(
+        stderr_of(&human).trim(),
+        "[Not found] Service connection 'missing' not found"
+    );
 }
 
 // ── create ───────────────────────────────────────────────────────────────
@@ -526,10 +546,15 @@ fn create_reports_a_missing_secret_file() {
     );
 
     assert_eq!(output.status.code(), Some(1));
-    assert!(stdout_of(&output).is_empty(), "a local error has no envelope");
-    assert_eq!(
-        stderr_of(&output).trim(),
-        "Cannot read secret file \"nope.txt\": enoent"
+    let envelope = envelope(&output);
+
+    assert_eq!(envelope["error"]["code"], json!("validation_error"));
+    assert!(
+        envelope["error"]["message"]
+            .as_str()
+            .expect("a message")
+            .starts_with("Cannot read secret file \"nope.txt\": "),
+        "the module's prefix, the io error's tail (§8): {envelope}"
     );
     assert!(requests(&server).is_empty(), "nothing was sent");
 }
@@ -566,7 +591,11 @@ fn create_rejects_data_that_is_not_a_json_object() {
         );
 
         assert_eq!(output.status.code(), Some(1), "data={data}");
-        assert_eq!(stderr_of(&output).trim(), message);
+        assert_eq!(
+            envelope(&output)["error"]["message"],
+            json!(message),
+            "the module's own wording (D4: an envelope here, stderr there)"
+        );
         assert!(requests(&server).is_empty());
     }
 }
@@ -662,8 +691,11 @@ fn create_404_reports_the_project_wording() {
     );
 
     assert_eq!(output.status.code(), Some(1));
-    assert!(stdout_of(&output).is_empty(), "no envelope (D4)");
-    assert_eq!(stderr_of(&output).trim(), "Project 'Missing' not found");
+    assert_eq!(
+        envelope(&output)["error"]["message"],
+        json!("Project 'Missing' not found"),
+        "the module's own wording (D4)"
+    );
 }
 
 #[test]
@@ -776,7 +808,15 @@ fn update_puts_only_the_options_given() {
     let output = run(
         &home,
         &server,
-        &["connections", "update", "Alpha", "c1", "--name", "Renamed", "--json"],
+        &[
+            "connections",
+            "update",
+            "Alpha",
+            "c1",
+            "--name",
+            "Renamed",
+            "--json",
+        ],
     );
 
     assert_success(&output);
@@ -889,10 +929,12 @@ fn update_guard_refuses_an_empty_body() {
         let output = run(&home, &server, &args);
 
         assert_eq!(output.status.code(), Some(1), "args={args:?}");
-        assert!(stdout_of(&output).is_empty(), "no envelope (D4)");
         assert_eq!(
-            stderr_of(&output).trim(),
-            "At least one of --name, --description, --url, --access-token, or --data is required."
+            envelope(&output)["error"]["message"],
+            json!(
+                "At least one of --name, --description, --url, --access-token, or --data is required."
+            ),
+            "the module's guard, in this build's envelope (D4)"
         );
         assert!(requests(&server).is_empty());
     }
@@ -923,10 +965,9 @@ fn update_404_reports_the_connection_wording() {
     );
 
     assert_eq!(output.status.code(), Some(1));
-    assert!(stdout_of(&output).is_empty());
     assert_eq!(
-        stderr_of(&output).trim(),
-        "Service connection 'missing' not found"
+        envelope(&output)["error"]["message"],
+        json!("Service connection 'missing' not found")
     );
 }
 
@@ -1150,13 +1191,19 @@ fn delete_404_reports_the_connection_wording() {
     let output = run(
         &home,
         &server,
-        &["connections", "delete", "Alpha", "missing", "--force", "--json"],
+        &[
+            "connections",
+            "delete",
+            "Alpha",
+            "missing",
+            "--force",
+            "--json",
+        ],
     );
 
     assert_eq!(output.status.code(), Some(1));
-    assert!(stdout_of(&output).is_empty());
     assert_eq!(
-        stderr_of(&output).trim(),
-        "Service connection 'missing' not found"
+        envelope(&output)["error"]["message"],
+        json!("Service connection 'missing' not found")
     );
 }

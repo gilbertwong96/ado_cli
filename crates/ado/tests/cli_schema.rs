@@ -1558,6 +1558,9 @@ fn schema_connections_node_lists_every_shipped_subcommand() {
     );
 
     let delete = find_node("connections delete").expect("the delete node");
-    assert_eq!(option_names(&delete), ["force", "json", "org", "pat", "server", "verbose"]);
+    assert_eq!(
+        option_names(&delete),
+        ["force", "json", "org", "pat", "server", "verbose"]
+    );
     assert_eq!(option(&delete, "force")["type"], json!("boolean"));
 }
