@@ -835,6 +835,16 @@ run_mock_cases() {
     # this build reads the file (D44), from the same absolute path on both sides.
     printf 'Message from a file.\n\n' >"$work/banner-message.txt"
 
+    # `test-results publish --file`: both binaries run from their own temp cwd, so
+    # the path is absolute and shared, and the bytes are the file the capture
+    # uploaded. The `.bin` sibling is the non-UTF-8 file the oracle cannot encode,
+    # and `nested/` carries the same bytes under a path whose basename is what the
+    # query names.
+    printf '<?xml version="1.0" encoding="UTF-8"?>\n<testsuites/>\n' >"$work/results.xml"
+    mkdir -p "$work/nested"
+    printf '<?xml version="1.0" encoding="UTF-8"?>\n<testsuites/>\n' >"$work/nested/results.xml"
+    printf '\377\376\000binary\n' >"$work/results.bin"
+
     # ── projects ──
 
     mock_case projects-list "projects list" projects list --json
@@ -3962,6 +3972,298 @@ run_mock_cases() {
     expect_rust_requests='length == 1 and (.[0].method == "DELETE") and any_path("/broken/_apis/settings/entries/banners")'
     mock_case banners-delete-500 "banners delete (500)" \
         banners delete --json
+
+    # ── Wave 3: test results and the three repaired filters (Task 6) ──
+    #
+    # The request surface is the module's: `list`'s `$top` (present for `0` and a
+    # negative — `0` is truthy in Elixir and its `OptionParser` takes a negative),
+    # the two repaired filters (`buildIds`/`minLastUpdatedDate`; the oracle's
+    # hyphen-declared declarations can never match, so it refuses them), the
+    # `{project}/_apis/test/runs` collection and the run path under it. Every case
+    # that reaches the wire states both sides' spelling in the direction filters
+    # (C6), the list carries C12's 404/500 pair in both modes, and `publish`'s
+    # third request carries the D25-family upload rule: the frozen `Client.post/3`
+    # takes its content-type map as query **params** (glued after the path's own
+    # `?api-version=7.1-preview.1&fileName=…`) and JSON-encodes the file into a
+    # JSON string, where this build sends the two pairs and the bytes.
+    tr_upload_norm='map(if (.path | endswith("/attachments")) then .query |= ([.[] | if contains("?Content-Type=") then split("?Content-Type=")[0] else . end] | map(select(startswith("Content-Type=") | not)) | map(select(. != "api-version=7.1")) | sort) else . end)'
+    tr_upload_rule='D25 and the module’s own intent: the frozen upload glues `Content-Type` and a second `api-version` onto a path whose query already carries the preview version and the basename, and sends the file as a JSON string; this build sends the two pairs and the raw bytes'
+
+    expect_oracle_requests='length == 1 and any_path("/ado-harness/Alpha/_apis/test/runs") and qpair("api-version=7.1") and (.[0].query | split("&") | length == 1)'
+    expect_rust_requests='length == 1 and any_path("/ado-harness/Alpha/_apis/test/runs") and qpair("api-version=7.1") and (.[0].query | split("&") | length == 1)'
+    mock_case test-results-list "test-results list" \
+        test-results list Alpha --json
+
+    envelope_rule='§8: the frozen table is its own rendering (8/40/12 pads, a 90-character rule, a leading blank line); this build renders the wave’s content-width table'
+    expect_oracle_requests='length == 1 and any_path("/ado-harness/Alpha/_apis/test/runs") and qpair("api-version=7.1")'
+    expect_rust_requests='length == 1 and any_path("/ado-harness/Alpha/_apis/test/runs") and qpair("api-version=7.1")'
+    stdout_mode=text
+    mock_case test-results-list-human "test-results list (human)" \
+        test-results list Alpha
+
+    expect_oracle_requests='length == 1 and any_path("/ado-harness/Empty/_apis/test/runs") and qpair("api-version=7.1")'
+    expect_rust_requests='length == 1 and any_path("/ado-harness/Empty/_apis/test/runs") and qpair("api-version=7.1")'
+    mock_case test-results-list-empty "test-results list (empty project)" \
+        test-results list Empty --json
+
+    envelope_rule='§8: the frozen empty list prints a leading blank line and its fixed-pad header; this build renders the content-width header and rule'
+    stdout_mode=text
+    mock_case test-results-list-empty-human "test-results list (empty project, human)" \
+        test-results list Empty
+
+    expect_oracle_requests='length == 1 and any_path("/ado-harness/Alpha/_apis/test/runs") and qpair("%24top=1") and qpair("api-version=7.1")'
+    expect_rust_requests='length == 1 and any_path("/ado-harness/Alpha/_apis/test/runs") and qpair("%24top=1") and qpair("api-version=7.1")'
+    mock_case test-results-list-top "test-results list --top 1" \
+        test-results list Alpha --top 1 --json
+
+    expect_oracle_requests='length == 1 and any_path("/ado-harness/Alpha/_apis/test/runs") and qpair("%24top=0") and qpair("api-version=7.1")'
+    expect_rust_requests='length == 1 and any_path("/ado-harness/Alpha/_apis/test/runs") and qpair("%24top=0") and qpair("api-version=7.1")'
+    mock_case test-results-list-top-zero "test-results list --top 0 (zero is a present option)" \
+        test-results list Alpha --top 0 --json
+
+    expect_oracle_requests='length == 1 and any_path("/ado-harness/Alpha/_apis/test/runs") and qpair("%24top=-1") and qpair("api-version=7.1")'
+    expect_rust_requests='length == 1 and any_path("/ado-harness/Alpha/_apis/test/runs") and qpair("%24top=-1") and qpair("api-version=7.1")'
+    mock_case test-results-list-top-negative "test-results list --top -1 (the parser takes a negative)" \
+        test-results list Alpha --top -1 --json
+
+    # Ruling 4(a): the oracle refuses the hyphen-declared option (exit 1, help on
+    # stdout, no request); this build accepts it and sends the module's `buildIds`.
+    status_rule='Ruling 4(a): the frozen --build-id is unreachable (invalid option, exit 1); this build accepts it as its help advertises'
+    expect_statuses='1 0'
+    envelope_rule='D5: the oracle prints the command help on stdout before its usage error; this build writes clap’s message to stderr alone'
+    rest_rule='Ruling 4(a): the oracle sends no request for the refused flag; this build sends the filtered read'
+    expect_oracle_requests='length == 0'
+    expect_rust_requests='length == 1 and any_path("/ado-harness/Alpha/_apis/test/runs") and qpair("buildIds=42") and qpair("api-version=7.1")'
+    mock_case test-results-list-build-id "test-results list --build-id 42 (repaired)" \
+        test-results list Alpha --build-id 42 --json
+
+    status_rule='Ruling 4(a): the frozen --min-last-updated is unreachable (invalid option, exit 1); this build accepts it as its help advertises'
+    expect_statuses='1 0'
+    envelope_rule='D5: the oracle prints the command help on stdout before its usage error; this build writes clap’s message to stderr alone'
+    rest_rule='Ruling 4(a): the oracle sends no request for the refused flag; this build sends the filtered read'
+    expect_oracle_requests='length == 0'
+    expect_rust_requests='length == 1 and any_path("/ado-harness/Alpha/_apis/test/runs") and qpair("minLastUpdatedDate=2026-01-01") and qpair("api-version=7.1")'
+    mock_case test-results-list-min-last-updated "test-results list --min-last-updated (repaired)" \
+        test-results list Alpha --min-last-updated 2026-01-01 --json
+
+    # D41's class: a 200 whose body has no `value` key is a silent exit 0 in the
+    # oracle (the `error ->` clause's no-op formatter); this build wraps the body.
+    envelope_rule='D41: the frozen list body without a `value` key exits 0 with no output; this build wraps the whole body as the single item'
+    expect_statuses='0 0'
+    mock_case test-results-list-novalue "test-results list (a body without value)" \
+        test-results list NoValue --json
+
+    case_org=missing
+    envelope_rule='D24: the error body stays the upstream bytes here, where the oracle re-renders the decoded map with inspect/2 (C12: the list-error row)'
+    expect_oracle_requests='length == 1 and any_path("/missing/Alpha/_apis/test/runs") and qpair("api-version=7.1")'
+    expect_rust_requests='length == 1 and any_path("/missing/Alpha/_apis/test/runs") and qpair("api-version=7.1")'
+    mock_case test-results-list-404 "test-results list (404)" \
+        test-results list Alpha --json
+
+    case_org=broken
+    envelope_rule='D24: the error body stays the upstream bytes here, where the oracle re-renders the decoded map with inspect/2 (C12: the list-error row)'
+    expect_oracle_requests='length == 1 and any_path("/broken/Alpha/_apis/test/runs") and qpair("api-version=7.1")'
+    expect_rust_requests='length == 1 and any_path("/broken/Alpha/_apis/test/runs") and qpair("api-version=7.1")'
+    mock_case test-results-list-500 "test-results list (500)" \
+        test-results list Alpha --json
+
+    case_org=missing
+    envelope_rule='D4: the oracle prints its human error line on stdout; this build writes the labelled line to stderr alone'
+    stdout_mode=text
+    mock_case test-results-list-404-human "test-results list (404, human)" \
+        test-results list Alpha
+
+    case_org=broken
+    envelope_rule='D4: the oracle prints its human error line on stdout; this build writes the labelled line to stderr alone'
+    stdout_mode=text
+    mock_case test-results-list-500-human "test-results list (500, human)" \
+        test-results list Alpha
+
+    case_org=ado-harness
+    # D22: the frozen list interpolates the project raw, so a space makes Finch
+    # refuse the request target before anything leaves; this build escapes the
+    # segment and reads the route.
+    status_rule='D22: the frozen raw project makes the request target invalid (network error, no request); this build escapes the segment and reads it'
+    expect_statuses='1 0'
+    envelope_rule='D22: the oracle fails before the wire with an invalid request target; this build reads the escaped path'
+    rest_rule='D22: the oracle sends nothing; this build sends the escaped path'
+    expect_oracle_requests='length == 0'
+    expect_rust_requests='length == 1 and any_path("/ado-harness/Alpha%20Beta/_apis/test/runs") and qpair("api-version=7.1")'
+    mock_case test-results-list-space-project "test-results list (a space in the project)" \
+        test-results list "Alpha Beta" --json
+
+    envelope_rule='D5: the oracle prints the command help on stdout before its usage error; this build writes clap’s message to stderr alone'
+    stdout_mode=text
+    mock_case test-results-list-no-project "test-results list (no project)" \
+        test-results list --json
+
+    expect_oracle_requests='length == 1 and any_path("/ado-harness/Alpha/_apis/test/runs/42") and qpair("api-version=7.1") and (.[0].query | split("&") | length == 1)'
+    expect_rust_requests='length == 1 and any_path("/ado-harness/Alpha/_apis/test/runs/42") and qpair("api-version=7.1") and (.[0].query | split("&") | length == 1)'
+    mock_case test-results-show "test-results show" \
+        test-results show Alpha 42 --json
+
+    expect_oracle_requests='length == 1 and any_path("/ado-harness/Alpha/_apis/test/runs/42")'
+    expect_rust_requests='length == 1 and any_path("/ado-harness/Alpha/_apis/test/runs/42")'
+    stdout_mode=text
+    mock_case test-results-show-human "test-results show (human)" \
+        test-results show Alpha 42
+
+    expect_oracle_requests='length == 1 and any_path("/ado-harness/Alpha/_apis/test/runs/43")'
+    expect_rust_requests='length == 1 and any_path("/ado-harness/Alpha/_apis/test/runs/43")'
+    mock_case test-results-show-minimal "test-results show (a bare run)" \
+        test-results show Alpha 43 --json
+
+    expect_oracle_requests='length == 1 and any_path("/ado-harness/Alpha/_apis/test/runs/43")'
+    expect_rust_requests='length == 1 and any_path("/ado-harness/Alpha/_apis/test/runs/43")'
+    stdout_mode=text
+    mock_case test-results-show-minimal-human "test-results show (a bare run, human)" \
+        test-results show Alpha 43
+
+    expect_oracle_requests='length == 1 and any_path("/ado-harness/Alpha/_apis/test/runs/44")'
+    expect_rust_requests='length == 1 and any_path("/ado-harness/Alpha/_apis/test/runs/44")'
+    stdout_mode=text
+    mock_case test-results-show-state-stats-human "test-results show (state labels and a nil count, human)" \
+        test-results show Alpha 44
+
+    expect_oracle_requests='length == 1 and any_path("/ado-harness/Alpha/_apis/test/runs/44")'
+    expect_rust_requests='length == 1 and any_path("/ado-harness/Alpha/_apis/test/runs/44")'
+    mock_case test-results-show-state-stats "test-results show (state labels and a nil count)" \
+        test-results show Alpha 44 --json
+
+    case_org=missing
+    envelope_rule='D24: the error body stays the upstream bytes here, where the oracle re-renders the decoded map with inspect/2'
+    expect_oracle_requests='length == 1 and any_path("/missing/Alpha/_apis/test/runs/42")'
+    expect_rust_requests='length == 1 and any_path("/missing/Alpha/_apis/test/runs/42")'
+    mock_case test-results-show-404 "test-results show (404)" \
+        test-results show Alpha 42 --json
+
+    case_org=broken
+    envelope_rule='D24: the error body stays the upstream bytes here, where the oracle re-renders the decoded map with inspect/2'
+    expect_oracle_requests='length == 1 and any_path("/broken/Alpha/_apis/test/runs/42")'
+    expect_rust_requests='length == 1 and any_path("/broken/Alpha/_apis/test/runs/42")'
+    mock_case test-results-show-500 "test-results show (500)" \
+        test-results show Alpha 42 --json
+
+    case_org=ado-harness
+    envelope_rule='D5: the oracle prints the command help on stdout before its usage error; this build writes clap’s message to stderr alone'
+    stdout_mode=text
+    mock_case test-results-show-no-id "test-results show (no run_id)" \
+        test-results show Alpha
+
+    envelope_rule='D5: the oracle prints the command help on stdout before its usage error; this build writes clap’s message to stderr alone'
+    stdout_mode=text
+    mock_case test-results-show-bad-id "test-results show (a non-integer run_id)" \
+        test-results show Alpha not-an-integer
+
+    rest_rule="$tr_upload_rule"
+    rest_norm="$tr_upload_norm"
+    envelope_rule='§8: the frozen publish prints its document followed by the halt_success "Done." marker; this build writes the document alone'
+    expect_oracle_requests='length == 3 and (.[0].method == "POST") and any_path("/ado-harness/Alpha/_apis/test/runs") and qpair("api-version=7.1") and (.[2].method == "POST") and (.[2].path | endswith("/attachments")) and (.[2].query | contains("api-version=7.1-preview.1")) and (.[2].query | contains("?Content-Type=")) and (.[2].body | startswith("\"<?xml"))'
+    expect_rust_requests='length == 3 and (.[0].method == "POST") and any_path("/ado-harness/Alpha/_apis/test/runs") and qpair("api-version=7.1") and (.[2].method == "POST") and (.[2].path | endswith("/attachments")) and ((.[2].query | split("&") | sort) == ["api-version=7.1-preview.1","fileName=results.xml"]) and (.[2].body | startswith("<?xml"))'
+    mock_case test-results-publish "test-results publish" \
+        test-results publish Alpha --name 'Nightly Regression' --file "$work/results.xml" --json
+
+    rest_rule="$tr_upload_rule"
+    rest_norm="$tr_upload_norm"
+    expect_oracle_requests='length == 3 and (.[2].path | endswith("/attachments")) and (.[2].query | contains("?Content-Type=")) and (.[2].body | startswith("\"<?xml"))'
+    expect_rust_requests='length == 3 and (.[2].path | endswith("/attachments")) and ((.[2].query | split("&") | sort) == ["api-version=7.1-preview.1","fileName=results.xml"]) and (.[2].body | startswith("<?xml"))'
+    stdout_mode=text
+    mock_case test-results-publish-human "test-results publish (human)" \
+        test-results publish Alpha --name 'Nightly Regression' --file "$work/results.xml"
+
+    rest_rule="$tr_upload_rule"
+    rest_norm="$tr_upload_norm"
+    envelope_rule='§8: the frozen publish prints its document followed by the halt_success "Done." marker; this build writes the document alone'
+    expect_oracle_requests='length == 3 and (.[2].query | contains("fileName=results.xml"))'
+    expect_rust_requests='length == 3 and (.[2].query | contains("fileName=results.xml")) and (.[2].query | contains("results.xml?") | not)'
+    mock_case test-results-publish-nested-file "test-results publish (a nested --file)" \
+        test-results publish Alpha --name 'Nightly Regression' --file "$work/nested/results.xml" --json
+
+    rest_rule="$tr_upload_rule"
+    rest_norm="$tr_upload_norm"
+    envelope_rule='§8: the frozen publish prints its document followed by the halt_success "Done." marker; this build writes the document alone'
+    expect_oracle_requests='length == 3 and any_path("/ado-harness/EmptyName/_apis/test/runs") and (.[2].query | contains("fileName=results.xml"))'
+    expect_rust_requests='length == 3 and any_path("/ado-harness/EmptyName/_apis/test/runs") and (.[2].query | contains("fileName=results.xml"))'
+    mock_case test-results-publish-empty-name "test-results publish (a present empty --name)" \
+        test-results publish EmptyName --name '' --file "$work/results.xml" --json
+
+    # Ruling 4(a)'s third repair: the oracle refuses --build-id and sends nothing;
+    # this build links the run to the build its help documents.
+    status_rule='Ruling 4(a): the frozen publish --build-id is unreachable (invalid option, exit 1); this build accepts it and links the build'
+    expect_statuses='1 0'
+    envelope_rule='D5: the oracle prints the command help on stdout before its usage error; this build writes clap’s message to stderr alone'
+    rest_rule='Ruling 4(a): the oracle sends no request for the refused flag; this build sends the build-linked chain'
+    expect_oracle_requests='length == 0'
+    expect_rust_requests='length == 3 and any_path("/ado-harness/BuildLinked/_apis/test/runs") and any_body("\"build\":{\"id\":42}") and (.[2].query | contains("fileName=results.xml"))'
+    mock_case test-results-publish-build-id "test-results publish --build-id 42 (repaired)" \
+        test-results publish BuildLinked --name 'Nightly Regression' --file "$work/results.xml" --build-id 42 --json
+
+    rest_rule="$tr_upload_rule"
+    rest_norm="$tr_upload_norm"
+    envelope_rule='§8: the frozen publish prints its document followed by the halt_success "Done." marker; this build writes the document alone'
+    expect_oracle_requests='length == 3 and any_path("/ado-harness/FailPatch/_apis/test/runs/503")'
+    expect_rust_requests='length == 3 and any_path("/ado-harness/FailPatch/_apis/test/runs/503")'
+    mock_case test-results-publish-patch-500 "test-results publish (the completion PATCH fails)" \
+        test-results publish FailPatch --name 'Nightly Regression' --file "$work/results.xml" --json
+
+    rest_rule="$tr_upload_rule"
+    rest_norm="$tr_upload_norm"
+    envelope_rule='D4: the frozen publish writes its `xx  Publish failed:` block on stdout with no envelope under --json; this build emits the classified error envelope'
+    expect_oracle_requests='length == 3 and any_path("/ado-harness/FailAttach/_apis/test/runs/504")'
+    expect_rust_requests='length == 3 and any_path("/ado-harness/FailAttach/_apis/test/runs/504")'
+    mock_case test-results-publish-attach-500 "test-results publish (the upload fails)" \
+        test-results publish FailAttach --name 'Nightly Regression' --file "$work/results.xml" --json
+
+    case_org=missing
+    envelope_rule='D4: the frozen publish writes its `xx  Publish failed:` block on stdout with no envelope under --json; this build emits the classified error envelope'
+    expect_oracle_requests='length == 1 and (.[0].method == "POST") and any_path("/missing/Alpha/_apis/test/runs")'
+    expect_rust_requests='length == 1 and (.[0].method == "POST") and any_path("/missing/Alpha/_apis/test/runs")'
+    mock_case test-results-publish-create-404 "test-results publish (the create 404s)" \
+        test-results publish Alpha --name 'Nightly Regression' --file "$work/results.xml" --json
+
+    case_org=broken
+    envelope_rule='D4: the frozen publish writes its `xx  Publish failed:` block on stdout with no envelope under --json; this build emits the classified error envelope'
+    expect_oracle_requests='length == 1 and (.[0].method == "POST") and any_path("/broken/Alpha/_apis/test/runs")'
+    expect_rust_requests='length == 1 and (.[0].method == "POST") and any_path("/broken/Alpha/_apis/test/runs")'
+    mock_case test-results-publish-create-500 "test-results publish (the create 500s)" \
+        test-results publish Alpha --name 'Nightly Regression' --file "$work/results.xml" --json
+
+    case_org=ado-harness
+    # The non-UTF-8 file: the frozen `JSON.encode!` raises after the PATCH and the
+    # rescue exits 0 with two requests; this build sends the bytes as the third.
+    status_rule='D34: the frozen JSON encode on a non-UTF-8 file raises after its PATCH and the rescue exits 0; this build uploads the bytes'
+    expect_statuses='0 0'
+    envelope_rule='D34: the oracle’s encode crash leaves no output; this build reports the upload'
+    rest_rule='D34: the oracle’s mid-chain crash sends two requests; this build sends the upload as the third'
+    expect_oracle_requests='length == 2 and any_path("/ado-harness/BinaryUpload/_apis/test/runs")'
+    expect_rust_requests='length == 3 and any_path("/ado-harness/BinaryUpload/_apis/test/runs/506/attachments") and any_body("binary")'
+    mock_case test-results-publish-binary-file "test-results publish (a non-UTF-8 file)" \
+        test-results publish BinaryUpload --name 'Nightly Regression' --file "$work/results.bin" --json
+
+    status_rule='D4: the frozen read-failure path writes the module wording to stderr with no envelope under --json; this build emits the classified error envelope'
+    envelope_rule='D4: the frozen read-failure path writes the module wording to stderr with no envelope under --json; this build emits the classified error envelope'
+    expect_oracle_requests='length == 0'
+    expect_rust_requests='length == 0'
+    mock_case test-results-publish-file-missing "test-results publish (a missing --file)" \
+        test-results publish Alpha --name 'Nightly Regression' --file "$work/nope.xml" --json
+
+    status_rule='D34: a missing required option is a silent exit 0 in the oracle (the module’s Map.fetch! crash); this build is a loud usage error'
+    expect_statuses='0 1'
+    stdout_mode=text
+    mock_case test-results-publish-no-name "test-results publish (no --name)" \
+        test-results publish Alpha --file "$work/results.xml" --json
+
+    status_rule='D34: a missing required option is a silent exit 0 in the oracle (the module’s Map.fetch! crash); this build is a loud usage error'
+    expect_statuses='0 1'
+    stdout_mode=text
+    mock_case test-results-publish-no-file "test-results publish (no --file)" \
+        test-results publish Alpha --name 'Nightly Regression' --json
+
+    envelope_rule='D5: the oracle prints the command help on stdout before its usage error; this build writes clap’s message to stderr alone'
+    stdout_mode=text
+    mock_case test-results-publish-no-project "test-results publish (no project)" \
+        test-results publish --name 'Nightly Regression' --file "$work/results.xml" --json
+
 
     mock_scenario_check
 }

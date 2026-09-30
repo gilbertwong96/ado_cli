@@ -1150,6 +1150,46 @@
     {"method": "PUT", "path": "/missing/_apis/settings/entries/banners", "status": 404, "json": {"message": "The settings entry does not exist."}},
     {"method": "DELETE", "path": "/ado-harness/_apis/settings/entries/banners", "json": {}},
     {"method": "DELETE", "path": "/missing/_apis/settings/entries/banners", "status": 404, "json": {"message": "The settings entry does not exist."}},
-    {"method": "DELETE", "path": "/broken/_apis/settings/entries/banners", "status": 500, "json": {"message": "TF400813: The server is unavailable."}}
+    {"method": "DELETE", "path": "/broken/_apis/settings/entries/banners", "status": 500, "json": {"message": "TF400813: The server is unavailable."}},
+
+    {"method": "GET", "path": "/ado-harness/Alpha/_apis/test/runs", "fixture": "test_runs_list.json"},
+    {"method": "GET", "path": "/ado-harness/Alpha%20Beta/_apis/test/runs", "json": {"count": 0, "value": []}},
+    {"method": "GET", "path": "/ado-harness/Empty/_apis/test/runs", "json": {"count": 0, "value": []}},
+    {"method": "GET", "path": "/ado-harness/NoValue/_apis/test/runs", "json": {"count": 3}},
+    {"method": "GET", "path": "/missing/Alpha/_apis/test/runs", "status": 404, "json": {"message": "TF400813: The user is not authorized."}},
+    {"method": "GET", "path": "/broken/Alpha/_apis/test/runs", "status": 500, "json": {"message": "TF400813: The server is unavailable."}},
+
+    {"method": "GET", "path": "/ado-harness/Alpha/_apis/test/runs/42", "fixture": "test_run_show.json"},
+    {"method": "GET", "path": "/ado-harness/Alpha/_apis/test/runs/43", "json": {"id": 43}},
+    {"method": "GET", "path": "/ado-harness/Alpha/_apis/test/runs/44", "json": {"id": 44, "name": "State-labelled stats", "state": "InProgress", "runStatistics": [{"state": "TotalTests", "count": 9}, {"state": "Passed", "count": null}, {"outcome": "Failed"}], "build": {"id": 501}}},
+    {"method": "GET", "path": "/missing/Alpha/_apis/test/runs/42", "status": 404, "json": {"message": "TF400813: The user is not authorized."}},
+    {"method": "GET", "path": "/broken/Alpha/_apis/test/runs/42", "status": 500, "json": {"message": "TF400813: The server is unavailable."}},
+
+    {"method": "POST", "path": "/ado-harness/Alpha/_apis/test/runs", "request_body": {"name": "Nightly Regression", "isAutomated": true, "state": "InProgress"}, "json": {"id": 501, "name": "Nightly Regression", "state": "InProgress"}},
+    {"method": "PATCH", "path": "/ado-harness/Alpha/_apis/test/runs/501", "request_body": {"state": "Completed"}, "json": {"id": 501, "state": "Completed"}},
+    {"method": "POST", "path": "/ado-harness/Alpha/_apis/test/runs/501/attachments", "json": {"id": "att-1"}},
+
+    {"method": "POST", "path": "/ado-harness/EmptyName/_apis/test/runs", "request_body": {"name": "", "isAutomated": true, "state": "InProgress"}, "json": {"id": 505, "name": "", "state": "InProgress"}},
+    {"method": "PATCH", "path": "/ado-harness/EmptyName/_apis/test/runs/505", "request_body": {"state": "Completed"}, "json": {"id": 505, "state": "Completed"}},
+    {"method": "POST", "path": "/ado-harness/EmptyName/_apis/test/runs/505/attachments", "json": {"id": "att-5"}},
+
+    {"method": "POST", "path": "/ado-harness/BuildLinked/_apis/test/runs", "request_body": {"name": "Nightly Regression", "isAutomated": true, "state": "InProgress", "build": {"id": 42}}, "json": {"id": 502, "name": "Nightly Regression", "state": "InProgress"}},
+    {"method": "PATCH", "path": "/ado-harness/BuildLinked/_apis/test/runs/502", "request_body": {"state": "Completed"}, "json": {"id": 502, "state": "Completed"}},
+    {"method": "POST", "path": "/ado-harness/BuildLinked/_apis/test/runs/502/attachments", "json": {"id": "att-2"}},
+
+    {"method": "POST", "path": "/ado-harness/FailPatch/_apis/test/runs", "json": {"id": 503, "name": "Nightly Regression", "state": "InProgress"}},
+    {"method": "PATCH", "path": "/ado-harness/FailPatch/_apis/test/runs/503", "status": 500, "json": {"message": "TF400813: The server is unavailable."}},
+    {"method": "POST", "path": "/ado-harness/FailPatch/_apis/test/runs/503/attachments", "json": {"id": "att-3"}},
+
+    {"method": "POST", "path": "/ado-harness/FailAttach/_apis/test/runs", "json": {"id": 504, "name": "Nightly Regression", "state": "InProgress"}},
+    {"method": "PATCH", "path": "/ado-harness/FailAttach/_apis/test/runs/504", "json": {"id": 504, "state": "Completed"}},
+    {"method": "POST", "path": "/ado-harness/FailAttach/_apis/test/runs/504/attachments", "status": 500, "json": {"message": "TF400813: The upload failed."}},
+
+    {"method": "POST", "path": "/ado-harness/BinaryUpload/_apis/test/runs", "json": {"id": 506, "name": "Nightly Regression", "state": "InProgress"}},
+    {"method": "PATCH", "path": "/ado-harness/BinaryUpload/_apis/test/runs/506", "json": {"id": 506, "state": "Completed"}},
+    {"method": "POST", "path": "/ado-harness/BinaryUpload/_apis/test/runs/506/attachments", "json": {"id": "att-6"}},
+
+    {"method": "POST", "path": "/missing/Alpha/_apis/test/runs", "status": 404, "json": {"message": "The project does not exist."}},
+    {"method": "POST", "path": "/broken/Alpha/_apis/test/runs", "status": 500, "json": {"message": "TF400813: The server is unavailable."}}
   ]
 }
