@@ -238,6 +238,28 @@ impl Client {
         self.send("PUT", path, params, Some(body))?.json()
     }
 
+    /// `PUT` with one caller-supplied header — the frozen `Client.put/4`'s
+    /// `extra_headers`, which only `wikis pages update` uses: the `If-Match`
+    /// optimistic-concurrency guard built from the read's `eTag`.
+    pub fn put_with_headers(
+        &self,
+        path: &str,
+        body: &Value,
+        params: &[(String, String)],
+        extra_headers: &[(&str, &str)],
+    ) -> Result<Value, AdoError> {
+        let payload = serde_json::to_vec(body).map_err(|error| encode_failed(&error))?;
+
+        self.dispatch_with_headers(
+            "PUT",
+            path,
+            params,
+            Some(("application/json", payload)),
+            extra_headers,
+        )?
+        .json()
+    }
+
     /// `DELETE`: Azure answers 204 with no body, so a 2xx is the whole result.
     pub fn delete(&self, path: &str, params: &[(String, String)]) -> Result<(), AdoError> {
         self.send("DELETE", path, params, None)?.accepted()
@@ -327,11 +349,28 @@ impl Client {
         params: &[(String, String)],
         body: Option<(&str, Vec<u8>)>,
     ) -> Result<Reply, AdoError> {
+        self.dispatch_with_headers(method, path, params, body, &[])
+    }
+
+    /// The same request with caller-supplied headers appended after the auth and
+    /// content-type ones; only [`Client::put_with_headers`] passes any.
+    fn dispatch_with_headers(
+        &self,
+        method: &str,
+        path: &str,
+        params: &[(String, String)],
+        body: Option<(&str, Vec<u8>)>,
+        extra_headers: &[(&str, &str)],
+    ) -> Result<Reply, AdoError> {
         let url = self.url_for(path, params);
-        let builder = http::Request::builder()
+        let mut builder = http::Request::builder()
             .method(method)
             .uri(&url)
             .header(self.auth.0.as_str(), self.auth.1.as_str());
+
+        for (name, value) in extra_headers {
+            builder = builder.header(*name, *value);
+        }
 
         let mut response = match body {
             Some((content_type, payload)) => {

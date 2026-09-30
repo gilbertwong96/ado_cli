@@ -1291,6 +1291,162 @@ fn main() -> ExitCode {
                 _ => Err(AdoError::validation(MISSING_SUBCOMMAND)),
             }
         }
+        Some(("packages", sub)) => {
+            let mut context = Context::load(globals);
+
+            match sub.subcommand() {
+                Some(("list", list)) => commands::packages::list(
+                    &mut context,
+                    list.get_one::<String>("project")
+                        .expect("the positional is required")
+                        .as_str(),
+                    list.get_one::<String>("feed_id")
+                        .expect("the positional is required")
+                        .as_str(),
+                ),
+                Some(("versions", versions)) => commands::packages::versions(
+                    &mut context,
+                    versions
+                        .get_one::<String>("project")
+                        .expect("the positional is required")
+                        .as_str(),
+                    versions
+                        .get_one::<String>("feed_id")
+                        .expect("the positional is required")
+                        .as_str(),
+                    versions
+                        .get_one::<String>("package_name")
+                        .expect("the positional is required")
+                        .as_str(),
+                ),
+                Some(("show", show)) => commands::packages::show(
+                    &mut context,
+                    show.get_one::<String>("project")
+                        .expect("the positional is required")
+                        .as_str(),
+                    show.get_one::<String>("feed_id")
+                        .expect("the positional is required")
+                        .as_str(),
+                    show.get_one::<String>("package_name")
+                        .expect("the positional is required")
+                        .as_str(),
+                    show.get_one::<String>("package_version")
+                        .expect("the positional is required")
+                        .as_str(),
+                ),
+                _ => Err(AdoError::validation(MISSING_SUBCOMMAND)),
+            }
+        }
+        Some(("releases", sub)) => {
+            let mut context = Context::load(globals);
+
+            match sub.subcommand() {
+                Some(("list", list)) => commands::releases::list(
+                    &mut context,
+                    list.get_one::<String>("project")
+                        .expect("the positional is required")
+                        .as_str(),
+                    list.get_one::<i64>("top").copied(),
+                    list.get_one::<i64>("definition-id").copied(),
+                    list.get_one::<String>("status").cloned(),
+                ),
+                Some(("show", show)) => commands::releases::show(
+                    &mut context,
+                    show.get_one::<String>("project")
+                        .expect("the positional is required")
+                        .as_str(),
+                    show.get_one::<i64>("release_id")
+                        .copied()
+                        .expect("the positional is required"),
+                ),
+                _ => Err(AdoError::validation(MISSING_SUBCOMMAND)),
+            }
+        }
+        Some(("wikis", sub)) => {
+            let mut context = Context::load(globals);
+
+            match sub.subcommand() {
+                Some(("list", list)) => commands::wikis::list(
+                    &mut context,
+                    list.get_one::<String>("project")
+                        .expect("the positional is required")
+                        .as_str(),
+                ),
+                Some(("show", show)) => commands::wikis::show(
+                    &mut context,
+                    show.get_one::<String>("project")
+                        .expect("the positional is required")
+                        .as_str(),
+                    show.get_one::<String>("wiki_id")
+                        .expect("the positional is required")
+                        .as_str(),
+                ),
+                Some(("pages", pages)) => match pages.subcommand() {
+                    Some(("list", list)) => commands::wikis::pages_list(
+                        &mut context,
+                        list.get_one::<String>("project")
+                            .expect("the positional is required")
+                            .as_str(),
+                        list.get_one::<String>("wiki_id")
+                            .expect("the positional is required")
+                            .as_str(),
+                        list.get_one::<String>("path").cloned(),
+                    ),
+                    Some(("show", show)) => commands::wikis::pages_show(
+                        &mut context,
+                        show.get_one::<String>("project")
+                            .expect("the positional is required")
+                            .as_str(),
+                        show.get_one::<String>("wiki_id")
+                            .expect("the positional is required")
+                            .as_str(),
+                        show.get_one::<String>("path")
+                            .expect("the option is required")
+                            .as_str(),
+                    ),
+                    Some(("create", create)) => commands::wikis::pages_create(
+                        &mut context,
+                        create
+                            .get_one::<String>("project")
+                            .expect("the positional is required")
+                            .as_str(),
+                        create
+                            .get_one::<String>("wiki_id")
+                            .expect("the positional is required")
+                            .as_str(),
+                        create
+                            .get_one::<String>("path")
+                            .expect("the option is required")
+                            .as_str(),
+                        create
+                            .get_one::<String>("content")
+                            .expect("the option is required")
+                            .as_str(),
+                    ),
+                    Some(("update", update)) => commands::wikis::pages_update(
+                        &mut context,
+                        update
+                            .get_one::<String>("project")
+                            .expect("the positional is required")
+                            .as_str(),
+                        update
+                            .get_one::<String>("wiki_id")
+                            .expect("the positional is required")
+                            .as_str(),
+                        update
+                            .get_one::<String>("path")
+                            .expect("the option is required")
+                            .as_str(),
+                        update
+                            .get_one::<String>("content")
+                            .expect("the option is required")
+                            .as_str(),
+                    ),
+                    _ => Err(AdoError::validation(MISSING_SUBCOMMAND)),
+                },
+                _ => Err(AdoError::validation(MISSING_SUBCOMMAND)),
+            }
+        }
         Some(("schema", sub)) => {
             commands::schema::run(json, sub.get_one::<String>("name").map(String::as_str))
         }

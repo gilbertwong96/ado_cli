@@ -2924,6 +2924,302 @@ pub fn command() -> Command {
                 ),
         )
         .subcommand(
+            Command::new("packages")
+                .about(
+                    "Manage Azure Artifacts Universal Packages. Universal Packages are a generic artifact format for shipping any file blob (binaries, configs, build outputs) versioned by semver. The CLI manages metadata only; use `tw` or `az artifacts universal` to actually upload/download.",
+                )
+                .subcommand(
+                    Command::new("list")
+                        .about(
+                            "List all Universal Packages in a feed. Output is a table (Name, Protocol, Versions). Pass --json for raw data.",
+                        )
+                        .arg(
+                            Arg::new("project")
+                                .value_name("PROJECT")
+                                .required(true)
+                                .help("Project name or ID"),
+                        )
+                        .arg(
+                            Arg::new("feed_id")
+                                .value_name("FEED_ID")
+                                .required(true)
+                                .help(
+                                    "Feed name or ID (find with `ado packages list` at the org level or via the Azure Artifacts UI)",
+                                ),
+                        ),
+                )
+                .subcommand(
+                    Command::new("versions")
+                        .about(
+                            "List all versions of a single Universal Package. Output is a table (Version, Status, Publish Date). Status is 'latest' for the highest semver, 'deleted' for soft-deleted, 'normal' otherwise.",
+                        )
+                        .arg(
+                            Arg::new("project")
+                                .value_name("PROJECT")
+                                .required(true)
+                                .help("Project name or ID"),
+                        )
+                        .arg(
+                            Arg::new("feed_id")
+                                .value_name("FEED_ID")
+                                .required(true)
+                                .help("Feed name or ID"),
+                        )
+                        .arg(
+                            Arg::new("package_name")
+                                .value_name("PACKAGE_NAME")
+                                .required(true)
+                                .help("Package name (the slug, e.g. 'myapp-builds')"),
+                        ),
+                )
+                .subcommand(
+                    Command::new("show")
+                        .about(
+                            "Show details of a specific package version: full name, version string, protocol, status, size in bytes, publish date.",
+                        )
+                        .arg(
+                            Arg::new("project")
+                                .value_name("PROJECT")
+                                .required(true)
+                                .help("Project name or ID"),
+                        )
+                        .arg(
+                            Arg::new("feed_id")
+                                .value_name("FEED_ID")
+                                .required(true)
+                                .help("Feed name or ID"),
+                        )
+                        .arg(
+                            Arg::new("package_name")
+                                .value_name("PACKAGE_NAME")
+                                .required(true)
+                                .help("Package name"),
+                        )
+                        .arg(
+                            Arg::new("package_version")
+                                .value_name("PACKAGE_VERSION")
+                                .required(true)
+                                .help(
+                                    "Specific version (e.g. '1.0.0', '2.3.1-beta.2'). Pass the exact version string, not a semver range.",
+                                ),
+                        ),
+                ),
+        )
+        .subcommand(
+            Command::new("releases")
+                .about(
+                    "Manage Azure DevOps Releases (classic release pipelines, distinct from modern YAML pipelines). A release is a deployment of a build artifact through a series of environments (Dev → Staging → Prod).",
+                )
+                .subcommand(
+                    Command::new("list")
+                        .about(
+                            "List recent releases in a project. Output is a table (ID, Name, Status, Created). Use --definition-id to filter to one release definition, --status to filter by state. Pass --json for raw data.",
+                        )
+                        .arg(
+                            Arg::new("project")
+                                .value_name("PROJECT")
+                                .required(true)
+                                .help("Project name or ID"),
+                        )
+                        .arg(
+                            Arg::new("top")
+                                .long("top")
+                                .value_name("N")
+                                .value_parser(clap::value_parser!(i64))
+                                .help("Maximum number of releases to return. Default 50, max 1000."),
+                        )
+                        .arg(
+                            Arg::new("definition-id")
+                                .long("definition-id")
+                                .value_name("ID")
+                                .value_parser(clap::value_parser!(i64))
+                                .help(
+                                    "Filter to releases from a specific release definition (find IDs with `ado pipelines-builds definitions list` for classic pipelines, or via the Azure DevOps UI)",
+                                ),
+                        )
+                        .arg(
+                            Arg::new("status")
+                                .long("status")
+                                .value_name("STATUS")
+                                .help(
+                                    "Filter by release lifecycle status. Valid: active (default — in progress or deployed), abandoned (manually stopped), draft (not yet started), undefined (no status).",
+                                ),
+                        ),
+                )
+                .subcommand(
+                    Command::new("show")
+                        .about(
+                            "Show details of a specific release: ID, name, status, release definition, created-on date, creator, web URL, and the list of environments with their statuses (succeeded, inProgress, failed, etc.).",
+                        )
+                        .arg(
+                            Arg::new("project")
+                                .value_name("PROJECT")
+                                .required(true)
+                                .help("Project name or ID"),
+                        )
+                        .arg(
+                            Arg::new("release_id")
+                                .value_name("RELEASE_ID")
+                                .required(true)
+                                .value_parser(clap::value_parser!(i64))
+                                .help("Numeric release ID (from `list`)"),
+                        ),
+                ),
+        )
+        .subcommand(
+            Command::new("wikis")
+                .about(
+                    "Manage Azure DevOps project wikis (code wikis) and their pages. Supports list, show, create, and update. Wikis are per-project Markdown documentation published alongside code.",
+                )
+                .subcommand(
+                    Command::new("list")
+                        .about(
+                            "List all wikis in a project. Typically one code wiki per project; output shows name, type, and repository. Use --json for raw data.",
+                        )
+                        .arg(
+                            Arg::new("project")
+                                .value_name("PROJECT")
+                                .required(true)
+                                .help("Project name or ID"),
+                        ),
+                )
+                .subcommand(
+                    Command::new("show")
+                        .about(
+                            "Show a single wiki: name, type (codeWiki or projectWiki), mapped repository, versions, and remote URL.",
+                        )
+                        .arg(
+                            Arg::new("project")
+                                .value_name("PROJECT")
+                                .required(true)
+                                .help("Project name or ID"),
+                        )
+                        .arg(
+                            Arg::new("wiki_id")
+                                .value_name("WIKI_ID")
+                                .required(true)
+                                .help("Wiki ID or name"),
+                        ),
+                )
+                .subcommand(
+                    Command::new("pages")
+                        .about(
+                            "Manage individual wiki pages (create, read, update). Pages are organized by path (e.g. /Home, /Design/Architecture). Content is Markdown.",
+                        )
+                        .subcommand(
+                            Command::new("list")
+                                .about(
+                                    "List all pages in a wiki recursively. Use --path to scope to a subtree (e.g. /Design). Output is a flat list of paths.",
+                                )
+                                .arg(
+                                    Arg::new("project")
+                                        .value_name("PROJECT")
+                                        .required(true)
+                                        .help("Project name or ID"),
+                                )
+                                .arg(
+                                    Arg::new("wiki_id")
+                                        .value_name("WIKI_ID")
+                                        .required(true)
+                                        .help("Wiki ID or name"),
+                                )
+                                .arg(
+                                    Arg::new("path")
+                                        .long("path")
+                                        .value_name("PATH")
+                                        .help("Path to list (default: /)"),
+                                ),
+                        )
+                        .subcommand(
+                            Command::new("show")
+                                .about("Show a wiki page.")
+                                .arg(
+                                    Arg::new("project")
+                                        .value_name("PROJECT")
+                                        .required(true)
+                                        .help("Project name or ID"),
+                                )
+                                .arg(
+                                    Arg::new("wiki_id")
+                                        .value_name("WIKI_ID")
+                                        .required(true)
+                                        .help("Wiki ID or name"),
+                                )
+                                .arg(
+                                    Arg::new("path")
+                                        .long("path")
+                                        .value_name("PATH")
+                                        .required(true)
+                                        .help("Page path"),
+                                ),
+                        )
+                        .subcommand(
+                            Command::new("create")
+                                .about("Create or update a wiki page.")
+                                .arg(
+                                    Arg::new("project")
+                                        .value_name("PROJECT")
+                                        .required(true)
+                                        .help("Project name or ID"),
+                                )
+                                .arg(
+                                    Arg::new("wiki_id")
+                                        .value_name("WIKI_ID")
+                                        .required(true)
+                                        .help("Wiki ID or name"),
+                                )
+                                .arg(
+                                    Arg::new("path")
+                                        .long("path")
+                                        .value_name("PATH")
+                                        .required(true)
+                                        .help("Page path"),
+                                )
+                                .arg(
+                                    Arg::new("content")
+                                        .long("content")
+                                        .value_name("CONTENT")
+                                        .required(true)
+                                        .help(
+                                            "Markdown content for the page. Multi-word values do not need quoting. Use @file to read from a local .md file.",
+                                        ),
+                                ),
+                        )
+                        .subcommand(
+                            Command::new("update")
+                                .about("Update a wiki page.")
+                                .arg(
+                                    Arg::new("project")
+                                        .value_name("PROJECT")
+                                        .required(true)
+                                        .help("Project name or ID"),
+                                )
+                                .arg(
+                                    Arg::new("wiki_id")
+                                        .value_name("WIKI_ID")
+                                        .required(true)
+                                        .help("Wiki ID or name"),
+                                )
+                                .arg(
+                                    Arg::new("path")
+                                        .long("path")
+                                        .value_name("PATH")
+                                        .required(true)
+                                        .help("Page path"),
+                                )
+                                .arg(
+                                    Arg::new("content")
+                                        .long("content")
+                                        .value_name("CONTENT")
+                                        .required(true)
+                                        .help(
+                                            "Replacement Markdown content for the page. Use @file to read from a local .md file.",
+                                        ),
+                                ),
+                        ),
+                ),
+        )
+        .subcommand(
             Command::new("schema")
                 .about("Dump the CLI command tree as structured JSON for LLM agents.")
                 .arg(
