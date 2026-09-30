@@ -1683,13 +1683,24 @@ fn schema_imports_node_lists_every_shipped_subcommand() {
         ["json", "org", "pat", "server", "top", "verbose"],
         "--top is the module's one option"
     );
-    assert_eq!(option(&list, "top")["type"], json!("integer"));
+    assert_eq!(
+        option(&list, "top")["type"],
+        json!("string"),
+        "the oracle types it integer; clap's value-parser reports string (D23)"
+    );
     assert_eq!(
         option(&list, "top")["doc"],
         json!("Maximum number of imports to return. Default 50.")
     );
-    assert_eq!(argument(&list, "project")["doc"], json!("Project name or ID"));
-    assert_eq!(argument(&list, "project")["required"], json!(false));
+    assert_eq!(
+        argument(&list, "project")["doc"],
+        json!("Project name or ID")
+    );
+    assert_eq!(
+        argument(&list, "project")["required"],
+        json!(true),
+        "the oracle says false and enforces it anyway; ours describes the parse tree (D23)"
+    );
 
     let show = find_node("imports show").expect("the show node");
     assert_eq!(option_names(&show), GLOBALS, "show declares no option");
@@ -1702,7 +1713,9 @@ fn schema_imports_node_lists_every_shipped_subcommand() {
     let create = find_node("imports create").expect("the create node");
     assert_eq!(
         option_names(&create),
-        ["json", "org", "password", "pat", "server", "url", "user", "verbose"],
+        [
+            "json", "org", "password", "pat", "server", "url", "user", "verbose"
+        ],
         "url/user/password, and no others"
     );
     assert_eq!(option(&create, "url")["required"], json!(true));
@@ -1725,7 +1738,11 @@ fn schema_banners_node_lists_every_shipped_subcommand() {
         )
     );
     assert_eq!(banners["arguments"], json!([]));
-    assert_eq!(option_names(&banners), GLOBALS, "the group declares no option");
+    assert_eq!(
+        option_names(&banners),
+        GLOBALS,
+        "the group declares no option"
+    );
     assert_eq!(
         subcommands(&banners)
             .iter()
@@ -1742,7 +1759,9 @@ fn schema_banners_node_lists_every_shipped_subcommand() {
     let set = find_node("banners set").expect("the set node");
     assert_eq!(
         option_names(&set),
-        ["json", "level", "message", "org", "pat", "server", "type", "verbose"]
+        [
+            "json", "level", "message", "org", "pat", "server", "type", "verbose"
+        ]
     );
     assert_eq!(option(&set, "message")["required"], json!(true));
     assert_eq!(option(&set, "type")["required"], json!(false));
