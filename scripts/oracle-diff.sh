@@ -2754,6 +2754,229 @@ run_mock_cases() {
     mock_case policies-display-name "repos policies list (the schema display name)" \
         repos policies list Alpha Alpha.Core
 
+    # ── Wave 2: packages, releases and wikis (Task 15) ──
+    #
+    # The three groups' REST surfaces: `_apis/packaging/feeds/{feed}/packages`
+    # (the three-positional area, `show` taking four), `_apis/release/releases`
+    # (the classic-release surface with its three list filters) and
+    # `_apis/wiki/wikis` with its `pages` grandchild. The package version
+    # `1.0.0+build.5`, the package name `name+plus` and the wiki id `a+b` are the
+    # D22 sites: the frozen `URI.encode/1` leaves `+` raw and this build escapes
+    # it `%2B`, so both spellings have a route and the case carries the request
+    # rule. `releases list --definition_id` is the schema's name, not the
+    # runnable flag (D17's class — the probe rejects it, and the harness records
+    # it). The four page commands' missing `--path`/`--content` are D34's
+    # `Map.fetch!` crash (silent exit 0 there, a loud usage error here). The two
+    # page writes are D33 under `--json`; `pages show` is D40 — the frozen read
+    # path writes the page's content before its envelope and prints it twice in
+    # human mode, where this build emits one document (or one copy).
+
+    mock_case packages-list "packages list" \
+        packages list Alpha feed-1 --json
+
+    stdout_mode=text
+    mock_case packages-list-empty-human "packages list (empty, human)" \
+        packages list Alpha feed-empty
+
+    envelope_rule='D24: the error body stays the upstream bytes here, where the oracle re-renders the decoded map with inspect/2 (C2: the list-error row)'
+    mock_case packages-list-404 "packages list (404)" \
+        packages list Missing feed-1 --json
+
+    envelope_rule='D24: the error body stays the upstream bytes here, where the oracle re-renders the decoded map with inspect/2 (C2: the list-error row)'
+    mock_case packages-list-500 "packages list (500)" \
+        packages list Broken feed-1 --json
+
+    mock_case packages-versions "packages versions" \
+        packages versions Alpha feed-1 myapp-builds --json
+
+    stdout_mode=text
+    mock_case packages-versions-empty-human "packages versions (empty, human)" \
+        packages versions Alpha feed-1 empty-pkg
+
+    rest_rule='D22: the package name is a path segment here, percent-encoded more strictly than the frozen URI.encode/1 (which left the + alone), so the request paths differ and the envelopes do not'
+    mock_case packages-versions-plus "packages versions (a name with +)" \
+        packages versions Alpha feed-1 name+plus --json
+
+    mock_case packages-show "packages show" \
+        packages show Alpha feed-1 myapp-builds 1.0.0 --json
+
+    rest_rule='D22: the version is a path segment here, percent-encoded more strictly than the frozen URI.encode/1 (which left the + alone), so the request paths differ and the envelopes do not'
+    mock_case packages-show-plus "packages show (a version with +)" \
+        packages show Alpha feed-1 myapp-builds 1.0.0+build.5 --json
+
+    envelope_rule='D4: the frozen CLI writes the guard to stderr with no envelope under --json where this build emits the error envelope'
+    mock_case packages-show-404 "packages show (404)" \
+        packages show Alpha feed-1 myapp-builds 9.9.9 --json
+
+    envelope_rule='D5: the oracle prints the command help on stdout before its usage error; this build writes clap’s message to stderr alone'
+    stdout_mode=text
+    mock_case packages-show-missing-version "packages show (no version)" \
+        packages show Alpha feed-1 myapp-builds
+
+    envelope_rule='D5: the oracle prints the command help on stdout before its usage error; this build writes clap’s message to stderr alone'
+    stdout_mode=text
+    mock_case packages-list-missing-feed "packages list (no feed id)" \
+        packages list Alpha
+
+    envelope_rule='D5: the oracle prints the command help on stdout before its usage error; this build writes clap’s message to stderr alone'
+    stdout_mode=text
+    mock_case packages-versions-missing-name "packages versions (no package name)" \
+        packages versions Alpha feed-1
+
+    mock_case releases-list "releases list" \
+        releases list Alpha --json
+
+    mock_case releases-list-flags "releases list --top --definition-id --status" \
+        releases list Alpha --top 5 --definition-id 3 --status active --json
+
+    stdout_mode=text
+    mock_case releases-list-empty-human "releases list (empty, human)" \
+        releases list Alpha --status none
+
+    envelope_rule='D24: the error body stays the upstream bytes here, where the oracle re-renders the decoded map with inspect/2 (C2: the list-error row)'
+    mock_case releases-list-404 "releases list (404)" \
+        releases list Missing --json
+
+    envelope_rule='D24: the error body stays the upstream bytes here, where the oracle re-renders the decoded map with inspect/2 (C2: the list-error row)'
+    mock_case releases-list-500 "releases list (500)" \
+        releases list Broken --json
+
+    envelope_rule='D5: the oracle prints the command help on stdout before its usage error; this build writes clap’s message to stderr alone'
+    stdout_mode=text
+    mock_case releases-list-underscore-definition-id "releases list --definition_id (the schema name, not the flag)" \
+        releases list Alpha --definition_id 3
+
+    envelope_rule='D5: the oracle prints the command help on stdout before its usage error; this build writes clap’s message to stderr alone'
+    stdout_mode=text
+    mock_case releases-list-top-noninteger "releases list --top abc (not an integer)" \
+        releases list Alpha --top abc
+
+    mock_case releases-show "releases show" \
+        releases show Alpha 101 --json
+
+    stdout_mode=text
+    mock_case releases-show-human "releases show (human)" \
+        releases show Alpha 101
+
+    stdout_mode=text
+    mock_case releases-show-minimal-human "releases show (a release without definition/creator/environments)" \
+        releases show Alpha 102
+
+    envelope_rule='D4: the frozen CLI writes the guard to stderr with no envelope under --json where this build emits the error envelope'
+    mock_case releases-show-404 "releases show (404)" \
+        releases show Alpha 999 --json
+
+    envelope_rule='D5: the oracle prints the command help on stdout before its usage error; this build writes clap’s message to stderr alone'
+    stdout_mode=text
+    mock_case releases-show-noninteger "releases show (non-integer id)" \
+        releases show Alpha not-an-integer
+
+    mock_case wikis-list "wikis list" \
+        wikis list Alpha --json
+
+    stdout_mode=text
+    mock_case wikis-list-empty-human "wikis list (empty, human)" \
+        wikis list Empty
+
+    envelope_rule='D24: the error body stays the upstream bytes here, where the oracle re-renders the decoded map with inspect/2 (C2: the list-error row)'
+    mock_case wikis-list-404 "wikis list (404)" \
+        wikis list Missing --json
+
+    envelope_rule='D24: the error body stays the upstream bytes here, where the oracle re-renders the decoded map with inspect/2 (C2: the list-error row)'
+    mock_case wikis-list-500 "wikis list (500)" \
+        wikis list Broken --json
+
+    mock_case wikis-show "wikis show" \
+        wikis show Alpha wiki-1 --json
+
+    stdout_mode=text
+    mock_case wikis-show-human "wikis show (human)" \
+        wikis show Alpha wiki-1
+
+    rest_rule='D22: the wiki id is a path segment here, percent-encoded more strictly than the frozen URI.encode/1 (which left the + alone), so the request paths differ and the envelopes do not'
+    mock_case wikis-show-plus "wikis show (a wiki id with +)" \
+        wikis show Alpha a+b --json
+
+    envelope_rule='D4: the frozen CLI writes the guard to stderr with no envelope under --json where this build emits the error envelope'
+    mock_case wikis-show-404 "wikis show (404)" \
+        wikis show Alpha nope --json
+
+    mock_case pages-list "wikis pages list" \
+        wikis pages list Alpha wiki-1 --json
+
+    mock_case pages-list-path "wikis pages list --path" \
+        wikis pages list Alpha wiki-1 --path /Design --json
+
+    stdout_mode=text
+    mock_case pages-list-empty-human "wikis pages list (empty, human)" \
+        wikis pages list Alpha wiki-empty
+
+    envelope_rule='D40: the frozen read path writes the page content in front of its envelope even under --json; this build emits the value envelope as the command’s only document'
+    mock_case pages-show-json "wikis pages show (--json)" \
+        wikis pages show Alpha wiki-1 --path /Home --json
+
+    envelope_rule='D40: the frozen read path writes the page content twice in human mode (its unconditional writeln/1 ahead of json_or_format/3); this build writes it once'
+    stdout_mode=text
+    mock_case pages-show-human "wikis pages show (human)" \
+        wikis pages show Alpha wiki-1 --path /Home
+
+    envelope_rule='D4: the frozen CLI writes the guard to stderr with no envelope under --json where this build emits the error envelope'
+    mock_case pages-show-404 "wikis pages show (404)" \
+        wikis pages show Alpha wiki-1 --path /Missing --json
+
+    status_rule='D34: a missing required option is a silent exit 0 in the oracle (the module’s Map.fetch! crash); this build is a loud usage error'
+    expect_statuses='0 1'
+    stdout_mode=text
+    mock_case pages-show-no-path "wikis pages show (no --path)" \
+        wikis pages show Alpha wiki-1
+
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the value envelope'
+    mock_case pages-create "wikis pages create" \
+        wikis pages create Alpha wiki-create --path /New-Page --content 'hello world' --json
+
+    stdout_mode=text
+    mock_case pages-create-human "wikis pages create (human)" \
+        wikis pages create Alpha wiki-create --path /New-Page --content 'hello world'
+
+    stdout_mode=text
+    mock_case pages-create-multiword "wikis pages create (unquoted multiword --content)" \
+        wikis pages create Alpha wiki-create --path /New-Page --content hello world
+
+    status_rule='D34: a missing required option is a silent exit 0 in the oracle (the module’s Map.fetch! crash); this build is a loud usage error'
+    expect_statuses='0 1'
+    stdout_mode=text
+    mock_case pages-create-no-path "wikis pages create (no --path)" \
+        wikis pages create Alpha wiki-create --content hello
+
+    status_rule='D34: a missing required option is a silent exit 0 in the oracle (the module’s Map.fetch! crash); this build is a loud usage error'
+    expect_statuses='0 1'
+    stdout_mode=text
+    mock_case pages-create-no-content "wikis pages create (no --content)" \
+        wikis pages create Alpha wiki-create --path /New-Page
+
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the value envelope'
+    mock_case pages-update "wikis pages update" \
+        wikis pages update Alpha wiki-update --path /Home --content 'new text' --json
+
+    stdout_mode=text
+    mock_case pages-update-human "wikis pages update (human)" \
+        wikis pages update Alpha wiki-update --path /Home --content 'new text'
+
+    stdout_mode=text
+    mock_case pages-update-no-etag "wikis pages update (a read without an eTag)" \
+        wikis pages update Alpha wiki-noetag --path /Home --content 'new text'
+
+    envelope_rule='D24: the error body stays the upstream bytes here, where the oracle re-renders the decoded map with inspect/2'
+    mock_case pages-update-get-404 "wikis pages update (GET 404)" \
+        wikis pages update Alpha wiki-gone --path /Home --content 'new text' --json
+
+    status_rule='D34: a missing required option is a silent exit 0 in the oracle (the module’s Map.fetch! crash); this build is a loud usage error'
+    expect_statuses='0 1'
+    stdout_mode=text
+    mock_case pages-update-no-path "wikis pages update (no --path)" \
+        wikis pages update Alpha wiki-update --content new
+
+
     mock_scenario_check
 }
 
