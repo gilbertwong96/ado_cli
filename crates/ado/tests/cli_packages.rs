@@ -229,6 +229,38 @@ fn versions_emits_the_value_envelope_with_every_status_label() {
 }
 
 #[test]
+fn versions_encodes_a_plus_in_the_package_name_as_one_path_segment() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "GET",
+        &format!("{PACKAGES}/name%2Bplus/versions"),
+        MockResponse::json(200, json!({"count": 3, "value": versions()})),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "packages",
+            "versions",
+            "Alpha",
+            "feed-1",
+            "name+plus",
+            "--json",
+        ],
+    );
+
+    assert_eq!(
+        requests(&server)[0].path,
+        format!("{PACKAGES}/name%2Bplus/versions"),
+        "the frozen URI.encode leaves + raw; this build escapes it (D22)"
+    );
+    assert_success(&output);
+    assert_eq!(envelope(&output), json!({"ok": true, "result": versions()}));
+}
+
+#[test]
 fn versions_human_empty_prints_the_frozen_sentence() {
     let home = TempHome::new();
     let server = MockServer::start();
