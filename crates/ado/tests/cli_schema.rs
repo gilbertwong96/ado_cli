@@ -100,6 +100,7 @@ fn schema_root_lists_exactly_the_shipped_subcommands() {
         names,
         [
             "ado areas",
+            "ado branch-policies",
             "ado completion",
             "ado iterations",
             "ado login",
@@ -369,6 +370,105 @@ fn schema_teams_and_users_nodes_list_every_shipped_subcommand() {
         option_names(&find_node("users remove").expect("the remove node")),
         GLOBALS,
         "users remove has no --force: the captured parser rejects it (R5)"
+    );
+}
+
+/// The Task 14 tree under the runnable `branch-policies` spelling (R3/D18: the
+/// oracle's schema calls the node `ado repos policies`, and argv accepts only the
+/// hyphenated form). `create` marks `--type`/`--branch` required where the
+/// oracle's `Map.fetch!` makes a missing one a silent exit 0 (D34's loud half),
+/// `update` requires none, and each boolean is a `--flag`/`--no-flag` pair — the
+/// clap tree's honest shape, where the oracle has one option whose OptionParser
+/// `--no-` prefix becomes a second arg here (so the node lists `no_blocking` and
+/// reports `blocking`'s default as false; the W0 schema case compares root nodes
+/// and descendant names only).
+#[test]
+fn schema_branch_policies_node_lists_every_shipped_subcommand() {
+    let policies = find_node("branch-policies").expect("the branch-policies node");
+
+    assert_eq!(
+        subcommands(&policies)
+            .iter()
+            .map(|sub| sub["name"].as_str().expect("a subcommand name"))
+            .collect::<Vec<_>>(),
+        [
+            "ado branch-policies list",
+            "ado branch-policies show",
+            "ado branch-policies create",
+            "ado branch-policies update",
+            "ado branch-policies delete"
+        ]
+    );
+
+    let create = find_node("branch-policies create").expect("the create node");
+
+    assert_eq!(
+        option_names(&create),
+        [
+            "blocking",
+            "branch",
+            "json",
+            "no_blocking",
+            "org",
+            "pat",
+            "server",
+            "type",
+            "verbose"
+        ],
+        "create carries the two required options and the flag pair"
+    );
+
+    for name in ["type", "branch"] {
+        assert_eq!(
+            option(&create, name)["required"],
+            json!(true),
+            "create marks --{name} required (the oracle's own schema does; it never enforces it, D34)"
+        );
+    }
+
+    assert_eq!(
+        option(&create, "blocking")["type"],
+        json!("boolean"),
+        "--blocking is a flag, not a value-taking option"
+    );
+
+    let update = find_node("branch-policies update").expect("the update node");
+
+    assert_eq!(
+        option_names(&update),
+        [
+            "blocking",
+            "enabled",
+            "json",
+            "no_blocking",
+            "no_enabled",
+            "org",
+            "pat",
+            "server",
+            "verbose"
+        ],
+        "update carries both flag pairs and requires neither"
+    );
+
+    for name in ["blocking", "enabled"] {
+        assert_eq!(
+            option(&update, name)["required"],
+            json!(false),
+            "update requires no option; an absent one keeps the existing value"
+        );
+    }
+
+    let show = find_node("branch-policies show").expect("the show node");
+
+    assert_eq!(
+        argument(&show, "policy_id")["type"],
+        json!("string"),
+        "this build's schema reports a value-parser as a string (D23)"
+    );
+    assert_eq!(
+        argument(&show, "policy_id")["required"],
+        json!(true),
+        "the positional really is required here (D23)"
     );
 }
 
