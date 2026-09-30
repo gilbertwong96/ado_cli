@@ -5,9 +5,9 @@
 //! whose any field scores above zero, and for a non-empty query a positive score
 //! is exactly "the candidate equals, starts with or contains the query, or the
 //! query is a subsequence of it". The module's ranking (`Fuzzy.match/2`) and its
-//! `@spec`ed return of `{candidate, score}` pairs are not used by this command,
-//! so they are not ported. An absent or empty query is no filter at all, as
-//! captured.
+//! `@spec`ed return of `{candidate, score}` pairs have **no caller anywhere in
+//! `lib/`** — dead code in the oracle, not a later wave's work — so they are not
+//! ported. An absent or empty query is no filter at all, as captured.
 
 use serde_json::Value;
 

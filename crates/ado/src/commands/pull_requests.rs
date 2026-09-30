@@ -1,9 +1,8 @@
-//! `ado prs list|show|create|complete|abandon|approve|vote|diff|comments …` — the
-//! read, write and diff paths of `lib/ado_cli/cli/pull_requests.ex`: the same REST
-//! surface, the same filters, the same merge and vote bodies, the same request
-//! chain for `diff`, the same comment-thread surface, and the same human layouts.
-//!
-//! `reviewers` is the rest of Task 11 and deliberately absent.
+//! `ado prs list|show|create|complete|abandon|approve|vote|diff|comments|reviewers …`
+//! — the read, write and diff paths of `lib/ado_cli/cli/pull_requests.ex`: the
+//! same REST surface, the same filters, the same merge and vote bodies, the same
+//! request chain for `diff`, the same comment-thread surface, and the same human
+//! layouts.
 //!
 //! The captures settled four things a reader of the frozen help would get wrong.
 //! `complete` is a **two-request** command: it reads the PR for
@@ -18,8 +17,9 @@
 //! five prompts: every one was re-run against the mock with `n` on stdin and on
 //! EOF (R5), and `abandon` and `complete` change a pull request's state without
 //! asking. The oracle's `create` without `--description` (or without
-//! `--title`/`--source`/`--target`) exits 0 silently, its `opts.*` access raising a
-//! swallowed `KeyError`; this build requires the three and omits an absent
+//! `--title`/`--source`/`--target`) exits 0 silently: its `opts.*` read raises a
+//! raw `{:badkey, …}` Erlang reason, which the rescue's `ErlangError` wildcard
+//! swallows into exit 0; this build requires the three and omits an absent
 //! description from the body (D34 for the missing required flags, D35 for the
 //! absent optional one).
 //!

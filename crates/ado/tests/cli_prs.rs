@@ -4622,7 +4622,7 @@ fn reviewers_add_encodes_an_email_path_segment_but_not_the_body() {
 }
 
 #[test]
-fn reviewers_add_404_names_the_reviewer_and_sends_no_envelope() {
+fn reviewers_add_404_is_the_not_found_envelope_naming_the_reviewer() {
     let home = TempHome::new();
     let server = MockServer::start();
     server.expect(

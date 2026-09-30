@@ -292,19 +292,26 @@ parse_check() {
 # rule cannot leak into the next case. A case that meets a difference no rule covers
 # is a finding, not a row to invent.
 #
-# Two of those mechanisms make a case assert a *direction* rather than record an
-# expected difference:
+# `expect_statuses` is the one mechanism that lets a case assert a *direction*
+# rather than record an expected difference:
 #
 #   * `expect_statuses='<oracle> <rust>'` pins the exact pair of exit statuses. A
 #     `status_rule` only fires when the two statuses differ, so a case whose point
 #     is "ours refuses where the oracle does not" would read MATCH if this build
 #     regressed to the oracle's shape. With the pair asserted, that regression
 #     fails the case by name.
+#
+# `rest_norm` asserts more than it forgives, but it is *not* a direction:
+#
 #   * `rest_norm` names the jq filter that mechanically expresses a `rest_rule`
 #     (a query spelling, say). When it is set, the raw request lists may differ
 #     only in that way: the filter is applied to both sides' projections and
 #     anything still different — a missing or extra request included — fails the
-#     case, where a bare `rest_rule` rules the whole request list away.
+#     case, where a bare `rest_rule` rules the whole request list away. The filter
+#     is symmetric, so it cannot say which side carried the difference: a
+#     candidate that regressed to the oracle's spelling normalises equal and the
+#     case would print MATCH. The strict spellings are pinned by the integration
+#     suites, not here (inventory §10, "What the harness cannot assert").
 
 mock_bin=${ADO_ORACLE_MOCK:-$root/target/debug/mock}
 mock_scenario=${ADO_ORACLE_SCENARIO:-$root/scripts/oracle-mock-scenario.json}
