@@ -1232,6 +1232,12 @@ run_mock_cases() {
     mock_case pipelines-folders-delete-no-path "pipelines-folders delete (no --path)" \
         pipelines-folders delete Folders --json
 
+    status_rule='D5/D23 (R4): a required option the oracle never validates is a silent exit 0 there; this build makes it a loud usage error'
+    expect_statuses='0 1'
+    stdout_mode=text
+    mock_case pipelines-folders-create-no-path "pipelines-folders create (no --path)" \
+        pipelines-folders create Folders --json
+
     envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the value envelope'
     mock_case pipelines-builds-queue "pipelines-builds queue" \
         pipelines-builds queue Builds --definition 5 --json
