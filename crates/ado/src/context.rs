@@ -830,6 +830,40 @@ mod tests {
         );
     }
 
+    /// C3's carried guard: a context that already holds a loaded config returns
+    /// before `import_once` reads the legacy file. This home's `config_file` does
+    /// not exist, so the load-gate alone would let the import through — without
+    /// the guard the store would see a `set` and the marker would appear.
+    #[test]
+    fn a_context_holding_a_config_skips_the_legacy_import() {
+        let home = TempHome::new();
+        write_legacy(
+            &home,
+            r#"{"org":"legacyorg","method":"pat","pat":"legacy-pat"}"#,
+        );
+        let store = InMemoryStore::new();
+        let mut context = client_context(opts(), &MapEnv::new(), &store, &home);
+        context.config = Some(config_with(
+            Some("legacyorg"),
+            None,
+            Some(("legacyorg", AuthMethod::Pat)),
+        ));
+
+        assert!(
+            !context.import_legacy().expect("the guard is not an error"),
+            "a loaded config skips the import"
+        );
+        assert!(
+            store.calls().is_empty(),
+            "the guard returns before the store is touched: {:?}",
+            store.calls()
+        );
+        assert!(
+            !home.config_dir().join(CONFIG_FILE).exists(),
+            "the guard writes no marker"
+        );
+    }
+
     #[test]
     fn a_failed_named_org_does_not_import_the_legacy_file() {
         let home = TempHome::new();
