@@ -168,13 +168,17 @@ fn imports_table(imports: &[Value]) -> Report {
 }
 
 /// `create_import/1`'s success block: the response's three fields and the
-/// follow-up line naming the project and the new id.
+/// follow-up line naming the project and the new id. The blank line after the
+/// message is the module's `success("Import request created.\n")` reset artefact,
+/// which the capture shows as a line of its own (the `connections` create block has
+/// the same shape).
 fn created_block(project: &str, import: &Value) -> String {
     let id = value_text(import.get("id"));
 
     format!(
         concat!(
             "\nImport request created.\n",
+            "\n",
             "  ID:        {}\n",
             "  Status:    {}\n",
             "  URL:       {}\n",
@@ -430,6 +434,7 @@ mod tests {
             ),
             concat!(
                 "\nImport request created.\n",
+                "\n",
                 "  ID:        imp-new\n",
                 "  Status:    queued\n",
                 "  URL:       https://example.test/imp-new\n",

@@ -584,6 +584,7 @@ fn create_prints_the_modules_block_in_human_mode() {
         stdout_of(&output),
         concat!(
             "\nImport request created.\n",
+            "\n",
             "  ID:        imp-new\n",
             "  Status:    queued\n",
             "  URL:       https://dev.azure.com/ado-harness/Alpha/_apis/git/repositories/NewRepo/importRequests/imp-new\n",
