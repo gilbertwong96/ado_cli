@@ -291,7 +291,9 @@ fn main() -> ExitCode {
                 Some(("show", _)) => commands::banners::show(&mut context),
                 Some(("set", set)) => commands::banners::set(
                     &mut context,
-                    set.get_one::<String>("message").cloned(),
+                    set.get_one::<String>("message")
+                        .expect("the option is required")
+                        .as_str(),
                     set.get_one::<String>("type").cloned(),
                     set.get_one::<String>("level").cloned(),
                 ),

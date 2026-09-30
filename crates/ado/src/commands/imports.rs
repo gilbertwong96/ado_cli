@@ -220,34 +220,43 @@ fn import_detail(import: &Value) -> String {
 
     detail.push_str(&format!(
         "  URL:    {}\n",
-        import
-            .get("url")
-            .map(value_text_owned)
-            .unwrap_or_else(|| "(none)".to_owned()),
+        or_default(import.get("url"), "(none)"),
     ));
 
     detail
 }
 
 /// The module's `detailedStatus["errorMessage"] || detailedStatus["allStepsSucceeded"]`:
-/// a nil `errorMessage` falls through to the boolean, which prints `true`/`false`.
+/// a falsy `errorMessage` falls through to the boolean, which prints `true`/`false`.
 fn detail_value(status: &Value) -> String {
     let error_message = status.get("errorMessage");
 
     match error_message {
-        Some(Value::Null) | None => value_text(status.get("allStepsSucceeded")),
+        None | Some(Value::Null) | Some(Value::Bool(false)) => {
+            value_text(status.get("allStepsSucceeded"))
+        }
         Some(message) => value_text_owned(message),
     }
 }
 
 /// The module's `(i["parameters"] && i["parameters"]["gitSource"] && …["url"]) || ""`.
 fn source_url(import: &Value) -> String {
-    import
-        .get("parameters")
-        .and_then(|parameters| parameters.get("gitSource"))
-        .and_then(|git_source| git_source.get("url"))
-        .map(value_text_owned)
-        .unwrap_or_default()
+    or_default(
+        import
+            .get("parameters")
+            .and_then(|parameters| parameters.get("gitSource"))
+            .and_then(|git_source| git_source.get("url")),
+        "",
+    )
+}
+
+/// Elixir's `value || default`: only `nil` and `false` are falsy, so `""` is a value
+/// and `0` is a value.
+fn or_default(value: Option<&Value>, default: &str) -> String {
+    match value {
+        None | Some(Value::Null) | Some(Value::Bool(false)) => default.to_owned(),
+        Some(value) => value_text_owned(value),
+    }
 }
 
 /// Elixir's `#{term}` interpolation for the JSON scalars these fields carry.
@@ -410,6 +419,30 @@ mod tests {
 
         assert!(!detail.contains("Detail:"), "{detail}");
         assert!(detail.contains("  URL:    (none)\n"), "{detail}");
+    }
+
+    #[test]
+    fn the_url_line_prints_the_placeholder_only_for_a_falsy_url() {
+        assert_eq!(
+            import_detail(&json!({"id": "imp-1", "status": "queued"})),
+            import_detail(&json!({"id": "imp-1", "status": "queued", "url": null})),
+            "an absent and a nil url are the same falsy read"
+        );
+        assert!(
+            import_detail(&json!({"id": "imp-1", "status": "queued", "url": ""}))
+                .contains("  URL:    \n"),
+            "a present empty url is a value, not the placeholder"
+        );
+    }
+
+    #[test]
+    fn the_default_helper_is_the_double_pipe() {
+        assert_eq!(or_default(None, "fallback"), "fallback");
+        assert_eq!(or_default(Some(&json!(null)), "fallback"), "fallback");
+        assert_eq!(or_default(Some(&json!(false)), "fallback"), "fallback");
+        assert_eq!(or_default(Some(&json!("")), "fallback"), "");
+        assert_eq!(or_default(Some(&json!(0)), "fallback"), "0");
+        assert_eq!(or_default(Some(&json!("a")), "fallback"), "a");
     }
 
     #[test]

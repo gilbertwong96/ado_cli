@@ -63,7 +63,7 @@ pub fn show(context: &mut Context) -> Result<Report, AdoError> {
 /// `PUT …/entries/banners` with the module's `value` object, then its line.
 pub fn set(
     context: &mut Context,
-    message: Option<String>,
+    message: &str,
     banner_type: Option<String>,
     level: Option<String>,
 ) -> Result<Report, AdoError> {
@@ -131,10 +131,11 @@ fn banner_view(value: &Value) -> Report {
 }
 
 /// The module's `val["message"] || "(empty)"` per field: a missing member reads as
-/// the member's own default, and `null` is falsy like an absent key.
+/// the member's own default, and `null`/`false` are falsy like an absent key, while
+/// `""` is a value.
 fn field(value: &Value, name: &str, fallback: &str) -> String {
     match value.get(name) {
-        None | Some(Value::Null) => fallback.to_owned(),
+        None | Some(Value::Null) | Some(Value::Bool(false)) => fallback.to_owned(),
         Some(field) => value_text(field),
     }
 }
@@ -154,10 +155,10 @@ fn set_body(message: &str, banner_type: Option<String>, level: Option<String>) -
 /// for all of stdin or `@path` for a file, both trimmed. The frozen `banners set`
 /// never reads either — it sends the literal string (D44); this is Ruling 4(b)'s
 /// repair.
-fn resolve_message(raw: Option<String>) -> Result<String, AdoError> {
-    let Some(raw) = raw.filter(|raw| !raw.is_empty()) else {
+fn resolve_message(raw: &str) -> Result<String, AdoError> {
+    if raw.is_empty() {
         return Ok(String::new());
-    };
+    }
 
     if raw == "-" {
         let mut content = String::new();
@@ -177,7 +178,7 @@ fn resolve_message(raw: Option<String>) -> Result<String, AdoError> {
             .map_err(|error| {
                 AdoError::validation(format!("Cannot read message file \"{path}\": {error}"))
             }),
-        None => Ok(raw),
+        None => Ok(raw.to_owned()),
     }
 }
 
@@ -312,12 +313,8 @@ mod tests {
 
     #[test]
     fn resolve_message_speaks_the_three_forms() {
-        assert_eq!(resolve_message(None).expect("absent"), "");
-        assert_eq!(resolve_message(Some(String::new())).expect("empty"), "");
-        assert_eq!(
-            resolve_message(Some("a literal".to_owned())).expect("literal"),
-            "a literal"
-        );
+        assert_eq!(resolve_message("").expect("empty"), "");
+        assert_eq!(resolve_message("a literal").expect("literal"), "a literal");
     }
 
     #[test]
@@ -329,7 +326,7 @@ mod tests {
         ));
         std::fs::write(&path, "  From a file.\n\n").expect("write the message file");
 
-        let resolved = resolve_message(Some(format!("@{}", path.display()))).expect("the file");
+        let resolved = resolve_message(&format!("@{}", path.display())).expect("the file");
 
         std::fs::remove_file(&path).expect("remove the message file");
 
@@ -341,7 +338,7 @@ mod tests {
 
     #[test]
     fn resolve_message_reports_a_missing_file_with_its_prefix() {
-        let error = resolve_message(Some("@nope.txt".to_owned())).expect_err("missing file");
+        let error = resolve_message("@nope.txt").expect_err("missing file");
 
         assert_eq!(error.code, ErrorCode::ValidationError);
         assert!(
