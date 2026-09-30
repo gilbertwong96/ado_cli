@@ -104,6 +104,7 @@ fn schema_root_lists_exactly_the_shipped_subcommands() {
             "ado branch-policies",
             "ado completion",
             "ado connections",
+            "ado extensions",
             "ado iterations",
             "ado login",
             "ado logout",
@@ -1563,4 +1564,75 @@ fn schema_connections_node_lists_every_shipped_subcommand() {
         ["force", "json", "org", "pat", "server", "verbose"]
     );
     assert_eq!(option(&delete, "force")["type"], json!("boolean"));
+}
+
+/// The area's six nodes with the oracle's own texts: `list` carries the one
+/// `--search` option, `show` the one positional, and the four writes the
+/// `--publisher`/`--name` pair the module requires.
+#[test]
+fn schema_extensions_node_lists_every_shipped_subcommand() {
+    let extensions = find_node("extensions").expect("the extensions node");
+
+    assert_eq!(extensions["doc"], json!(
+        "Manage Azure DevOps Marketplace extensions installed in the organization. Extensions add features like custom widgets, service hooks, and pipeline tasks."
+    ));
+    assert_eq!(
+        subcommands(&extensions)
+            .iter()
+            .map(|sub| sub["name"].as_str().expect("a subcommand name"))
+            .collect::<Vec<_>>(),
+        [
+            "ado extensions list",
+            "ado extensions show",
+            "ado extensions install",
+            "ado extensions uninstall",
+            "ado extensions enable",
+            "ado extensions disable"
+        ],
+        "the module's declaration order"
+    );
+
+    let list = find_node("extensions list").expect("the list node");
+    assert_eq!(
+        option_names(&list),
+        ["json", "org", "pat", "search", "server", "verbose"],
+        "--search is the module's one option"
+    );
+    assert_eq!(option(&list, "search")["type"], json!("string"));
+    assert_eq!(
+        option(&list, "search")["doc"],
+        json!("Filter to extensions whose name contains this string (case-insensitive)")
+    );
+
+    let show = find_node("extensions show").expect("the show node");
+    assert_eq!(option_names(&show), GLOBALS, "show declares no option");
+    assert_eq!(argument(&show, "extension_id")["type"], json!("string"));
+    assert_eq!(argument(&show, "extension_id")["required"], json!(true));
+    assert_eq!(
+        argument(&show, "extension_id")["doc"],
+        json!(
+            "Extension ID in 'publisher.name' form (e.g. 'mspremier.BuildQualityChecks'). NOT a numeric ID."
+        )
+    );
+
+    for command in ["install", "uninstall", "enable", "disable"] {
+        let node = find_node(&format!("extensions {command}")).expect("a write node");
+
+        assert_eq!(
+            option_names(&node),
+            ["json", "name", "org", "pat", "publisher", "server", "verbose"],
+            "{command}"
+        );
+        assert_eq!(option(&node, "publisher")["required"], json!(true));
+        assert_eq!(option(&node, "name")["required"], json!(true));
+    }
+
+    assert_eq!(
+        option(&find_node("extensions install").expect("install"), "name")["doc"],
+        json!("Extension name as listed on the marketplace (e.g. 'BuildQualityChecks', ' octopus-deploy')")
+    );
+    assert_eq!(
+        option(&find_node("extensions uninstall").expect("uninstall"), "name")["doc"],
+        json!("Extension name")
+    );
 }
