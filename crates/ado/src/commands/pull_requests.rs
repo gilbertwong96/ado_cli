@@ -1051,7 +1051,7 @@ fn text_of(value: &Value) -> String {
 /// `--search` filter, and the list envelope. The frozen command reads the raw
 /// `value` array itself (`Client.get/2`), so a body without that key dies inside
 /// the swallowed rescue; this build's shared `Client::list`/`items` path wraps
-/// it instead (a carry, not a row).
+/// it instead (D41).
 pub fn reviewers_list(
     context: &mut Context,
     project: &str,
