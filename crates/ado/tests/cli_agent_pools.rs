@@ -308,12 +308,15 @@ fn show_renders_the_pool_fields_the_module_prints() {
                 "  Type:          automation\n",
                 "  Auto-provision: true\n",
                 "\n",
+                "  Agents (2):\n",
+                "    agent-1                         online  3.230.0\n",
+                "    agent-2                         offline  \n",
+                "\n",
             ),
             "─".repeat(60)
         ),
-        "the module's detail layout; its agents block needs a list member and the \
-         wrapped agents body is a map, so neither side prints agents (captured: the \
-         oracle prints its four fields empty and no agents at all)"
+        "the module's detail layout, with the agents block Ruling B3 unwraps \
+         (the frozen CLI prints its four fields empty and no agents: D42)"
     );
 }
 

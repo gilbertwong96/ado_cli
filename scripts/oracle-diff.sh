@@ -3222,13 +3222,15 @@ run_mock_cases() {
     # the string keys `pool`/`agents` (so its four fields print empty), and
     # `print_agents_detail/2` needs a **list** `agents` member while the wrapped
     # value is the endpoint’s body map (so no agents print there either, where
-    # this build prints the pool’s four fields). The success human path
-    # therefore carries no case — the non-empty detail is this build’s §8
-    # surface, like Wave 1/2’s list tables — and the agents-fail human path
-    # matches the oracle byte for byte (its map *is* the pool). The integration
-    # suite pins this build’s fields and layout. `test-coverage show`’s
-    # no-coverage branch is the read whose frozen `--json` is prose (D21’s
-    # class): its human case matches, its json case carries the rule.
+    # this build prints the pool’s four fields). Wave 3’s Task 11 repairs the
+    # second half (Ruling B3, D42): the human view unwraps `agents["value"]`, so
+    # the success human case below is EXPECTED-DIFF — the frozen CLI’s four empty
+    # fields and no agents beside this build’s pool fields and its agents block —
+    # and the agents-fail human path still matches byte for byte (its map *is*
+    # the pool). The integration suite pins this build’s fields, layout and
+    # agents block. `test-coverage show`’s no-coverage branch is the read whose
+    # frozen `--json` is prose (D21’s class): its human case matches, its json
+    # case carries the rule.
 
     expect_oracle_requests='length == 1 and any_path("/ado-harness/_apis/distributedtask/pools") and qpair("api-version=7.1")'
     expect_rust_requests='length == 1 and any_path("/ado-harness/_apis/distributedtask/pools") and qpair("api-version=7.1")'
@@ -3254,6 +3256,13 @@ run_mock_cases() {
     expect_rust_requests='[.[] | .path] == ["/ado-harness/_apis/distributedtask/pools/1", "/ado-harness/_apis/distributedtask/pools/1/agents"]'
     mock_case agent-pools-show "agent-pools show (the pool + its agents)" \
         agent-pools show 1 --json
+
+    expect_oracle_requests='[.[] | .path] == ["/ado-harness/_apis/distributedtask/pools/1", "/ado-harness/_apis/distributedtask/pools/1/agents"]'
+    expect_rust_requests='[.[] | .path] == ["/ado-harness/_apis/distributedtask/pools/1", "/ado-harness/_apis/distributedtask/pools/1/agents"]'
+    stdout_mode=text
+    envelope_rule='D42: the frozen view prints four empty fields and no agents (its atom-keyed wrapper and its map-shaped agents member); this build prints the pool’s fields and its agents block (Ruling B3)'
+    mock_case agent-pools-show-human "agent-pools show (the pool + its agents, human)" \
+        agent-pools show 1
 
     expect_oracle_requests='[.[] | .path] == ["/ado-harness/_apis/distributedtask/pools/2", "/ado-harness/_apis/distributedtask/pools/2/agents"]'
     expect_rust_requests='[.[] | .path] == ["/ado-harness/_apis/distributedtask/pools/2", "/ado-harness/_apis/distributedtask/pools/2/agents"]'

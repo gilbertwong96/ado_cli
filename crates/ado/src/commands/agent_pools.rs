@@ -8,20 +8,20 @@
 //! bare pool when it fails: the module ignores *any* agents failure and still
 //! exits 0. The human detail is the module's `print_pool_detail/1` layout.
 //!
-//! The frozen human view prints four empty fields and no agents, and this build
-//! prints the pool's fields and no agents (captured:
-//! `.superpowers/.../task2/`, `pool-show-human`):
+//! The human view prints the pool's fields and, since Ruling B3, its agents
+//! block (the D42 repair):
 //!
-//!   * the module wraps the two payloads as an atom-keyed map
+//!   * the frozen module wraps the two payloads as an atom-keyed map
 //!     (`%{pool: …, agents: …}`) while the formatter looks for the string keys
 //!     `"pool"`/`"agents"`, so its four field reads are all `nil`; this build
 //!     reads the merged JSON object, whose keys are strings, so the same layout
 //!     carries the pool;
 //!   * `print_agents_detail/2` prints only for a **list** `agents` member, and
-//!     the wrapped value is the agents endpoint's whole body (a map), so neither
-//!     side prints the agents block. Showing them would mean unwrapping
-//!     `agents["value"]` for the human view — a repair the wave's rulings round
-//!     owns (the `--json` envelope already carries them).
+//!     the wrapped value is the agents endpoint's whole body (a map), so the
+//!     frozen CLI prints no agents at all. This build hands the human formatter
+//!     the endpoint body's `value` list ([`human_view`]), so the block prints
+//!     the agents the command's own doc promises; the `--json` envelope keeps
+//!     the wrapped body untouched, which is what both sides carry and MATCH.
 
 use ado_core::client::encode_path_segment;
 use ado_core::envelope::ok_value;
@@ -70,7 +70,7 @@ pub fn show(context: &mut Context, pool_id: i64) -> Result<Report, AdoError> {
     };
 
     Ok(context.json_or_report(ok_value(merged.clone()), || {
-        Report::Text(pool_detail(&merged))
+        Report::Text(pool_detail(&human_view(&merged)))
     }))
 }
 
@@ -206,12 +206,31 @@ fn queue_pool_name(queue: &Value) -> String {
     }
 }
 
+/// The value handed to the human formatter: the agents member unwrapped from the
+/// endpoint's body map to its `value` list, so `print_agents_detail/2`'s list
+/// guard is reached and the block prints (Ruling B3 — D42's repair). Every other
+/// shape is left alone: the bare-pool path (a failed agents fetch) and a body
+/// without a `value` list keep the no-block detail.
+fn human_view(data: &Value) -> Value {
+    let Some(items) = data
+        .get("agents")
+        .and_then(|agents| agents.get("value"))
+        .and_then(Value::as_array)
+    else {
+        return data.clone();
+    };
+
+    let mut view = data.clone();
+    view["agents"] = Value::Array(items.clone());
+    view
+}
+
 /// The module's `print_pool_detail/1`: the `─` rule, the four labelled fields,
 /// and the agents block `print_agents_detail/2` draws for a **list** `agents`
 /// member. The pool is the merged result's `pool` member, or the whole result
-/// when the agents fetch failed; the agents member the command wraps is the
-/// endpoint's body (a map), so the block is not reached in practice — see the
-/// module docs.
+/// when the agents fetch failed. The command calls this with [`human_view`]'s
+/// result, so the agents member is the endpoint's `value` list and the block is
+/// reached (Ruling B3).
 fn pool_detail(data: &Value) -> String {
     let pool = data.get("pool").unwrap_or(data);
     let mut detail = String::from("\nAgent Pool Details\n\n");
@@ -407,6 +426,46 @@ mod tests {
                 "─".repeat(60)
             )
         );
+    }
+
+    #[test]
+    fn the_human_view_unwraps_the_agents_list() {
+        let wrapped = json!({
+            "pool": {"id": 1, "name": "Default"},
+            "agents": {"count": 2, "value": [
+                {"name": "agent-1", "status": "online", "version": "3.230.0"},
+                {"name": "agent-2", "status": "offline"},
+            ]},
+        });
+        let view = human_view(&wrapped);
+
+        assert_eq!(view["pool"], wrapped["pool"], "the pool passes through");
+        assert_eq!(
+            view["agents"],
+            json!([
+                {"name": "agent-1", "status": "online", "version": "3.230.0"},
+                {"name": "agent-2", "status": "offline"},
+            ])
+        );
+        assert_eq!(
+            wrapped["agents"]["value"],
+            json!([
+                {"name": "agent-1", "status": "online", "version": "3.230.0"},
+                {"name": "agent-2", "status": "offline"},
+            ]),
+            "the wrapped input is untouched: the --json envelope keeps it"
+        );
+    }
+
+    #[test]
+    fn the_human_view_leaves_every_other_shape_alone() {
+        for data in [
+            json!({"id": 2, "name": "Hosted"}),
+            json!({"pool": {"id": 2}, "agents": {"count": 0}}),
+            json!({"pool": {"id": 2}, "agents": {"value": "not a list"}}),
+        ] {
+            assert_eq!(human_view(&data), data, "{data}");
+        }
     }
 
     #[test]
