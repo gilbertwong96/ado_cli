@@ -3,6 +3,11 @@
 # release binary, for every command Wave 0 ported: `version`, `whoami`, `schema`
 # and `completion`.
 #
+# The oracle is an **untracked, prebuilt artifact** (`./ado`, gitignored): the tree
+# at this head can no longer rebuild it — `mix escript.build` died with
+# `priv/skills` (D49) — so every run of this harness is one-way evidence from here
+# on (`w4-handoff.md` §5 records the recovery recipe and the artifact's hash).
+#
 # `--mock` is the read-and-mutation mode: every Wave 1 command and every Wave 2
 # mutation case, both binaries, one instance of the testkit's standalone mock with
 # `ADO_SERVER` pointed at it. Its section below describes the comparison, the
@@ -339,6 +344,7 @@ mock_log=
 mock_requests=
 mock_org=ado-harness
 mock_pat=harness-pat
+forbid_commands=()
 
 rest_rule=
 rest_norm=
@@ -424,6 +430,20 @@ mock_run() { # mock_run <name> <side> <binary> <args...>
     [[ -n $case_pat ]] && environment+=("ADO_PAT=$case_pat")
     environment+=(${case_extra[@]+"${case_extra[@]}"})
 
+    # A case can forbid a command (`forbid_commands`): the command is shadowed by a
+    # shim on this run's PATH that records the invocation and refuses, so the flow
+    # the case guards against cannot start a real program, and mock_forbidden_check
+    # fails the case by name when the shim is reached.
+    if (( ${#forbid_commands[@]} > 0 )); then
+        local shim=$work/shims/$name.$side command
+        mkdir -p "$shim"
+        for command in "${forbid_commands[@]}"; do
+            printf '#!/usr/bin/env bash\n# The case forbids this command: record the invocation and refuse.\ntouch "$(dirname -- "$0")/used.%s"\nexit 1\n' "$command" >"$shim/$command"
+            chmod +x "$shim/$command"
+        done
+        environment+=("PATH=$shim:$PATH")
+    fi
+
     before=$(mock_request_count)
     (
         cd "$cwd" || exit 2
@@ -443,6 +463,7 @@ mock_case() {
     start_case "$label"
     mock_run "$slug" elixir "$elixir_bin" "$@"
     mock_run "$slug" rust "$rust_bin" "$@"
+    mock_forbidden_check "$slug"
     mock_exit_check "$slug"
     mock_requests_check "$slug"
     mock_direction_check "$slug"
@@ -462,8 +483,27 @@ mock_case() {
     case_extra=()
     case_stdin=
     compare_files=()
+    forbid_commands=()
 
     finish_case
+}
+
+# The commands a case forbids must not be invoked by either side's run. The shim
+# installed by mock_run is the record: it exists only while the case runs, and only
+# a call of that command writes `<command>.used` beside it — so the failure names
+# the side and the command, which is the flow the case exists to prove does not
+# start.
+mock_forbidden_check() { # mock_forbidden_check <slug>
+    local slug=$1 side command used
+
+    for side in oracle rust; do
+        for command in ${forbid_commands[@]+"${forbid_commands[@]}"}; do
+            used=$work/shims/$slug.$side/used.$command
+            if [[ -f $used ]]; then
+                fail "the $side invocation started the flow this case forbids: '$command' was invoked"
+            fi
+        done
+    done
 }
 
 mock_exit_check() { # the status is contract: 0 success, 1 every error (§6.3)
@@ -884,8 +924,12 @@ run_mock_cases() {
     mock_case workitems-list "workitems list" workitems list Alpha --json
 
     rest_rule='D20: the frozen CLI sends its malformed WIQL (a leading AND, doubled ANDs) where this build ships valid WIQL'
-    expect_oracle_requests="any_body(\"FROM WorkItems WHERE AND [System.State] = 'Active'\")"
-    expect_rust_requests="any_body(\"FROM WorkItems WHERE [System.TeamProject] = 'Alpha' AND [System.WorkItemType] = 'Bug'\") and (any_body(\"AND AND\") | not)"
+    # The WIQL body is what the case discriminates on, but the rule above absorbs
+    # any other request difference, so the filters also name the two requests the
+    # chain must send — the POST's path and api-version, the batch GET's path,
+    # api-version and ids — and the count.
+    expect_oracle_requests="length == 2 and any_body(\"FROM WorkItems WHERE AND [System.State] = 'Active'\") and any(.[]; .method == \"POST\" and .path == \"/ado-harness/Alpha/_apis/wit/wiql\" and (.query | split(\"&\") | index(\"api-version=7.1\")) != null) and any(.[]; .method == \"GET\" and .path == \"/ado-harness/_apis/wit/workitems\" and (.query | split(\"&\") | index(\"api-version=7.1\")) != null and (.query | split(\"&\") | index(\"ids=42%2C43\")) != null)"
+    expect_rust_requests="length == 2 and any_body(\"FROM WorkItems WHERE [System.TeamProject] = 'Alpha' AND [System.WorkItemType] = 'Bug'\") and (any_body(\"AND AND\") | not) and any(.[]; .method == \"POST\" and .path == \"/ado-harness/Alpha/_apis/wit/wiql\" and (.query | split(\"&\") | index(\"api-version=7.1\")) != null) and any(.[]; .method == \"GET\" and .path == \"/ado-harness/_apis/wit/workitems\" and (.query | split(\"&\") | index(\"api-version=7.1\")) != null and (.query | split(\"&\") | index(\"ids=42%2C43\")) != null)"
     mock_case workitems-list-filters "workitems list --type/--state/--assigned-to" \
         workitems list Alpha --type Bug --state Active --assigned-to alice --json
 
@@ -962,6 +1006,14 @@ run_mock_cases() {
     # invocation is non-interactive on both sides again. The oracle treats `""`
     # as a value, infers `pat` from it, stores an empty token and exits 0; this
     # build refuses before any flow starts, stores nothing and sends nothing.
+    #
+    # This build's non-interactivity rests on that refusal, so `open` and
+    # `xdg-open` are forbidden and shadowed for this case: if the refusal ever
+    # regresses, the browser flow reaches the shim instead of a real opener and
+    # the case fails by name. The residual is the wait, not the flow — the shim
+    # still leaves the flow's 120 s accept timeout to run, and the harness has no
+    # per-case timeout (§10). The oracle side is non-interactive for its own
+    # reason (a blank value is a value to it, so no flow starts there either).
     envelope_rule='D56: a set-but-blank ADO_PAT with no --method is a loud validation error here (exit 1, nothing stored); the oracle treats "" as a PAT, stores an empty token and exits 0'
     status_rule='D56 (D16): a set-but-blank ADO_PAT reads as unset here (exit 1) where the frozen CLI treats it as a value, stores an empty token and exits 0'
     expect_statuses='0 1'
@@ -969,6 +1021,7 @@ run_mock_cases() {
     expect_rust_requests='length == 0'
     case_pat=
     case_extra=("ADO_PAT=")
+    forbid_commands=(open xdg-open)
     mock_case login-blank-env-pat "login with a blank ADO_PAT (no --method)" \
         login --org "$mock_org" --json
 
@@ -4276,8 +4329,8 @@ run_mock_cases() {
     rest_rule="$tr_upload_rule"
     rest_norm="$tr_upload_norm"
     envelope_rule='§8: the frozen publish prints its document followed by the halt_success "Done." marker; this build writes the document alone'
-    expect_oracle_requests='length == 3 and any_path("/ado-harness/EmptyName/_apis/test/runs") and (.[2].query | contains("fileName=results.xml"))'
-    expect_rust_requests='length == 3 and any_path("/ado-harness/EmptyName/_apis/test/runs") and (.[2].query | contains("fileName=results.xml"))'
+    expect_oracle_requests='length == 3 and any_path("/ado-harness/EmptyName/_apis/test/runs") and (.[2].method == "POST") and (.[2].path | endswith("/attachments")) and (.[2].query | contains("api-version=7.1-preview.1")) and (.[2].query | contains("?Content-Type="))'
+    expect_rust_requests='length == 3 and any_path("/ado-harness/EmptyName/_apis/test/runs") and (.[2].method == "POST") and (.[2].path | endswith("/attachments")) and ((.[2].query | split("&") | sort) == ["api-version=7.1-preview.1","fileName=results.xml"])'
     mock_case test-results-publish-empty-name "test-results publish (a present empty --name)" \
         test-results publish EmptyName --name '' --file "$work/results.xml" --json
 
@@ -4295,16 +4348,16 @@ run_mock_cases() {
     rest_rule="$tr_upload_rule"
     rest_norm="$tr_upload_norm"
     envelope_rule='§8: the frozen publish prints its document followed by the halt_success "Done." marker; this build writes the document alone'
-    expect_oracle_requests='length == 3 and any_path("/ado-harness/FailPatch/_apis/test/runs/503")'
-    expect_rust_requests='length == 3 and any_path("/ado-harness/FailPatch/_apis/test/runs/503")'
+    expect_oracle_requests='length == 3 and any_path("/ado-harness/FailPatch/_apis/test/runs/503") and (.[2].method == "POST") and (.[2].path | endswith("/attachments")) and (.[2].query | contains("api-version=7.1-preview.1")) and (.[2].query | contains("?Content-Type="))'
+    expect_rust_requests='length == 3 and any_path("/ado-harness/FailPatch/_apis/test/runs/503") and (.[2].method == "POST") and (.[2].path | endswith("/attachments")) and ((.[2].query | split("&") | sort) == ["api-version=7.1-preview.1","fileName=results.xml"])'
     mock_case test-results-publish-patch-500 "test-results publish (the completion PATCH fails)" \
         test-results publish FailPatch --name 'Nightly Regression' --file "$work/results.xml" --json
 
     rest_rule="$tr_upload_rule"
     rest_norm="$tr_upload_norm"
     envelope_rule='D4: the frozen publish writes its `xx  Publish failed:` block on stdout with no envelope under --json; this build emits the classified error envelope'
-    expect_oracle_requests='length == 3 and any_path("/ado-harness/FailAttach/_apis/test/runs/504")'
-    expect_rust_requests='length == 3 and any_path("/ado-harness/FailAttach/_apis/test/runs/504")'
+    expect_oracle_requests='length == 3 and any_path("/ado-harness/FailAttach/_apis/test/runs/504") and (.[2].method == "POST") and (.[2].path | endswith("/attachments")) and (.[2].query | contains("api-version=7.1-preview.1")) and (.[2].query | contains("?Content-Type="))'
+    expect_rust_requests='length == 3 and any_path("/ado-harness/FailAttach/_apis/test/runs/504") and (.[2].method == "POST") and (.[2].path | endswith("/attachments")) and ((.[2].query | split("&") | sort) == ["api-version=7.1-preview.1","fileName=results.xml"])'
     mock_case test-results-publish-attach-500 "test-results publish (the upload fails)" \
         test-results publish FailAttach --name 'Nightly Regression' --file "$work/results.xml" --json
 
