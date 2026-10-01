@@ -1,223 +1,208 @@
 # AGENTS.md
 
+## What this is
+
+`ado` is a Rust CLI for Azure DevOps. Wave 4 (2026) retires the earlier Elixir
+implementation — its tree survives in git history — and the record under
+`docs/rust-rewrite/` is where its behaviour is documented.
+
+The workspace (`Cargo.toml`: edition 2024, `rust-version = "1.98"`, resolver 3)
+has four crates:
+
+| crate | what it is |
+|---|---|
+| `crates/ado` | the `ado` binary: the clap surface, the command modules, human and `--json` output |
+| `crates/ado-core` | envelope, errors, the sync `ureq` client, auth and credential resolution, config, the one-time legacy-config import |
+| `crates/ado-skills` | the embedded `ado skills` assets (`crates/ado-skills/assets/`), their frontmatter, the search index and the installer |
+| `crates/ado-testkit` | dev-only: the axum mock, `TempHome` and the fixtures the integration suites share, plus the standalone `mock` bin the oracle harness uses |
+
+The toolchain is pinned by `rust-toolchain.toml` (stable plus `clippy`,
+`rustfmt`, `llvm-tools-preview`). The skills assets are embedded at build time by
+`crates/ado-skills/build.rs`, so editing one changes the binary on the next
+build; `ado skills read ado-cli/references/prs.md` prints one from the embedded
+copy.
+
+**The contract record is `docs/rust-rewrite/contract-inventory.md`** — the
+observable behaviour captured from the reference CLI and every place this build
+deliberately differs (D1–D56), each with its citations. Read it before changing
+behaviour; do not re-derive the contract from this file. The per-wave gate
+records (`docs/rust-rewrite/w0-verification.md` …) carry the measured numbers,
+and `docs/rust-rewrite/w3-rulings.md` carries the rulings that shaped them.
+
 ## CI Quality Gate
 
-Every change to this project **must** pass the full CI pipeline before merging.
-Run the pipeline locally with:
+Every change **must** pass the full gate before merging. Run it locally with:
 
 ```bash
-mix ci
+just ci
 ```
 
-The CI alias runs all of the following checks in order, failing on the first failure:
+`just ci` runs, in order, failing on the first failure:
 
-| Step | Check | Tool |
-|------|-------|------|
-| 1 | Compile with all warnings as errors (our code only) | `mix compile --warnings-as-errors` |
-| 2 | Ensure code is formatted | `mix format --check-formatted` |
-| 3 | Static code analysis | `mix credo --strict` |
-| 4 | Check for unused dependencies | `mix deps.unlock --check-unused` |
-| 5 | Audit dependencies for vulnerabilities | `mix deps.audit` |
-| 6 | Cross-reference analysis (no orphans) | `mix xref graph --label compile-connected --fail-above 0` |
-| 7 | Type checking (with Finch false-positive filtering) | `mix ci.dialyzer` |
-| 8 | Run unit tests with coverage | `mix test --cover` |
+| # | check | command |
+|---|---|---|
+| 1 | formatting | `cargo fmt --check` |
+| 2 | lints, warnings as errors | `cargo clippy --all-targets -- -D warnings` |
+| 3 | build, warnings as errors, locked | `RUSTFLAGS="-Dwarnings" cargo build --locked` |
+| 4 | unused dependencies | `cargo machete` |
+| 5 | dependency audit | `cargo deny check advisories licenses bans sources` |
+| 6 | tests | `cargo nextest run --workspace` |
+| 7 | coverage floor | `cargo llvm-cov --workspace --fail-under-lines 85` |
 
-## GitHub Actions CI
+The gate deliberately does **not** run the oracle harness (`scripts/oracle-diff.sh`),
+which needs the retired Elixir escript — the Rust gate must not depend on it.
 
-In addition to the local pipeline, every push and PR runs the same checks
-in `.github/workflows/ci.yml` on Linux + macOS runners:
+Run these before declaring a change complete:
 
-- **Linux (Ubuntu)** — full quality gate (steps 1–8 above) + coverage
-  uploaded to Codecov via `ex_coveralls`
-- **macOS** — build the escript and run the unit test suite as a smoke test
-  (the separate `release` workflow builds and publishes the binaries)
+- `just test` — `cargo test --workspace` (the plain-cargo form of step 6; for a
+  tight loop, one area suite: `cargo test -p ado --test cli_projects`).
+- `just budget` — `ado --version` startup (best of 3, limit 50 ms) and the
+  stripped release binary's size (limit 8 MiB); builds `target/release/ado` first.
+- `just npm-test` — the npm package's suite
+  (`node --test npm/@gilbertwong1996-ado/test`), covering the postinstall
+  downloader and the archive resolution the release ships.
+- `dist plan` — the release plan (the standalone `dist` binary, cargo-dist
+  0.32.0): five native archives, the shell/PowerShell installers and checksums,
+  15 artefacts, exit 0. `cargo dist` is not installed here; use `dist`.
+- `just check` — the pre-tag aggregate. Wave 4's deletion task reduces it to
+  `just ci` + `just npm-test`; until that lands it also runs the frozen tree's
+  gate, so rely on the individual recipes meanwhile.
 
-Coverage is tracked by Codecov. The badge in the README points to the
-Codecov dashboard; configuration lives in the `coveralls:` section of
-`mix.exs`.
+### GitHub Actions
 
-The local `mix ci` command is the source of truth — if it passes locally
-it will pass on CI. Never skip a check before pushing.
+`.github/workflows/ci.yml` runs on every push and PR:
 
-## Coverage reporting (Codecov)
+- **Linux · just ci** (ubuntu-latest) — `just ci`, `just npm-test`,
+  `just budget`, a PowerShell syntax check of `ado completion powershell`, and
+  coverage for Codecov. The JSON (`cargo llvm-cov --workspace --codecov`) is
+  always uploaded as the `coverage-linux` artifact and posted to Codecov only
+  when `CODECOV_TOKEN` is set, non-fatally.
+- **macOS · smoke test** (macos-latest) — `cargo build --release --locked` then
+  `cargo nextest run --workspace`.
+- **CI Status** — fails the run unless both jobs passed.
 
-Total project coverage is **7.9%** as of v0.2.0. This is honest: the 27
-CLI command modules have 0% coverage because they call
-`CliMate.halt_success` / `halt_error` (which exit the BEAM), making them
-hard to unit-test. The `test_coverage.ignore_modules` list only excludes
-4 modules that genuinely can't be tested (`AdoCli.Application`,
-`AdoCli.TestServer`, `AdoCli.TestServer.Plug`, `Mix.Tasks.Ci.Dialyzer`).
+`release.yml` is generated by cargo-dist: pushing a `v<version>` tag builds the
+five native targets, writes the archives, installers and checksums, and creates
+the GitHub Release. `pages.yml` deploys `github-page/` when a push touches it.
 
-The `mix test --cover` threshold check is set to `0` in `mix.exs`
-(no enforced floor) until CLI integration tests bring the number up.
-The Codecov badge shows the raw total.
+The local `just ci` is the source of truth: if it passes locally it will pass on
+CI. Never skip a stage before pushing.
 
-**The right path forward** is integration tests for the CLI command
-modules, not a bigger ignore list. The pattern (proven in
-`test/ado_cli/cli/projects_test.exs`) is:
+## Coverage
 
-```elixir
-# In setup:
-CliMate.CLI.put_shell(CliMate.CLI.ProcessShell)
-# This makes halt_success/halt_error send messages to the caller
-# instead of calling System.halt/1.
+The floor is **85% lines**, enforced by step 7 of `just ci`. The last full gate
+recorded **97.18% lines / 96.49% regions**; `docs/rust-rewrite/w3-verification.md`
+§1 names the commands that produced the numbers. Keep it honest:
 
-# In each test:
-TestServer.expect(server, "GET", api("/_apis/projects"), fn conn ->
-  Plug.Conn.resp(conn, 200, body)
-end)
-
-Projects.list_projects(parsed)  # would normally exit the BEAM
-
-assert_receive {:cli_mate_shell, :info, _}, 200
-assert_receive {:cli_mate_shell, :halt, 0}, 200
-```
-
-Adding tests for all 27 CLI modules would push coverage from 7.9%
-into the 60-80% range, at which point a meaningful threshold (e.g.
-70%) becomes viable.
-
-**AdoCli.Auth** (~700 lines, 16%): the bulk of the uncovered code is
-the OAuth browser flow, token exchange, and device code polling. These
-can be tested by mocking the Finch HTTP calls + the TCP listener —
-similar pattern to the Client tests.
-
-Coverage is reported to Codecov via the official bash uploader. To enable
-it on CI, the user must add a `CODECOV_TOKEN` secret to the repo:
-
-  1. Visit https://codecov.io/gh/gilbertwong96/ado_cli
-  2. Sign in with the same GitHub account
-  3. Go to Settings -> Upload Token
-  4. Copy the token
-  5. In the GitHub repo: Settings -> Secrets and variables -> Actions
-     -> New repository secret
-  6. Name: `CODECOV_TOKEN`, Value: <paste token>
-
-The CI step that posts to Codecov is conditional on the secret being
-set, so it's safe to leave the repo in this state until the user is
-ready. When the secret is present, the codecov.io dashboard will start
-showing coverage data within a few minutes of a CI run.
-
-Note: `mix coveralls.post` is NOT the right path here — it posts to
-coveralls.io, not codecov.io. For Codecov, the canonical path is
-`mix test --cover` (with `tool: ExCoveralls`) + the codecov bash
-uploader.
-
-## Additional Quality Commands
-
-```bash
-mix quality  # Compile + Credo + ex_dna + reach + tests
-mix lint     # Credo strict only
-mix inspect  # Project structure map (reach)
-mix health   # Dead code & smell detection (reach)
-mix test     # Unit tests
-```
-
-## Testing without a browser (CI / Linux servers)
-
-Use a Personal Access Token (PAT). No browser required.
-
-```bash
-# 1. Generate a PAT in Azure DevOps:
-#    User Settings -> Personal Access Tokens -> New Token
-#    Required scopes: vso.work, vso.code, vso.project, vso.build, vso.release
-#    Or use a "Full access" token for broadest coverage.
-
-# 2. One-off (don't save to disk) — env vars
-export ADO_ORG=myorg
-export ADO_PAT=xxxxxxxxxxxxxxxxxxxxxxxxxxxx
-./ado projects list
-
-# 3. Or save to config (preferred for repeated use)
-just login-pat myorg xxxxxxxxxxxxxxxxxxxxxxxxxxxx
-./ado projects list
-
-# 4. Headless smoke test (any CI runner)
-just smoke-test-pat myorg xxxxxxxxxxxxxxxxxxxxxxxxxxxx
-```
-
-For a quick test on a Linux server without a desktop:
-1. Build the escript: `mix escript.build` (or use a pre-built `ado_linux` from burrito_out)
-2. Copy to the server along with `~/.ado_cli/config.json` (or set env vars)
-3. Or use the Burrito-built `ado_linux` directly: `./burrito_out/ado_linux projects list --org X --pat Y`
+- new behaviour comes with a per-area integration suite
+  (`crates/ado/tests/cli_<area>.rs`, mock-backed via `ado-testkit`);
+- a change to a recorded contract value updates `contract-inventory.md` in the
+  same commit — its drift tests (`crates/ado*/tests/contract_inventory.rs`) fail
+  otherwise.
 
 ## Development Principles
 
-1. **No warnings**: The project must compile with zero warnings (`--all-warnings --warnings-as-errors`)
-2. **Formatted code**: All code must pass `mix format --check-formatted`
-3. **Strict linting**: Credo runs in `--strict` mode with zero tolerance
-4. **Clean dependencies**: No unused deps, and all deps are audited for known CVEs
-5. **No orphan modules**: Every module must be reachable from the compile-connected graph
-6. **Type-safe**: Dialyzer must report zero unexpected type errors (Finch-related false positives are filtered)
-7. **Full CI on every change**: Every code change must pass `mix ci` (all 8 stages) AND `mix test` before declaring the change complete. Never skip any stage.
-8. **Run the full quality pipeline before committing**: At minimum, run `mix quality && mix ci` to validate compile, format, credo, ex_dna, reach, tests, deps, xref, and dialyzer all pass.
-9. **90% test coverage on testable modules**: The following modules are excluded from coverage enforcement (tightly coupled to CliMate's halt_*): `AdoCli.Application`, `AdoCli.Auth`, `AdoCli.CLI.*`. All other modules must maintain ≥90% coverage. Run `MIX_ENV=test mix test --cover` to check.
-10. **Format before every commit**: Always run `mix format` on tracked files before `git commit`. This prevents CI from failing on `mix format --check-formatted` and avoids noisy "fix formatting" follow-up commits:
+1. **No warnings.** The gate builds and lints with warnings as errors
+   (`RUSTFLAGS=-Dwarnings`; `cargo clippy --all-targets -- -D warnings`). Dead
+   code and unused items are warnings.
+2. **Formatted code.** `cargo fmt --check` blocks the gate. Run `cargo fmt`
+   before committing (scope it with `cargo fmt -p ado` for one crate) and
+   re-stage whatever it changes.
+3. **Strict linting.** clippy runs on **all** targets, tests included, with
+   `-D warnings`.
+4. **Clean dependencies.** `cargo machete` finds nothing unused; `cargo deny
+   check` approves advisories, licenses, bans and sources. Both gate the merge.
+5. **Type-checked.** The compiler is the type checker, and the gate builds the
+   whole workspace locked (`cargo build --locked`), so a change that only
+   compiles in one crate is a failure.
+6. **The full gate on every change.** `just ci` (all seven stages) plus
+   `just npm-test`; add `just budget` and `dist plan` when the change touches
+   the binary, its dependencies or the packaging.
+7. **Coverage discipline.** 85% lines is the floor; tests land with the change,
+   not after it.
+8. **Local gate == CI gate.** CI additionally runs `just npm-test`,
+   `just budget` and the PowerShell completion check, so run those too when the
+   change touches them.
+9. **A scripted edit asserts that it matched.** A rewrite (a bump step, a
+   migration) must fail loudly when its target is missing and must verify the
+   file afterwards; a silent no-op that reports success is the same lie as a
+   claim nothing can reproduce. The precedent and the rest of the hygiene rules
+   are in `docs/rust-rewrite/w3-rulings.md`.
+10. **The capture wins over the prose.** When a brief, a doc or a comment
+    disagrees with a command's actual output, the capture is authoritative;
+    record the disagreement rather than copying the doc.
 
-    ```bash
-    # Pre-commit formatting (idempotent — safe to run on clean files)
-    mix format
-    git add -u  # re-stage any formatting changes
-    git commit ...
-    ```
+## Testing without a browser (CI / Linux servers)
 
-    If you only edited one file or area, you can scope the formatter:
-    `mix format path/to/file.ex path/to/other.ex`. Never commit unformatted code — item 2 (the CI check) will block the merge anyway, so it's strictly faster to format locally first.
-11. **Use pi-elixir for Elixir refactoring**: Always use `elixir_eval`, `elixir_ast_search`, and `elixir_ast_replace` (part of the pi-bridge ecosystem) for Elixir code introspection and structural refactoring. Avoid raw Python/Perl/shell scripts for source migrations, API renames, or protocol changes. Fall back to targeted `edit` calls only when the AST tools cannot match a pattern (e.g., for newly-inserted code that hasn't been compiled yet). Never use blind global string replacement for protocol/API field renames.
-
-## Dialyzer & Finch
-
-Dialyzer cannot trace through Finch's HTTP client calls because Finch returns
-dynamic types. This produces ~20 false positive `:pattern_match`, `:unused_fun`,
-and `:call` warnings. The `mix ci.dialyzer` task filters these known false
-positives and only fails on genuinely unexpected warnings.
-
-## Building Releases
-
-```bash
-# Escript (dev)
-mix escript.build
-
-# Burrito cross-platform binary (prod)
-MIX_ENV=prod mix release
-```
-
-## Release Process
-
-Use `just bump` to automate version bumps across all files:
+Use a Personal Access Token; no browser required. Generate one in Azure DevOps
+(User settings → Personal access tokens) with at least `vso.work`, `vso.code`,
+`vso.project`, `vso.build`, `vso.release` — or use a full-access token.
 
 ```bash
-# 1. Bump version everywhere (mix.exs, npm packages, docs, README)
-just bump 0.4.6
+# 1. One-off: environment variables, nothing written to disk
+export ADO_ORG=myorg
+export ADO_PAT=xxxxxxxxxxxxxxxxxxxxxxxxxxxx
+cargo run -q -p ado -- whoami
+cargo run -q -p ado -- projects list
 
-# 2. Write the CHANGELOG entry for the new version
-#    (edit CHANGELOG.md manually — bump only touches mechanical files)
+# 2. Or store the credential — the token goes to the OS credential store,
+#    the organization and method to the config file
+cargo run -q -p ado -- login --method pat --org myorg --pat xxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
-# 3. Verify everything is clean
-just check
-
-# 4. Commit and tag
-mix format
-git add -u
-git commit -m "release: v0.4.6"
-git tag -a v0.4.6 -m "Release 0.4.6"
-git push github main v0.4.6
-#    CI (the 'release' workflow) builds the five native-target binaries
-#    and creates the GitHub Release automatically.
-
-# 5. Publish npm packages (after CI completes and binaries are uploaded)
-./scripts/npm-publish.sh 0.4.6
+# 3. The release binary the budgets and the harness measure
+just build-release   # cargo build --release --locked → target/release/ado
+./target/release/ado whoami --org myorg --pat xxxxxxxxxxxxxxxxxxxxxxxxxxxx
 ```
 
-`just bump` updates these files mechanically:
+Credential resolution: the `--pat`/`--org`/`--server` flags outrank
+`ADO_PAT`/`ADO_ORG`/`ADO_SERVER`, which outrank the OS credential store, which
+outranks the config file at `<OS config dir>/ado/config.toml`. When no config
+file exists yet, a one-time import reads the Elixir CLI's legacy
+`~/.ado_cli/config.json` so an existing install keeps working without a
+re-auth. A real `ado login` followed by `ado whoami` is the one live-path check
+the suite cannot make (`docs/rust-rewrite/w4-handoff.md` §6).
 
-| File | What changes |
-|------|-------------|
-| `mix.exs` | Canonical version string |
-| `npm/@*/package.json` | All 6 npm package manifests |
-| `github-page/index.html` | Download binary curl example |
-| `README.md` | Publishing section examples |
+## The oracle harness
 
-It does NOT update `CHANGELOG.md`, `priv/skills/*`, or `AGENTS.md` —
-those need human-written content.
+`scripts/oracle-diff.sh` compares this binary against the frozen Elixir escript
+(the oracle: `ado 0.5.0`, rebuilt from `7a42dac`). `--mock` runs every recorded
+case against one instance of the testkit's `mock` server; the default mode runs
+the Wave 0 surface. Each case prints `MATCH`, `EXPECTED-DIFF` (a difference
+`contract-inventory.md` §9/§10 records) or `DIFF` (undocumented — a failure).
 
+The harness is not part of `just ci`; it needs `cargo build --release --locked`
+and `cargo build -p ado-testkit --bin mock`. Wave 4's plan retires it with the
+Elixir tree: both modes are re-run once at the wave's frozen head as the final
+evidence, the recovery recipe and the artefact's `sha256` are in
+`docs/rust-rewrite/w4-handoff.md` §5/§9 and the script's header, and after
+retirement the integration suites are the live pins. `contract-inventory.md`
+§10 stays as the description of what was compared.
+
+## Building and releasing
+
+```bash
+just build-release   # cargo build --release --locked → target/release/ado
+dist plan            # the artefacts cargo-dist will build on a tag
+```
+
+The version is `Cargo.toml`'s `[workspace.package] version`. `just bump <version>`
+updates it and every other live version source — `Cargo.lock`, the six npm
+manifests, the skills assets' `version:` frontmatter, the frontmatter-version
+pins, the schema snapshot, `github-page/index.html`, `README.md` — asserting each
+target after the edit. `CHANGELOG.md` is the one target it does not touch: write
+that entry by hand.
+
+The release flow (the maintainer's):
+
+1. `just bump <version>`; write the `CHANGELOG.md` entry.
+2. `just ci` and `just npm-test`; `dist plan` if the packaging changed.
+3. `git add -u && git commit -m 'chore: bump to <version>'`.
+4. `git tag -a v<version> -m 'Release <version>'` and push the tag — `release.yml`
+   builds the five native archives and creates the GitHub Release.
+5. Once the release exists: `./scripts/npm-publish.sh <version> --dry-run`, then
+   the real publish (packs the five platform packages, then the main one).
+
+`1.0.0` is gated on one real `ado login` followed by `ado whoami`: the browser
+flow's live path is the one thing the suite cannot verify
+(`docs/rust-rewrite/w4-handoff.md` §6). Until it passes, releases are
+prereleases (`v1.0.0-rc.N`).
