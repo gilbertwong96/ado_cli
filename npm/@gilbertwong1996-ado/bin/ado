@@ -5,8 +5,7 @@
 // (installed as an optionalDependency) and execs it with the user's argv.
 //
 // We use child_process.execFileSync so signals (Ctrl+C) propagate to the
-// Burrito-built Erlang runtime. Spawning with the shell would break signal
-// forwarding on POSIX.
+// ado process. Spawning with the shell would break signal forwarding on POSIX.
 
 const { execFileSync } = require('child_process');
 const path = require('path');

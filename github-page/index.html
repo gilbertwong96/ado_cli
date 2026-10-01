@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ado — AI-native Azure DevOps CLI</title>
-  <meta name="description" content="A self-contained, cross-platform Azure DevOps CLI in Elixir. Designed for both humans and LLM agents: structured JSON output, embedded skills, self-discoverable command tree.">
+  <meta name="description" content="A self-contained, cross-platform Azure DevOps CLI in Rust. Designed for both humans and LLM agents: structured JSON output, embedded skills, self-discoverable command tree.">
   <link rel="stylesheet" href="style.css">
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>">
 </head>
@@ -44,7 +44,7 @@
       <p class="hero-hint">Works on macOS, Linux, and Windows. <a href="#install">Other install methods →</a></p>
       <div class="badges">
         <a href="https://github.com/gilbertwong96/ado_cli/actions/workflows/ci.yml"><img src="https://github.com/gilbertwong96/ado_cli/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-        <img src="https://img.shields.io/badge/elixir-1.20+-purple.svg" alt="Elixir 1.20+">
+        <img src="https://img.shields.io/badge/rust-1.98+-orange.svg" alt="Rust 1.98+">
         <img src="https://img.shields.io/badge/License-Apache_2.0-blue.svg" alt="Apache-2.0">
       </div>
     </div>
@@ -64,7 +64,7 @@
         </div>
         <div class="card">
           <h3>Cross-platform</h3>
-          <p>One self-contained binary for macOS (arm64/x86_64), Linux (x86_64/aarch64), and Windows x86_64. Built with <a href="https://github.com/burrito-elixir/burrito">Burrito</a>.</p>
+          <p>One self-contained binary for macOS (arm64/x86_64), Linux (x86_64/aarch64), and Windows x86_64. Built on native runners with <a href="https://opensource.axo.dev/cargo-dist/">cargo-dist</a>.</p>
         </div>
         <div class="card">
           <h3>CI/CD friendly</h3>
@@ -119,7 +119,7 @@
           </tr>
           <tr>
             <td>Distribution</td>
-            <td><code>npm install -g ado</code> (or download binary)</td>
+            <td><code>npm install -g @gilbertwong1996/ado</code> (or download an archive)</td>
             <td>Single self-contained binary, no runtime deps</td>
           </tr>
         </tbody>
@@ -130,8 +130,7 @@
 <pre><code><span class="prompt">$</span> <strong>ado projects list --json</strong>
 {
   "ok": true,
-  "count": 3,
-  "items": [
+  "result": [
     { "id": "...", "name": "alpha", "state": "wellFormed" },
     { "id": "...", "name": "beta",  "state": "wellFormed" },
     { "id": "...", "name": "gamma", "state": "deleting"  }
@@ -156,8 +155,9 @@
         Every error has a stable <code>code</code> from a small set:
         <code>auth_required</code>, <code>not_found</code>, <code>forbidden</code>,
         <code>conflict</code>, <code>validation_error</code>, <code>api_error</code>,
-        <code>network_error</code>, <code>cancelled</code>. LLM agents match on
-        <code>error.code</code>, not on English text.
+        <code>network_error</code>, <code>cancelled</code>, <code>unknown</code>.
+        <code>status</code> and <code>details</code> appear only when the error has
+        them. LLM agents match on <code>error.code</code>, not on English text.
       </p>
     </div>
   </section>
@@ -175,10 +175,12 @@
 <pre><code><span class="prompt">$</span> <strong>ado skills install</strong>
 
   Installing 3 skills to 4 target(s):
-    - pi:     ~/.pi/agent/skills
     - claude: ~/.claude/skills
-    - cursor: ~/.cursor/skills
     - codex:  ~/.codex/skills
+    - cursor: ~/.cursor/skills
+    - pi:     ~/.pi/agent/skills
+
+  Note: copilot installs per-repo (to &lt;repo&gt;/.github/ado-cli/).
 
   Installed: 12
   Skipped:   0
@@ -208,13 +210,18 @@ ado-cli/  ado-auth/  ado-ci/</code></pre>
       <p>Agents that don't install skills can still discover the full surface in one call:</p>
       <div class="code-block">
 <pre><code><span class="prompt">$</span> <strong>ado schema --json</strong> | jq '.schema.subcommands | length'
-28
+32
 
-$ <strong>ado schema ci watch --json</strong> | jq '.schema.options[].name'
-"project"
-"build_id"
-"poll_interval"
-"json"</code></pre>
+$ <strong>ado schema "ci watch" --json</strong> | jq -r '.schema.options[].name'
+latest
+definition
+branch
+poll-interval
+org
+pat
+server
+verbose
+json</code></pre>
       </div>
     </div>
   </section>
@@ -226,17 +233,18 @@ $ <strong>ado schema ci watch --json</strong> | jq '.schema.options[].name'
       <div class="grid install-grid">
         <div class="card">
           <h3>📥 Download binary</h3>
-          <p>Grab the platform-specific binary and put it on your <code>$PATH</code>.</p>
-          <pre><code>curl -L -o ado https://github.com/gilbertwong96/ado_cli/releases/latest/download/ado-0.5.0-macos-aarch64
-chmod +x ado &amp;&amp; sudo mv ado /usr/local/bin/</code></pre>
-          <p class="hint">Replace <code>ado-0.5.0-macos-aarch64</code> with the binary for your platform (see the <a href="https://github.com/gilbertwong96/ado_cli/releases/latest">release page</a>).</p>
+          <p>Grab the archive for your platform and put the binary on your <code>$PATH</code>.</p>
+          <pre><code>curl -L -o ado.tar.gz https://github.com/gilbertwong96/ado_cli/releases/latest/download/ado-aarch64-apple-darwin.tar.gz
+tar -xzf ado.tar.gz ado-aarch64-apple-darwin/ado
+chmod +x ado-aarch64-apple-darwin/ado &amp;&amp; sudo mv ado-aarch64-apple-darwin/ado /usr/local/bin/</code></pre>
+          <p class="hint">Replace <code>ado-aarch64-apple-darwin.tar.gz</code> with the archive for your platform (see the <a href="https://github.com/gilbertwong96/ado_cli/releases/latest">release page</a>).</p>
         </div>
         <div class="card">
           <h3>🔨 Build from source</h3>
-          <p>Requires Elixir 1.20+ and Mix. Use this if you want to hack on ado itself.</p>
+          <p>Requires Rust 1.98+. Use this if you want to hack on ado itself.</p>
           <pre><code>git clone https://github.com/gilbertwong96/ado_cli &amp;&amp; cd ado_cli
-mix deps.get &amp;&amp; mix escript.build
-cp ado /usr/local/bin/</code></pre>
+cargo build --release --locked
+cp target/release/ado /usr/local/bin/</code></pre>
         </div>
       </div>
     </div>
@@ -255,7 +263,7 @@ ado login --method device                         <span class="comment"># no bro
 ado projects list
 
 <span class="comment"># 3. Get machine-readable output for an LLM agent</span>
-ado projects list --json | jq '.items | length'
+ado projects list --json | jq '.result | length'
 
 <span class="comment"># 4. Create a work item</span>
 ado workitems create MyProject --type Bug --title "Fix login page"

@@ -10,8 +10,13 @@ and execs it.
 ## Install
 
 ```bash
-npm install -g @gilbertwong1996/ado
+npm install -g @gilbertwong1996/ado --foreground-scripts
 ```
+
+`--foreground-scripts` lets the postinstall run on npm 11+, where lifecycle
+scripts are gated: it downloads the release archive for the running platform and
+installs shell completion. The platform packages are `optionalDependencies`, so a
+normal install already carries the right binary.
 
 Then:
 
@@ -29,8 +34,8 @@ ado skills install --target pi
   command tree (`ado schema --json`).
 - **Embedded skills for LLM agents** — `ado skills list` / `read` / `search`
   expose the skill catalog. `ado skills install` copies the skills into
-  `~/.pi/agent/skills/`, `~/.claude/skills/`, or `~/.cursor/skills/` so the
-  agent loads them natively.
+  `~/.pi/agent/skills/`, `~/.claude/skills/`, `~/.cursor/skills/` or
+  `~/.codex/skills/` so the agent loads them natively.
 - **24 service areas** — projects, repos, work items, pipelines, builds, pull
   requests, packages, security, agent pools, branches, wikis, service
   connections, etc.
@@ -40,6 +45,13 @@ ado skills install --target pi
   in real time.
 - **Cross-platform** — single self-contained binary for macOS (arm64/x86_64),
   Linux (x86_64/aarch64), and Windows x86_64. No runtime dependencies.
+
+## Layout
+
+The main package is a Node.js launcher (`bin/ado`) that resolves the platform
+package and execs its binary. The platform packages carry the cargo-dist archive
+for one target each: `darwin-arm64`, `darwin-x64`, `linux-arm64`, `linux-x64`,
+`win32-x64`.
 
 ## Documentation
 

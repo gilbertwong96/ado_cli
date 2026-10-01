@@ -14,10 +14,9 @@
   "keywords": [
     "azure-devops",
     "cli",
-    "elixir",
+    "rust",
     "ai-agents",
     "llm",
-    "burrito",
     "structured-json"
   ],
   "bin": {
