@@ -2160,9 +2160,10 @@ mod tests {
         assert_eq!(
             String::from_utf8(announce).expect("utf-8"),
             format!(
-                "\nOpening browser to sign in to myorg...\n  {}\n\n",
+                "\nOpening browser to sign in to myorg...\n  \n{}\n\n",
                 browser.url()
-            )
+            ),
+            "the oracle's captured bytes: the two-space indent is its own line"
         );
     }
 
@@ -2319,7 +2320,7 @@ mod tests {
         assert_eq!(
             String::from_utf8(announce).expect("utf-8"),
             format!(
-                "\nOpening browser...\n  {}\n\nNo Azure DevOps organizations were found for this account.\nSet your org with: export ADO_ORG=<your-org>\n",
+                "\nOpening browser...\n  \n{}\n\nNo Azure DevOps organizations were found for this account.\nSet your org with: export ADO_ORG=<your-org>\n",
                 browser.url()
             ),
             "the oracle's own lines, then the refusal (this build's, not the oracle's \

@@ -547,7 +547,11 @@ fn announce_opening(flow: &mut BrowserFlow<'_>, url: &str) -> Result<Announcemen
 
         format!("{envelope}\n")
     } else {
-        format!("\nOpening browser{org_hint}...\n  {url}\n\n")
+        // The URL is on its own line: the oracle prints the two-space indent with
+        // `CLI.write/1`, whose CliMate implementation is `IO.puts` and therefore
+        // ends the line. The captured bytes are the contract (Task 10's
+        // pre-harness comparison), not the source's intent.
+        format!("\nOpening browser{org_hint}...\n  \n{url}\n\n")
     };
 
     match flow.announce.write_all(text.as_bytes()) {
