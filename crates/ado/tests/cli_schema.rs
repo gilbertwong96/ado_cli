@@ -122,6 +122,7 @@ fn schema_root_lists_exactly_the_shipped_subcommands() {
             "ado repos",
             "ado schema",
             "ado security",
+            "ado skills",
             "ado teams",
             "ado test-coverage",
             "ado test-results",
@@ -204,6 +205,78 @@ fn schema_ci_node_lists_every_shipped_subcommand() {
         "the frozen schema marks the second positional optional"
     );
     assert_eq!(argument(&watch, "build_id")["type"], json!("string"));
+}
+
+/// The embedded agent surface: the frozen node's five leaves, their local `json`
+/// option (a leaf option in the oracle's schema, the same name as this tree's
+/// root global), the `install` options with the frozen defaults, and the
+/// positionals the frozen schema marks optional although CliMate refuses a
+/// missing one (`D5`'s class; this tree declares them required).
+#[test]
+fn schema_skills_node_lists_every_shipped_subcommand() {
+    let skills = find_node("skills").expect("the skills node");
+
+    assert_eq!(
+        skills["doc"],
+        json!(
+            "Read embedded skill content for AI agents (pi, Claude Code, Cursor, Copilot). Commands: list all skills, describe one (frontmatter only), read full content, search by topic, install to agent directories."
+        )
+    );
+    assert_eq!(skills["arguments"], json!([]));
+    assert_eq!(
+        subcommands(&skills)
+            .iter()
+            .map(|sub| sub["name"].as_str().expect("a subcommand name"))
+            .collect::<Vec<_>>(),
+        [
+            "ado skills list",
+            "ado skills describe",
+            "ado skills read",
+            "ado skills search",
+            "ado skills install"
+        ],
+        "the module's declaration order"
+    );
+
+    let list = find_node("skills list").expect("the list node");
+    assert_eq!(list["doc"], json!("List all embedded skills with name, description, version, and command count. Use --json for structured output suitable for agent discovery."));
+    assert_eq!(argument(&list, "path")["required"], json!(false));
+    assert_eq!(argument(&list, "path")["doc"], json!("Optional: skill name or skill/path"));
+
+    let describe = find_node("skills describe").expect("the describe node");
+    assert_eq!(describe["doc"], json!("Return the YAML frontmatter and command index for a skill (no body text). Use this to check version/description before loading the full content with read."));
+    assert_eq!(argument(&describe, "name")["required"], json!(true));
+
+    let read = find_node("skills read").expect("the read node");
+    assert_eq!(read["doc"], json!("Read a skill's SKILL.md (or a file under the skill). Returns the full Markdown body for human or LLM consumption."));
+    assert_eq!(
+        argument(&read, "target")["doc"],
+        json!("Skill name[/path] or 'skillname path'")
+    );
+
+    let search = find_node("skills search").expect("the search node");
+    assert_eq!(search["doc"], json!("Find skills by keyword search (name, description, or command list). Case-insensitive. Use for discovery when you do not know the exact skill name."));
+    assert_eq!(
+        argument(&search, "query")["doc"],
+        json!("Search query (e.g. 'create PR', 'pipeline', 'auth')")
+    );
+
+    let install = find_node("skills install").expect("the install node");
+    assert_eq!(install["arguments"], json!([]));
+    assert_eq!(
+        option(&install, "target")["default"],
+        json!("all"),
+        "the frozen default installs to every per-user target"
+    );
+    assert_eq!(option(&install, "repo")["default"], json!(""));
+    assert_eq!(option(&install, "skill")["default"], json!(""));
+    assert_eq!(option(&install, "force")["default"], json!("false"));
+    assert_eq!(
+        option(&install, "target")["doc"],
+        json!(
+            "Where to install: 'pi' (~/.pi/agent/skills/), 'claude' (~/.claude/skills/), 'cursor' (~/.cursor/skills/), 'codex' (~/.codex/skills/), 'copilot' (per-repo, requires --repo or cwd to be a git repo; writes to <repo>/.github/ado-cli/). Default: 'all' (installs to every per-user target above; copilot is NOT included because it needs a repo)."
+        )
+    );
 }
 
 /// Wave 1 ported the two read paths; Task 9 adds the five lifecycle mutations,
