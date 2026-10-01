@@ -88,14 +88,19 @@ pub fn run_with_seams(
     seams: &LoginSeams<'_>,
     announce: &mut dyn Write,
 ) -> Result<Report, AdoError> {
-    let (org, pat, server, client_id) = {
+    let (org, pat, pat_was_blank, server, client_id) = {
         let env = context.env();
 
         // `FlagEnv::set` drops a blank flag, but the environment behind it answers
         // `Ok("")` for a set-but-empty variable, so the same predicate has to run
         // here: a blank `ADO_ORG`/`ADO_PAT` is not a value (D16), exactly as
-        // `credentials::resolve` already treats those variables.
+        // `credentials::resolve` already treats those variables. The *raw*
+        // presence of a blank `ADO_PAT` is kept, because a method-less invocation
+        // has to refuse it rather than fall through to the interactive default
+        // (Ruling B7/D56).
         let value = |name: &str| env.get(name).filter(|value| non_empty(value));
+        let raw_pat = env.get(ENV_PAT);
+        let pat_was_blank = raw_pat.as_deref().is_some_and(|pat| !non_empty(pat));
 
         // `set_server/1` reads the flag, then `ADO_SERVER`, and nothing else: the
         // config's `server` is `whoami`'s display field (W1-R10), so a login never
@@ -108,11 +113,25 @@ pub fn run_with_seams(
         // the Task 10 report) — which is why this build reads it here.
         (
             value(ENV_ORG),
-            value(ENV_PAT),
+            raw_pat.filter(|value| non_empty(value)),
+            pat_was_blank,
             value(ENV_SERVER),
             value(ENV_OAUTH_CLIENT_ID).unwrap_or_else(|| device_code::CLIENT_ID.to_owned()),
         )
     };
+
+    // Ruling B7: a set-but-blank `ADO_PAT` is not a value (D16), so with no
+    // `--method` there is nothing to infer a method from — and since Wave 3
+    // shipped the browser default (D29), falling through would start an
+    // interactive flow from an invocation that reads like a script. A blank
+    // environment variable in a script is a mistake far more often than an
+    // intent to open a browser, so it refuses here: exit 1, nothing stored, no
+    // flow. A blank `--pat` is caught by the same branch only when `ADO_PAT` is
+    // blank too, because `FlagEnv` drops the blank flag before the environment
+    // (D16's own ordering).
+    if method.is_none() && pat.is_none() && pat_was_blank {
+        return Err(blank_pat());
+    }
 
     match resolve_method(method, pat.as_deref())? {
         LoginMethod::Pat => login_with_pat(context, org, pat, server.as_deref()),
@@ -326,6 +345,19 @@ fn pat_required() -> AdoError {
         code: ErrorCode::ValidationError,
         status: None,
         message: "--pat is required for method=pat (or set ADO_PAT env var)".to_owned(),
+        details: Some(json!({"option": "--pat", "env_var": "ADO_PAT"})),
+    }
+}
+
+/// The refusal a set-but-blank `ADO_PAT` takes when no `--method` was given
+/// (Ruling B7). It is D16's family — a blank value is not a value — with its own
+/// wording, because `--pat is required` would be false (the variable *was* set)
+/// and the useful alternatives are the two the message names.
+fn blank_pat() -> AdoError {
+    AdoError {
+        code: ErrorCode::ValidationError,
+        status: None,
+        message: "ADO_PAT is set but blank. Set a token, or pass --method browser to sign in interactively.".to_owned(),
         details: Some(json!({"option": "--pat", "env_var": "ADO_PAT"})),
     }
 }
@@ -1175,6 +1207,70 @@ mod tests {
                 "\n  Logged in to myorg (https://ado.test) via Pat.\n  Credentials saved to {}",
                 config_file(&home)
             ))
+        );
+    }
+
+    /// Ruling B7: a set-but-blank `ADO_PAT` with no `--method` refuses loudly
+    /// instead of falling through to the interactive browser default (D29).
+    /// `--method pat` keeps D16's `pat_required` wording (the test above); the
+    /// blank refusal is only for the method-less form.
+    #[test]
+    fn a_blank_environment_pat_without_a_method_refuses() {
+        let home = TempHome::new();
+        let store = InMemoryStore::new();
+
+        for blank in ["", "  "] {
+            let mut context = test_context(
+                opts(None, None, None, true),
+                MapEnv::new().set(ENV_PAT, blank),
+                store.clone(),
+                &home,
+            );
+
+            let error = run(
+                &mut context,
+                None,
+                device_code::IDENTITY_BASE,
+                &mut Vec::new(),
+            )
+            .expect_err("a blank ADO_PAT with no method refuses");
+
+            assert_eq!(error.code, ErrorCode::ValidationError, "{blank:?}");
+            assert_eq!(error.message, blank_pat().message, "{blank:?}");
+        }
+
+        assert!(
+            store.calls().is_empty(),
+            "nothing is stored: {:?}",
+            store.calls()
+        );
+    }
+
+    /// A non-blank `ADO_PAT` still infers `pat` with no `--method`, so the B7
+    /// refusal cannot reach a usable token.
+    #[test]
+    fn a_non_blank_environment_pat_still_infers_pat() {
+        let home = TempHome::new();
+        let store = InMemoryStore::new();
+        let mut context = test_context(
+            opts(Some("myorg"), None, None, true),
+            MapEnv::new().set(ENV_PAT, "env-pat"),
+            store.clone(),
+            &home,
+        );
+
+        run(
+            &mut context,
+            None,
+            device_code::IDENTITY_BASE,
+            &mut Vec::new(),
+        )
+        .expect("a non-blank ADO_PAT infers pat");
+
+        assert_eq!(
+            store.get("myorg").expect("get"),
+            Some(stored(AuthMethod::Pat, "env-pat")),
+            "the non-blank environment token is stored under the org"
         );
     }
 

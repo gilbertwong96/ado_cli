@@ -956,22 +956,21 @@ run_mock_cases() {
     mock_case login-blank-pat "login --method pat --pat ''" \
         login --method pat --org "$mock_org" --pat "" --json
 
-    # Reshaped by Task 10: `login` with no `--method` and no PAT is the *browser*
-    # flow since D29 closed, so the method-less form of this case would run an
-    # interactive login on both sides (the oracle would open a browser and hold its
-    # accept for 120 s; the harness must never reach it). Naming the method pins the
-    # same D16 rule — a blank ADO_PAT is not a value, so the PAT cannot be resolved —
-    # with an invocation both sides run to completion and neither leaves interactive.
-    # The oracle treats the empty string as a PAT, stores it and exits 0.
-    envelope_rule='D16: a blank ADO_PAT is not a value here, so method=pat refuses the invocation; the oracle stores an empty token'
-    status_rule='D16: a blank ADO_PAT reads as unset here (exit 1) where the frozen CLI treats it as a value, stores an empty token and exits 0'
+    # Reshaped by Task 10 because the method-less form became the *browser* flow
+    # on both sides (D29); named back by Task 11's Ruling B7, because a
+    # set-but-blank `ADO_PAT` with no `--method` is a loud refusal here now — the
+    # invocation is non-interactive on both sides again. The oracle treats `""`
+    # as a value, infers `pat` from it, stores an empty token and exits 0; this
+    # build refuses before any flow starts, stores nothing and sends nothing.
+    envelope_rule='D56: a set-but-blank ADO_PAT with no --method is a loud validation error here (exit 1, nothing stored); the oracle treats "" as a PAT, stores an empty token and exits 0'
+    status_rule='D56 (D16): a set-but-blank ADO_PAT reads as unset here (exit 1) where the frozen CLI treats it as a value, stores an empty token and exits 0'
     expect_statuses='0 1'
     expect_oracle_requests='length == 0'
     expect_rust_requests='length == 0'
     case_pat=
     case_extra=("ADO_PAT=")
-    mock_case login-blank-env-pat "login --method pat with a blank ADO_PAT" \
-        login --method pat --org "$mock_org" --json
+    mock_case login-blank-env-pat "login with a blank ADO_PAT (no --method)" \
+        login --org "$mock_org" --json
 
     envelope_rule='D27c: the message says what was removed instead of the legacy ~/.ado_cli/config.json path'
     mock_case logout "logout" logout --json

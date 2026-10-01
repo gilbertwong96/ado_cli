@@ -902,15 +902,14 @@ fn an_org_less_browser_login_starts_the_flow() {
     assert_nothing_written(&browser.home);
 }
 
-/// D16's consequence since Wave 3 shipped the browser method: a blank `ADO_PAT` is not
-/// a value, so with no `--method` there is no PAT to infer and the invocation falls to
-/// the oracle's browser default — it does not refuse. (Before Task 10 it hit the
-/// browser-not-shipped refusal, which is what the harness's blank-`ADO_PAT` case pinned
-/// until the method-less form could no longer be run there; that case now names the
-/// method, and this case pins the fall-through through the scripted opener.)
+/// Ruling B7: a set-but-blank `ADO_PAT` with no `--method` refuses loudly instead of
+/// starting the interactive default D29 shipped. D16 is the reason it used to fall
+/// through — a blank value is not a value, so there is no PAT to infer a method from
+/// — and a blank environment variable in a script is a mistake far more often than an
+/// intent to open a browser.
 #[cfg(unix)]
 #[test]
-fn a_blank_environment_pat_falls_through_to_the_browser_flow() {
+fn a_blank_environment_pat_without_a_method_refuses_loudly() {
     let browser = Browser::new();
     let mut command = browser.command("error", &["login", "--json"]);
     command.env("ADO_PAT", "");
@@ -918,15 +917,37 @@ fn a_blank_environment_pat_falls_through_to_the_browser_flow() {
     let output = command.output().expect("run ado");
 
     assert_eq!(output.status.code(), Some(1));
-    let stdout = stdout_of(&output);
-    let envelope: Value = serde_json::from_str(stdout.lines().last().expect("the envelope"))
-        .expect("a JSON document");
     assert_eq!(
-        envelope["error"]["message"],
-        json!("Login failed: Authorization failed: access_denied")
+        stdout_of(&output),
+        concat!(
+            r#"{"error":{"code":"validation_error","details":{"env_var":"ADO_PAT","option":"--pat"},"message":"ADO_PAT is set but blank. Set a token, or pass --method browser to sign in interactively."},"ok":false}"#,
+            "\n"
+        )
     );
     assert!(
+        !browser.url_file.exists(),
+        "the refusal happens before any flow, so the opener is never called"
+    );
+    assert_nothing_written(&browser.home);
+}
+
+/// The boundary of B7: an explicit `--method` still wins over a blank `ADO_PAT`, so
+/// `--method browser` runs the flow the method-less form now refuses.
+#[cfg(unix)]
+#[test]
+fn an_explicit_method_still_wins_over_a_blank_environment_pat() {
+    let browser = Browser::new();
+    let mut command = browser.command(
+        "error",
+        &["login", "--method", "browser", "--org", ORG, "--json"],
+    );
+    command.env("ADO_PAT", "");
+
+    let output = command.output().expect("run ado");
+
+    assert_eq!(output.status.code(), Some(1), "the scripted callback fails");
+    assert!(
         !browser.url().is_empty(),
-        "the blank PAT left no method to infer, so the browser flow ran"
+        "an explicit --method browser starts the flow despite the blank ADO_PAT"
     );
 }
