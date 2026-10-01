@@ -5,6 +5,49 @@ All notable changes to `ado` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0-rc.1] - 2026-10-01
+
+The Rust rewrite. `ado` is still the same CLI — the same binary name, the same
+commands, and the same `--json` contract (the observable behaviour captured in
+`docs/rust-rewrite/contract-inventory.md`, D1–D56) — rebuilt from the Elixir
+implementation that shipped through 0.5.0.
+
+### Added
+
+- **A Rust workspace of four crates** — `ado` (the binary and its tests),
+  `ado-core` (envelope, errors, the sync HTTP client, auth and config),
+  `ado-skills` (the embedded skills) and `ado-testkit` (the mock the suites
+  share). Edition 2024, `rust-version = 1.98`.
+- **`just` recipes for the whole gate** — `just ci` runs formatting, clippy with
+  warnings as errors, a locked build, unused-dependency and advisory checks, the
+  test suite and an 85% line-coverage floor (currently 97.18% over 1,586 tests).
+  `just budget` measures startup (6.0 ms against a 50 ms limit) and the stripped
+  release binary (3.14 MiB against an 8 MiB limit).
+- **Authentication through the OS credential store** — browser OAuth (PKCE,
+  AAD and MSA), device code and PAT. The token lives in macOS Keychain, Windows
+  Credential Manager or the Linux secret service (falling back to a `0600`
+  `credentials.json`), and the config file records only the organization and
+  method. A legacy `~/.ado_cli/config.json` is imported once on first use.
+- **`ado skills install` for the embedded skills** — the same three skills
+  (`ado-cli`, `ado-auth`, `ado-ci`) plus the installer for pi, Claude Code,
+  Cursor, Codex and per-repo GitHub Copilot.
+- **cargo-dist release archives** — five native targets, version-free archive
+  names, shell and PowerShell installers, and an npm package whose postinstall
+  was ported to the Rust binary's completion output.
+
+### Changed
+
+- **`ado version` reports `1.0.0-rc.1`.** Everything else recorded in
+  `contract-inventory.md` — the command surface, the `--json` envelopes, the
+  exit codes, the help text — reproduces 0.5.0, apart from the deliberate
+  differences the same record lists (D1–D56).
+
+### Not verified in this release
+
+- **The live browser sign-in.** The flow ships and is covered against a mock
+  identity service, but a real `ado login` followed by `ado whoami` has not been
+  run end to end; that check gates `1.0.0`.
+
 ## [0.5.0] - 2026-07-22
 
 ### Unreleased
