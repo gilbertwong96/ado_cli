@@ -1,14 +1,18 @@
 //! `ado users list|show|add|remove` — the entitlement half of
 //! `lib/ado_cli/cli/users.ex`: the organization-scoped `_apis/userentitlements`
 //! surface, the table and detail views, and the module's own 404 wording.
-//! `remove` never prompts (R1/R5): the frozen CLI sends its DELETE on `n` and on
-//! EOF.
 //!
-//! Two claims in the module's own docs are prose, not invocations, and are not
+//! `remove` asks the confirmation the module's own doc promises, with `--force`
+//! as its bypass (Ruling A1): the frozen CLI declares no `--force` and never
+//! prompts — captured, its DELETE goes out on `n` and on EOF — so the question
+//! and the flag are this build's repair, following the Wave 2 prompt family
+//! (D30/D31/D32: the question on stderr, EOF and `n` a refusal, `--force` no
+//! question). The removal is the only irreversible org-wide mutation in the CLI;
+//! that is why it gets a gate where its sibling `users add` does not.
+//!
+//! One claim in the module's own docs is prose, not an invocation, and is not
 //! ported: its header advertises an `[--search SEARCH]` on `list` that the
-//! module's option table never declares (the frozen parser rejects the flag), and
-//! `remove`'s doc says "Requires confirmation unless `--force`" while declaring
-//! no `--force` and never asking.
+//! module's option table never declares (the frozen parser rejects the flag).
 
 use ado_core::client::encode_path_segment;
 use ado_core::envelope::{ok_message, ok_value};
@@ -75,9 +79,13 @@ pub fn add(
     }))
 }
 
-/// `ado users remove`: the module's plain `DELETE`, without a prompt (R1/R5).
-/// A 404 takes the module's own wording.
-pub fn remove(context: &mut Context, user_id: &str) -> Result<Report, AdoError> {
+/// `ado users remove`: the confirmation (unless `--force`) and then the module's
+/// `DELETE`. A 404 takes the module's own wording.
+pub fn remove(context: &mut Context, user_id: &str, force: bool) -> Result<Report, AdoError> {
+    if !force && !context.confirm(&remove_question(user_id)) {
+        return Err(AdoError::cancelled(ABORTED));
+    }
+
     let path = user_path(user_id);
 
     match context.client()?.delete(&path, &[]) {
@@ -94,8 +102,20 @@ pub fn remove(context: &mut Context, user_id: &str) -> Result<Report, AdoError> 
     }
 }
 
+/// `Helpers.confirm_delete/2`'s refusal wording; it is this build's §8 wording,
+/// printed on stderr.
+const ABORTED: &str = "Aborted.";
+
 /// The collection path; the client injects the organization ahead of it.
 const USERENTITLEMENTS: &str = "/_apis/userentitlements";
+
+/// `remove`'s question, from the docstring's own sentence ("Remove a user from
+/// the organization entirely… The user is immediately blocked") in the prompt
+/// family's `…? This cannot be undone. [y/N] ` shape. The frozen CLI asks
+/// nothing; the question is this build's §8 wording.
+fn remove_question(user_id: &str) -> String {
+    format!("Remove user '{user_id}' from the organization entirely? This cannot be undone. [y/N] ")
+}
 
 /// One entitlement below the collection; the id is a single segment, so an email
 /// address's `@` is escaped rather than left to the URL's own parsing (D22).
@@ -193,6 +213,14 @@ fn value_text(value: Option<&Value>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_remove_question_is_the_docstrings_sentence() {
+        assert_eq!(
+            remove_question("user-1"),
+            "Remove user 'user-1' from the organization entirely? This cannot be undone. [y/N] "
+        );
+    }
 
     #[test]
     fn top_params_only_carry_a_given_top() {

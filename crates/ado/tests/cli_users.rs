@@ -512,8 +512,56 @@ fn add_409_emits_the_conflict_envelope() {
     assert_eq!(envelope(&output)["error"]["status"], json!(409));
 }
 
+/// Ruling A1: the new gate's three answers, plus `--force`. The question is this
+/// build's §8 wording (the frozen CLI never asks); `n` and EOF are D32/D30
+/// refusals — exit 1, `Aborted.` on stderr, nothing sent — and `--force` sends
+/// the DELETE with no question at all.
 #[test]
-fn remove_sends_the_delete_without_a_prompt() {
+fn remove_asks_and_aborts_on_a_no() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+
+    let output = run_with_stdin(
+        &home,
+        &server,
+        "n\n",
+        &["users", "remove", "user-1", "--json"],
+    );
+
+    assert_eq!(output.status.code(), Some(1), "a refusal exits 1 (D32)");
+    assert!(
+        stderr_of(&output).contains("Remove user 'user-1' from the organization entirely?"),
+        "the question names the act: {}",
+        stderr_of(&output)
+    );
+    assert!(
+        stderr_of(&output).contains("[y/N]"),
+        "the question is on stderr (D31): {}",
+        stderr_of(&output)
+    );
+    assert_eq!(stderr_of(&output), format!("{}Aborted.\n", question()));
+    assert!(stdout_of(&output).is_empty(), "a refusal has no envelope");
+    assert!(server.received().is_empty(), "a refusal sends nothing");
+}
+
+#[test]
+fn remove_at_eof_refuses_and_sends_nothing() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+
+    let output = run_with_stdin(&home, &server, "", &["users", "remove", "user-1", "--json"]);
+
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "an unanswered question is not a yes (D30)"
+    );
+    assert!(stderr_of(&output).contains("Aborted."));
+    assert!(server.received().is_empty(), "EOF sends nothing");
+}
+
+#[test]
+fn remove_on_yes_sends_the_delete() {
     let home = TempHome::new();
     let server = MockServer::start();
     server.expect(
@@ -525,7 +573,7 @@ fn remove_sends_the_delete_without_a_prompt() {
     let output = run_with_stdin(
         &home,
         &server,
-        "n\n",
+        "y\n",
         &["users", "remove", "user-1", "--json"],
     );
 
@@ -538,17 +586,53 @@ fn remove_sends_the_delete_without_a_prompt() {
 
     let request = request(&server);
     assert_eq!(request.method, "DELETE");
-    assert_eq!(
-        request.path,
-        format!("{USERS}/user-1"),
-        "the request proceeded: `users remove` never prompts (R1/R5)"
-    );
+    assert_eq!(request.path, format!("{USERS}/user-1"));
     assert!(request.body.is_none(), "the DELETE carries no body");
     assert!(
-        stderr_of(&output).is_empty(),
-        "no prompt reached stderr: {}",
+        stderr_of(&output).contains("[y/N]"),
+        "the question was still asked: {}",
         stderr_of(&output)
     );
+}
+
+#[test]
+fn remove_force_skips_the_prompt() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    server.expect(
+        "DELETE",
+        &format!("{USERS}/user-1"),
+        MockResponse::json(204, json!({})),
+    );
+
+    let output = run_with_stdin(
+        &home,
+        &server,
+        "",
+        &["users", "remove", "user-1", "--force", "--json"],
+    );
+
+    assert_success(&output);
+    assert_eq!(
+        envelope(&output),
+        json!({"ok": true, "message": "User 'user-1' removed."}),
+        "the DELETE went out despite the EOF stdin"
+    );
+    assert!(
+        stderr_of(&output).is_empty(),
+        "--force asks nothing: {}",
+        stderr_of(&output)
+    );
+
+    let request = request(&server);
+    assert_eq!(request.method, "DELETE");
+    assert_eq!(request.path, format!("{USERS}/user-1"));
+}
+
+/// The question this build asks, asserted verbatim once so the two tests above
+/// can match it by prefix and sentence.
+fn question() -> &'static str {
+    "Remove user 'user-1' from the organization entirely? This cannot be undone. [y/N] "
 }
 
 #[test]
@@ -564,7 +648,11 @@ fn remove_404_reports_the_user_wording() {
         ),
     );
 
-    let output = run(&home, &server, &["users", "remove", "missing-id", "--json"]);
+    let output = run(
+        &home,
+        &server,
+        &["users", "remove", "missing-id", "--force", "--json"],
+    );
 
     assert_eq!(output.status.code(), Some(1));
     assert_eq!(

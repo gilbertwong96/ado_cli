@@ -2501,13 +2501,20 @@ run_mock_cases() {
     # with no envelope (D4), as does `teams update`'s no-option guard; the four
     # list error cases and the two 409s keep the classified envelope with this
     # build's raw error body where the oracle re-renders the decoded map (D24 —
-    # C2's rows for both areas). `teams delete` and `users remove` never prompt
-    # (R1/R5): the `(stdin n — no prompt)` cases send their requests. A missing
+    # C2's rows for both areas). `teams delete` never prompts (R1/R5): its
+    # `(stdin n — no prompt)` case sends its request. `users remove` gained the
+    # confirmation its own doc promises in Wave 3's rulings round (Ruling A1, D52):
+    # it prompts unless `--force`, so its former `(stdin n — no prompt)` case is
+    # now the `(stdin n)` refusal — the frozen CLI never asks, so **no users-remove
+    # case may use the prompt modes**, which assert the oracle's `[y/N]` on stdout
+    # (it writes none). The success path scripts a `y` to get past this side's
+    # gate, and `--force` is the unknown flag the frozen parser refuses (D52's
+    # second half, the case the tree had nowhere before). A missing
     # `--name`/`--email` is D34's silent exit 0 in the oracle. An email id is a
     # path segment and differs by the stricter encoding (D22 — both spellings
     # have their own route carrying the same body, so only the path differs). The
-    # module docs promise a `--search` and a `--force` the frozen parser rejects;
-    # neither is in this tree.
+    # module docs promise a `--search` on `users list` that the frozen parser
+    # rejects; it is not in this tree.
 
     mock_case teams-list "teams list" \
         teams list Alpha --json
@@ -2684,21 +2691,71 @@ run_mock_cases() {
     mock_case users-add-409 "users add (409)" \
         users add --email ada@example.com --json
 
-    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the message envelope'
-    mock_case users-remove "users remove" \
+    # ── Ruling A1: `users remove`'s gate and its `--force` (D52) ──
+    #
+    # Captured: the frozen CLI sends its DELETE on EOF, on `n` and on `y` alike —
+    # it never prompts — and rejects `--force` with `invalid option --force`, help
+    # on stdout, exit 1, no request. This build asks the docstring's question on
+    # stderr (D31), refuses on `n`/EOF with exit 1 and nothing sent (D32/D30), and
+    # sends the DELETE with `--force` or a `y`. Each case below asserts the status
+    # pair and both sides' requests, because the flipped cases' point is the
+    # direction: the oracle proceeds where this build refuses, and the oracle
+    # refuses the flag where this build proceeds.
+
+    case_stdin=$'y\n'
+    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the message envelope (the `y` gets past this side’s new gate, Ruling A1)'
+    expect_oracle_requests='length == 1 and .[0].method == "DELETE" and .[0].path == "/ado-harness/_apis/userentitlements/user-1"'
+    expect_rust_requests='length == 1 and .[0].method == "DELETE" and .[0].path == "/ado-harness/_apis/userentitlements/user-1"'
+    stdout_mode=text
+    mock_case users-remove "users remove (stdin y)" \
         users remove user-1 --json
 
+    status_rule='D52 (D30): the frozen CLI never asks and removes on EOF; this build refuses with exit 1 and sends nothing'
+    rest_rule='D52: the frozen CLI sends its DELETE on EOF; this build refuses without sending anything'
+    expect_statuses='0 1'
+    expect_oracle_requests='length == 1 and .[0].method == "DELETE" and .[0].path == "/ado-harness/_apis/userentitlements/user-1"'
+    expect_rust_requests='length == 0'
     stdout_mode=text
-    mock_case users-remove-human "users remove (human)" \
+    envelope_rule='D52: the frozen CLI prints its removed line (it never prompted); this build refuses on stderr with exit 1 and no document'
+    mock_case users-remove-eof "users remove (EOF)" \
+        users remove user-1 --json
+
+    status_rule='D52 (D32): the frozen CLI ignores the `n` and removes; this build refuses with exit 1 and sends nothing'
+    rest_rule='D52 (D32): the frozen CLI sends its DELETE despite the `n`; this build refuses without sending anything'
+    expect_statuses='0 1'
+    expect_oracle_requests='length == 1 and .[0].method == "DELETE" and .[0].path == "/ado-harness/_apis/userentitlements/user-1"'
+    expect_rust_requests='length == 0'
+    stdout_mode=text
+    envelope_rule='D52 (D32): the frozen CLI removes despite the `n`; this build writes `Aborted.` to stderr with exit 1 and no document'
+    case_stdin=$'n\n'
+    mock_case users-remove-stdin-n "users remove (stdin n)" \
+        users remove user-1 --json
+
+    status_rule='D52 (D30): the frozen CLI never asks and removes on EOF; this build refuses with exit 1 and sends nothing'
+    rest_rule='D52 (D30): the frozen CLI sends its DELETE on EOF; this build refuses without sending anything'
+    expect_statuses='0 1'
+    expect_oracle_requests='length == 1 and .[0].method == "DELETE" and .[0].path == "/ado-harness/_apis/userentitlements/user-1"'
+    expect_rust_requests='length == 0'
+    stdout_mode=text
+    envelope_rule='D52: the frozen CLI prints its removed line; this build refuses on stderr with exit 1 and no document'
+    mock_case users-remove-human "users remove (human, EOF)" \
         users remove user-1
 
-    case_stdin=$'n\n'
-    envelope_rule='D33: the frozen write paths print their human success line under --json; this build emits the message envelope'
-    mock_case users-remove-stdin-n "users remove (stdin n — no prompt)" \
-        users remove user-1 --json
+    status_rule='D52 (D5): the frozen parser rejects --force as an unknown flag; this build accepts it and skips the question'
+    rest_rule='D52 (D5): the frozen parser rejects --force and sends nothing; this build skips the question and sends the DELETE'
+    expect_statuses='1 0'
+    expect_oracle_requests='length == 0'
+    expect_rust_requests='length == 1 and .[0].method == "DELETE" and .[0].path == "/ado-harness/_apis/userentitlements/user-1"'
+    stdout_mode=text
+    envelope_rule='D5: the oracle prints the command help on stdout before its usage error; this build writes the message envelope (D33) with no prompt'
+    mock_case users-remove-force "users remove --force (the frozen parser refuses the flag)" \
+        users remove user-1 --force --json
 
+    case_stdin=$'y\n'
     envelope_rule='D4: the frozen CLI writes the guard to stderr with no envelope under --json where this build emits the error envelope'
-    mock_case users-remove-404 "users remove (404)" \
+    expect_oracle_requests='length == 1 and .[0].method == "DELETE" and .[0].path == "/ado-harness/_apis/userentitlements/missing-id"'
+    expect_rust_requests='length == 1 and .[0].method == "DELETE" and .[0].path == "/ado-harness/_apis/userentitlements/missing-id"'
+    mock_case users-remove-404 "users remove (404, stdin y)" \
         users remove missing-id --json
 
     # ── Wave 2: the branch policies (Task 14) ──

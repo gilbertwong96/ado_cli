@@ -2863,13 +2863,19 @@ pub fn command() -> Command {
                 .subcommand(
                     Command::new("remove")
                         .about(
-                            "Remove a user from the organization entirely. Revokes all licenses and memberships. The user is immediately blocked from accessing any project.",
+                            "Remove a user from the organization entirely. Revokes all licenses and memberships. The user is immediately blocked from accessing any project. Requires confirmation unless --force.",
                         )
                         .arg(
                             Arg::new("user_id")
                                 .value_name("USER_ID")
                                 .required(true)
                                 .help("User ID or email"),
+                        )
+                        .arg(
+                            Arg::new("force")
+                                .long("force")
+                                .action(ArgAction::SetTrue)
+                                .help("Skip the interactive confirmation prompt (use in scripts/CI)."),
                         ),
                 ),
         )

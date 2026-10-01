@@ -1279,6 +1279,7 @@ fn main() -> ExitCode {
                         .get_one::<String>("user_id")
                         .expect("the positional is required")
                         .as_str(),
+                    remove.get_flag("force"),
                 ),
                 _ => Err(AdoError::validation(MISSING_SUBCOMMAND)),
             }

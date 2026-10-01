@@ -463,8 +463,9 @@ fn schema_areas_and_iterations_nodes_list_every_shipped_subcommand() {
 /// `create`/`update` mark `--name` where the oracle's `Map.fetch!` makes a
 /// missing one a silent exit 0 (D34's loud half), and `users` is the
 /// organization-scoped area — no leaf takes a project positional, and `remove`
-/// carries no `--force` (the captured parser rejects it; the module's doc
-/// sentence promising confirmation is prose, not an invocation).
+/// gained the Ruling A1 `--force` (the frozen parser rejects the flag, and its
+/// module's doc sentence promising confirmation was prose until this wave made
+/// it true).
 #[test]
 fn schema_teams_and_users_nodes_list_every_shipped_subcommand() {
     let teams = find_node("teams").expect("the teams node");
@@ -548,8 +549,8 @@ fn schema_teams_and_users_nodes_list_every_shipped_subcommand() {
 
     assert_eq!(
         option_names(&find_node("users remove").expect("the remove node")),
-        GLOBALS,
-        "users remove has no --force: the captured parser rejects it (R5)"
+        ["force", "json", "org", "pat", "server", "verbose"],
+        "users remove carries the Ruling A1 gate's --force"
     );
 }
 
