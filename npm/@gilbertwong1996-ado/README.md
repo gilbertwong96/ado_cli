@@ -49,9 +49,11 @@ ado skills install --target pi
 ## Layout
 
 The main package is a Node.js launcher (`bin/ado`) that resolves the platform
-package and execs its binary. The platform packages carry the cargo-dist archive
-for one target each: `darwin-arm64`, `darwin-x64`, `linux-arm64`, `linux-x64`,
-`win32-x64`.
+package and execs its binary. The platform packages carry the unpacked binary
+(`bin/ado`, or `bin/ado.exe` on Windows) for one target each: `darwin-arm64`,
+`darwin-x64`, `linux-arm64`, `linux-x64`, `win32-x64`. When npm skips the
+optional dependency (`--omit=optional`), the postinstall fetches the matching
+cargo-dist archive instead.
 
 ## Documentation
 
