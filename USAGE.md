@@ -3,7 +3,7 @@
 All commands follow the pattern:
 
 ```bash
-ado_cli [global-options] <command> [subcommand] [arguments] [options]
+ado [global-options] <command> [subcommand] [arguments] [options]
 ```
 
 ## Global Options
@@ -21,98 +21,98 @@ ado_cli [global-options] <command> [subcommand] [arguments] [options]
 
 ### List projects
 ```bash
-ado_cli projects list
-ado_cli projects list --state wellFormed        # filter by state
-ado_cli projects list --top 10                  # paginate
-ado_cli projects list --json                    # JSON output
+ado projects list
+ado projects list --state wellFormed        # filter by state
+ado projects list --top 10                  # paginate
+ado projects list --json                    # JSON output
 ```
 
 ### Show project details
 ```bash
-ado_cli projects show MyProject
-ado_cli projects show MyProject --capabilities
+ado projects show MyProject
+ado projects show MyProject --capabilities
 ```
 
 ### Create a project
 ```bash
-ado_cli projects create MyNewProject
-ado_cli projects create MyProj --description "My description" --visibility private --process agile
+ado projects create MyNewProject
+ado projects create MyProj --description "My description" --visibility private --process agile
 ```
 
 ### Update a project
 ```bash
-ado_cli projects update MyProject --name NewName
-ado_cli projects update MyProject --description "Updated description"
+ado projects update MyProject --name NewName
+ado projects update MyProject --description "Updated description"
 ```
 
 ### Delete a project
 ```bash
-ado_cli projects delete MyProject               # prompts for confirmation
-ado_cli projects delete MyProject --force       # skip confirmation
+ado projects delete MyProject               # prompts for confirmation
+ado projects delete MyProject --force       # skip confirmation
 ```
 
 ## Repositories
 
 ### List repositories
 ```bash
-ado_cli repos list MyProject
+ado repos list MyProject
 ```
 
 ### Show repository details
 ```bash
-ado_cli repos show MyProject MyRepo
+ado repos show MyProject MyRepo
 ```
 
 ### Create a repository
 ```bash
-ado_cli repos create MyProject MyNewRepo
-ado_cli repos create MyProject MyRepo --default-branch develop
+ado repos create MyProject MyNewRepo
+ado repos create MyProject MyRepo --default-branch develop
 ```
 
 ### Delete a repository
 ```bash
-ado_cli repos delete MyProject MyRepo
-ado_cli repos delete MyProject MyRepo --force   # skip confirmation
+ado repos delete MyProject MyRepo
+ado repos delete MyProject MyRepo --force   # skip confirmation
 ```
 
 ### List branches
 ```bash
-ado_cli repos branches MyProject MyRepo
-ado_cli repos branches MyProject MyRepo --filter "feature/"
+ado repos branches MyProject MyRepo
+ado repos branches MyProject MyRepo --filter "feature/"
 ```
 
 ## Work Items
 
 ### List work items
 ```bash
-ado_cli workitems list MyProject
-ado_cli workitems list MyProject --type Bug
-ado_cli workitems list MyProject --state Active
-ado_cli workitems list MyProject --assigned-to "John Doe"
+ado workitems list MyProject
+ado workitems list MyProject --type Bug
+ado workitems list MyProject --state Active
+ado workitems list MyProject --assigned-to "John Doe"
 ```
 
 ### Show work item details
 ```bash
-ado_cli workitems show 42
-ado_cli workitems show 42 --expand all
+ado workitems show 42
+ado workitems show 42 --expand all
 ```
 
 ### WIQL query
 ```bash
-ado_cli workitems query MyProject --wiql "SELECT [System.Id] FROM WorkItems WHERE [System.State] = 'Active'"
+ado workitems query MyProject --wiql "SELECT [System.Id] FROM WorkItems WHERE [System.State] = 'Active'"
 ```
 
 ### Create a work item
 ```bash
-ado_cli workitems create MyProject --type Bug --title "Fix login page"
-ado_cli workitems create MyProject --type "User Story" --title "New feature" \
+ado workitems create MyProject --type Bug --title "Fix login page"
+ado workitems create MyProject --type "User Story" --title "New feature" \
   --description "As a user..." --assigned-to "Jane" --priority 2 --tags "frontend,ux"
 ```
 
 ### Update a work item
 ```bash
-ado_cli workitems update 42 --state Resolved
-ado_cli workitems update 42 --title "Updated title" --assigned-to "Bob" --priority 1 --tags "bug,critical"
+ado workitems update 42 --state Resolved
+ado workitems update 42 --title "Updated title" --assigned-to "Bob" --priority 1 --tags "bug,critical"
 ```
 
 ## Pipelines
@@ -122,97 +122,97 @@ ado_cli workitems update 42 --title "Updated title" --assigned-to "Bob" --priori
 ```bash
 # Stream live status + per-line log output for a running build.
 # Like `tail -f` for CI. Exits when the build completes or on Ctrl+C.
-ado_ci watch MyProject 123
-ado_ci watch MyProject --latest --definition 42 --branch main
-ado_ci watch MyProject 123 --poll-interval 500
+ado ci watch MyProject 123
+ado ci watch MyProject --latest --definition 42 --branch main
+ado ci watch MyProject 123 --poll-interval 500
 ```
 
 ### List pipelines
 ```bash
-ado_cli pipelines list MyProject
-ado_cli pipelines list MyProject --top 10
-ado_cli pipelines list MyProject --folder "\\CI"
+ado pipelines list MyProject
+ado pipelines list MyProject --top 10
+ado pipelines list MyProject --folder "\\CI"
 ```
 
 ### Show pipeline definition
 ```bash
-ado_cli pipelines show MyProject 1
+ado pipelines show MyProject 1
 ```
 
 ### Trigger a pipeline run
 ```bash
-ado_cli pipelines run MyProject 1
-ado_cli pipelines run MyProject 1 --branch feature/login
-ado_cli pipelines run MyProject 1 --variables "ENV=staging,DEBUG=true"
+ado pipelines run MyProject 1
+ado pipelines run MyProject 1 --branch feature/login
+ado pipelines run MyProject 1 --variables "ENV=staging,DEBUG=true"
 ```
 
 ## Pull Requests
 
 ### List pull requests
 ```bash
-ado_cli prs list MyProject MyRepo
-ado_cli prs list MyProject MyRepo --status all
-ado_cli prs list MyProject MyRepo --creator "John"
+ado prs list MyProject MyRepo
+ado prs list MyProject MyRepo --status all
+ado prs list MyProject MyRepo --creator "John"
 ```
 
 ### Show PR details
 ```bash
-ado_cli prs show MyProject MyRepo 42
+ado prs show MyProject MyRepo 42
 ```
 
 ### Create a pull request
 ```bash
-ado_cli prs create MyProject MyRepo --title "New feature" \
+ado prs create MyProject MyRepo --title "New feature" \
   --source feature/new --target main
-ado_cli prs create MyProject MyRepo --title "WIP" \
+ado prs create MyProject MyRepo --title "WIP" \
   --source dev --target main --description "Work in progress" --draft
 ```
 
 ### Complete (merge) a pull request
 ```bash
-ado_cli prs complete MyProject MyRepo 42
-ado_cli prs complete MyProject MyRepo 42 --delete-source
-ado_cli prs complete MyProject MyRepo 42 --merge-strategy squash
+ado prs complete MyProject MyRepo 42
+ado prs complete MyProject MyRepo 42 --delete-source
+ado prs complete MyProject MyRepo 42 --merge-strategy squash
 ```
 
 ### Abandon a pull request
 ```bash
-ado_cli prs abandon MyProject MyRepo 42
+ado prs abandon MyProject MyRepo 42
 ```
 
 ## Releases
 
 ### List releases
 ```bash
-ado_cli releases list MyProject
-ado_cli releases list MyProject --status active
-ado_cli releases list MyProject --definition-id 1
+ado releases list MyProject
+ado releases list MyProject --status active
+ado releases list MyProject --definition-id 1
 ```
 
 ### Show release details
 ```bash
-ado_cli releases show MyProject 42
+ado releases show MyProject 42
 ```
 
 ## Authentication Commands
 
 ### Login
 ```bash
-ado_cli login                          # browser OAuth (default)
-ado_cli login --org myorg              # browser OAuth with org
-ado_cli login --method pat --org myorg --pat xxxxx
-ado_cli login --method device --org myorg
-ado_cli login --method pat --server https://ado.example.com --org Coll --pat xxx
+ado login                          # browser OAuth (default)
+ado login --org myorg              # browser OAuth with org
+ado login --method pat --org myorg --pat xxxxx
+ado login --method device --org myorg
+ado login --method pat --server https://ado.example.com --org Coll --pat xxx
 ```
 
 ### Check status
 ```bash
-ado_cli whoami
+ado whoami
 ```
 
 ### Logout
 ```bash
-ado_cli logout
+ado logout
 ```
 
 ## Output Control
@@ -230,5 +230,8 @@ ado_cli logout
 | `ADO_ORG` | Organization name |
 | `ADO_PAT` | Personal Access Token |
 | `ADO_SERVER` | Self-hosted server URL |
-| `ADO_OAUTH_CLIENT_ID` | Custom OAuth client ID |
-| `ADO_API_VERSION` | API version (default: `7.1`) |
+| `ADO_OAUTH_CLIENT_ID` | Override the OAuth client id the interactive login flows use |
+
+`ADO_PAT` is read only from the environment and never persisted. A blank value
+counts as unset. `ADO_API_VERSION` is **not** read: every request carries
+`api-version=7.1`, and an endpoint that needs another version supplies it itself.

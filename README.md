@@ -9,13 +9,14 @@ projects, repositories, work items, pipelines, pull requests, releases, and
 more. Works with both **cloud** (`dev.azure.com`) and **self-hosted** Azure
 DevOps Server.
 
-Built with [Finch](https://hex.pm/packages/finch),
-[CLI Mate](https://hex.pm/packages/cli_mate), and
-[Burrito](https://hex.pm/packages/burrito).
+Built in Rust with [clap](https://crates.io/crates/clap),
+[ureq](https://crates.io/crates/ureq), [serde_json](https://crates.io/crates/serde_json),
+[comfy-table](https://crates.io/crates/comfy-table), and the OS credential store
+([keyring](https://crates.io/crates/keyring)).
 
 [![CI](https://github.com/gilbertwong96/ado_cli/actions/workflows/ci.yml/badge.svg)](https://github.com/gilbertwong96/ado_cli/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/gilbertwong96/ado_cli/graph/badge.svg)](https://codecov.io/gh/gilbertwong96/ado_cli)
-[![Elixir](https://img.shields.io/badge/elixir-1.20+-purple.svg)](https://elixir-lang.org)
+[![Rust](https://img.shields.io/badge/rust-1.98+-orange.svg)](https://www.rust-lang.org)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Website](https://img.shields.io/badge/website-gilbertwong96.github.io%2Fado_cli-blue)](https://gilbertwong96.github.io/ado_cli/)
 
@@ -30,10 +31,10 @@ flags that nobody uses. `ado` is designed the other way around:
 |---|---|---|
 | Output | Tables + colors | Stable JSON envelopes on every command |
 | Discovery | `ado --help` → 3 levels deep | `ado schema --json` — full command tree in 1 round trip |
-| Documentation | Embedded `man` pages | `ado skills list` / `ado skills read NAME --json` |
+| Documentation | Built-in `--help` at every level | `ado skills list` / `ado skills read NAME` |
 | Error handling | Pretty stack traces | `{ok: false, error: {code, status, message, details}}` |
 | Auth | Browser OAuth (interactive) | PAT, device code, browser — all machine-discoverable |
-| Distribution | `brew install ado` | Single self-contained binary, no runtime deps |
+| Distribution | `npm install -g @gilbertwong1996/ado` | Single self-contained binary, no runtime deps |
 
 Every command supports `--json` for machine consumption. Every error has a
 stable `code` (e.g. `auth_required`, `not_found`, `validation_error`) so agents
@@ -59,37 +60,33 @@ npm install -g @gilbertwong1996/ado --foreground-scripts
 
 ### Pre-built binaries
 
-Download the binary for your platform from the
-[latest release](https://github.com/gilbertwong96/ado_cli/releases/latest) and
-put it on your `$PATH`:
+The release ships one archive per target, named by target triple and **not** by
+version. Download the one for your platform from the
+[latest release](https://github.com/gilbertwong96/ado_cli/releases/latest) and put
+it on your `$PATH`:
 
 ```bash
-# Example for Apple Silicon Mac (pick the right binary for your platform)
-curl -L -o ado https://github.com/gilbertwong96/ado_cli/releases/latest/download/ado-0.4.4-macos-aarch64
-chmod +x ado && sudo mv ado /usr/local/bin/
+# Example for Apple Silicon Mac (pick the right archive for your platform)
+curl -L -o ado.tar.gz https://github.com/gilbertwong96/ado_cli/releases/latest/download/ado-aarch64-apple-darwin.tar.gz
+tar -xzf ado.tar.gz ado-aarch64-apple-darwin/ado
+chmod +x ado-aarch64-apple-darwin/ado && sudo mv ado-aarch64-apple-darwin/ado /usr/local/bin/
 ```
+
+The five archives are `ado-aarch64-apple-darwin.tar.gz`,
+`ado-x86_64-apple-darwin.tar.gz`, `ado-x86_64-unknown-linux-musl.tar.gz`,
+`ado-aarch64-unknown-linux-musl.tar.gz` and `ado-x86_64-pc-windows-msvc.zip`
+(plus `ado-installer.sh` / `ado-installer.ps1`, checksums and a source archive).
 
 ### From source
 
-Requires Elixir 1.20+ and Mix:
+Requires [Rust 1.98+](https://rustup.rs/) (the pin is `rust-toolchain.toml`):
 
 ```bash
 git clone https://github.com/gilbertwong96/ado_cli.git
 cd ado_cli
-mix deps.get
-mix escript.build
-cp ado /usr/local/bin/
+cargo build --release --locked
+cp target/release/ado /usr/local/bin/
 ```
-
-Or build standalone binaries with Burrito:
-
-```bash
-MIX_ENV=prod mix release
-# Binaries in burrito_out/ (macOS aarch64, Linux x86_64/aarch64, Windows x86_64/aarch64)
-```
-
-> **Note**: `mix release` in dev produces an OTP system service (`start`, `stop`, `eval`)
-> — not a CLI tool. Use `mix escript.build` for dev iteration.
 
 ---
 
@@ -129,8 +126,9 @@ ado completion powershell | Out-String | Invoke-Expression
 ```
 
 After installing, pressing `<TAB>` after `ado ` shows every top-level
-subcommand; after `ado prs ` shows `abandon`, `comments`, `complete`,
-`create`, `diff`, `list`, `show`; and so on at every nesting level.
+subcommand; after `ado prs ` shows `abandon`, `approve`, `comments`,
+`complete`, `create`, `diff`, `list`, `reviewers`, `show`, `vote`; and so on at
+every nesting level.
 
 Re-run the completion command after upgrading `ado` to pick up new
 subcommands and options.
@@ -149,14 +147,15 @@ ado skills install --target pi              # ~/.pi/agent/skills/
 ado skills install --target claude          # ~/.claude/skills/
 ado skills install --target cursor          # ~/.cursor/skills/
 ado skills install --target codex           # ~/.codex/skills/
-ado skills install --target copilot --repo .# ./.github/ado-cli/  (per-repo)
+ado skills install --target copilot --repo .  # ./.github/ado-cli/  (per-repo)
 
 # Verify the install
 ls ~/.pi/agent/skills/                       # you should see ado-cli/, ado-auth/, ado-ci/
 ```
 
 Once installed, the agent can `ado skills list`, `ado skills read <name>`, and
-`ado schema <command> --json` as native operations, with no shell-out overhead.
+`ado schema <name> --json` (quote a multi-word name: `ado schema "ci watch" --json`)
+as native operations, with no shell-out overhead.
 
 ---
 
@@ -168,7 +167,8 @@ Multiple auth methods, auto-resolved in priority order. **No `az` CLI required.*
 |----------|--------|-----|
 | 1 | CLI flags | `--org ORG --pat TOKEN` |
 | 2 | Environment variables | `ADO_ORG` + `ADO_PAT` |
-| 3 | Config file | `~/.ado_cli/config.json` (persistent) |
+| 3 | OS credential store | persistent, set via `ado login` |
+| 4 | Config file | `<config dir>/ado/config.toml` — org and method only, never a token |
 
 Auth via `ado login` defaults to browser-based OAuth when no `--pat` is
 given, and infers PAT login when `--pat` is present — no `az login` is
@@ -200,7 +200,7 @@ What happens:
 2. You sign in with AAD or MSA credentials
 3. The CLI captures the auth code on a localhost callback
 4. The CLI exchanges the code for an ARM token, then for an Azure DevOps
-   access token, and saves the token to `~/.ado_cli/config.json`
+   access token, and stores the token in the OS credential store
 5. Org is auto-detected from the token (or use `--org` to pin it)
 
 #### 2. Device code — recommended for SSH / no-browser sessions
@@ -226,7 +226,7 @@ sign-in on the other device, the CLI saves the token and you're logged in.
 
 #### 3. Personal Access Token (PAT) — recommended for CI / scripts
 
-Stores a PAT in `~/.ado_cli/config.json` for repeated use. Best for
+Stores a PAT in the OS credential store for repeated use. Best for
 automation, CI runners, and scripts. See
 [How to create a PAT](https://learn.microsoft.com/azure/devops/organizations/accounts/use-personal-access-tokens-to-authenticate).
 
@@ -250,24 +250,36 @@ ado projects list
 ```
 
 `ADO_PAT` is only read from the environment; it is never written to the
-config file. `ADO_ORG` is also accepted as a CLI flag (`--org myorg`).
+credential store or the config file. `ADO_ORG` is also accepted as a CLI flag
+(`--org myorg`).
 
 #### Check status / log out
 
 ```bash
 ado whoami       # Show current auth method, org, server
-ado logout       # Remove ~/.ado_cli/config.json
+ado logout       # Remove stored credentials
 ```
 
 ### Auth priority order
 
 When you run a command, the CLI resolves credentials in this order:
 
-1. `--pat` / `--org` CLI flags (per-invocation)
-2. `ADO_PAT` / `ADO_ORG` env vars (per-session)
-3. `~/.ado_cli/config.json` (persistent, set via `ado login`)
+1. `--pat` / `--org` / `--server` CLI flags (per-invocation)
+2. `ADO_PAT` / `ADO_ORG` / `ADO_SERVER` env vars (per-session)
+3. The OS credential store (persistent, set via `ado login`; macOS Keychain,
+   Windows Credential Manager, Linux secret service — falling back to
+   `<config dir>/ado/credentials.json`, mode 0600, where no store is reachable)
+4. `<config dir>/ado/config.toml`, which records the organization and method a
+   login stored — never the token
 
 The first source that provides both an org and a token wins.
+
+### Upgrading from the Elixir CLI
+
+On first use, a legacy install is imported once: `~/.ado_cli/config.json`'s
+organization, server and token are moved into the credential store and the config
+file, so an existing install keeps working without re-authenticating. The legacy
+file is not read again after that.
 
 ---
 
@@ -297,7 +309,7 @@ up-to-date reference is the `ado-cli` skill:
 
 ```bash
 ado skills read ado-cli
-# Or read on disk: cat priv/skills/ado-cli/SKILL.md
+# Or read on disk: cat crates/ado-skills/assets/ado-cli/SKILL.md
 ```
 
 Quick examples:
@@ -338,13 +350,12 @@ ado pipelines variables create MyProject 42 --key DEPLOY_TOKEN --value "ghp_xxx"
 # Iterations, areas, wikis
 ado iterations list MyProject MyTeam
 ado areas create MyProject --name Backend
-ado wikis create MyProject --name Engineering
+ado wikis pages create MyProject Engineering --path /Home --content "# Engineering"
 
 # Users, teams, security
 ado users list
 ado teams members list MyProject MyTeam
-ado security groups create MyProject --name "Deployers"
-ado security permissions namespaces
+ado security grant MyProject --yes-this-mutates-secret-read
 
 # Banners + packages
 ado banners set --message "Maintenance in progress" --type warning
@@ -385,126 +396,98 @@ ado pipelines vars create --help
 ### Setup
 
 ```bash
-# Install dependencies
-mix deps.get
+# Build the workspace (the toolchain is pinned by rust-toolchain.toml)
+cargo build
 
-# Compile
-mix compile
+# Run the test suite
+cargo test --workspace
 
-# Run tests
-mix test
-
-# Run in dev mode
-mix run -e 'AdoCli.CLI.run(System.argv())' -- projects list
+# Run the CLI from the workspace
+cargo run -q -p ado -- projects list
 ```
 
 ### Build
 
 ```bash
-# Escript (fast CLI binary for dev)
-mix escript.build
-./ado projects list
+# Dev build
+cargo build
+./target/debug/ado projects list
 
-# Burrito native binaries (for distribution)
-MIX_ENV=prod mix release
-# → burrito_out/  (macOS aarch64, Linux x86_64/aarch64, Windows x86_64/aarch64)
-```
-
-> `mix release` in dev produces an OTP system service (`start`/`stop`/`eval`).
-> Use `mix escript.build` for CLI iteration.
-
-### Documentation
-
-```bash
-# Generate HTML docs
-mix docs
-# Open doc/index.html
-
-# Also outputs: doc/llms.txt (AI context), doc/ado_cli.epub
+# The stripped release binary (what the budgets measure)
+just build-release        # cargo build --release --locked → target/release/ado
 ```
 
 ### Quality
 
 ```bash
-# Full CI pipeline (compile, format, credo, deps check, xref, dialyzer)
-mix ci
+# The full gate, in order: fmt, clippy, locked build, machete, deny,
+# nextest, the 85% coverage floor
+just ci
 
-# Quick checks
-mix lint         # Credo static analysis
-mix inspect      # Project structure map (reach)
-mix health       # Dead code & smell detection
-mix test         # Unit tests
+# Individual checks (also usable on their own)
+just fmt-check      # cargo fmt --check
+just lint           # cargo clippy --all-targets -- -D warnings
+just build-strict   # RUSTFLAGS="-Dwarnings" cargo build --locked
+just machete        # unused dependencies
+just deny           # advisories, licenses, bans, sources
+just nextest        # the workspace suite on the CI runner
+just coverage       # cargo llvm-cov --fail-under-lines 85
+
+# Budgets: startup time and release binary size
+just budget
 ```
+
+`just test` is the plain-cargo form of the suite (`cargo test --workspace`).
+`just npm-test` runs the npm package's tests.
 
 ---
 
 ## Quality Tools
 
-| Tool | Purpose | Mix Task |
-|------|---------|----------|
-| [Credo](https://hex.pm/packages/credo) | Static code analysis | `mix credo --strict` |
-| [Dialyxir](https://hex.pm/packages/dialyxir) | Type checking | `mix dialyzer` |
-| [ex_dna](https://hex.pm/packages/ex_dna) | Code duplication detection | `mix ex_dna` |
-| [ex_slop](https://hex.pm/packages/ex_slop) | AI-generated code slop checks | (loaded by Credo) |
-| [Reach](https://hex.pm/packages/reach) | Program dependence graph | `mix reach.map` |
-| [mix_audit](https://hex.pm/packages/mix_audit) | Dependency vulnerability audit | `mix deps.audit` |
-| [ExDoc](https://hex.pm/packages/ex_doc) | Documentation generation | `mix docs` |
+| Tool | Purpose | Command |
+|------|---------|---------|
+| [rustfmt](https://github.com/rust-lang/rustfmt) | Formatting | `cargo fmt --check` |
+| [Clippy](https://doc.rust-lang.org/clippy/) | Lints, warnings as errors | `cargo clippy --all-targets -- -D warnings` |
+| [nextest](https://nexte.st/) | Test runner | `cargo nextest run --workspace` |
+| [cargo-llvm-cov](https://github.com/taiki-e/cargo-llvm-cov) | Line coverage (85% floor) | `cargo llvm-cov --workspace --fail-under-lines 85` |
+| [cargo-machete](https://github.com/bnjbvr/cargo-machete) | Unused dependencies | `cargo machete` |
+| [cargo-deny](https://github.com/EmbarkStudios/cargo-deny) | Advisories, licenses, bans, sources | `cargo deny check advisories licenses bans sources` |
+| [insta](https://insta.rs/) | Snapshot tests | `cargo insta test` / `INSTA_UPDATE=always cargo test -p ado` |
+| [cargo-dist](https://opensource.axo.dev/cargo-dist/) | Release archives and installers | `dist plan` |
 
 ---
 
 ## Project Structure
 
+The workspace has four crates:
+
 ```
 ado_cli/
-├── lib/
-│   ├── ado_cli.ex                    # Main module (escript entry point)
-│   ├── ado_cli/
-│   │   ├── application.ex            # Burrito entry point
-│   │   ├── auth.ex                   # Multi-provider authentication (PAT, browser, device)
-│   │   ├── client.ex                 # Finch HTTP client with redirect handling
-│   │   ├── config_file.ex            # ~/.ado_cli/config.json persistence
-│   │   ├── skills.ex                 # Embedded skill file reader
-│   │   └── cli/
-│   │       ├── cli.ex                # CLI dispatch & global options
-│   │       ├── helpers.ex            # Shared output/error helpers
-│   │       ├── projects.ex           # projects list|show|create|update|delete
-│   │       ├── repos.ex              # repos list|show|create|delete
-│   │       ├── branch_policies.ex    # branch-policies list|show|create|update|delete
-│   │       ├── work_items.ex         # workitems list|show|query|create|update|delete|comments
-│   │       ├── pipelines.ex          # pipelines list|show|run|create|update|delete|vars|variables
-│   │       ├── builds.ex             # pipelines-builds (classic) list|show|queue|cancel|tags|definitions
-│   │       ├── folders.ex            # pipelines-folders list|create|delete
-│   │       ├── run_artifacts.ex      # pipelines-artifacts list|download
-│   │       ├── pull_requests.ex      # prs list|show|create|complete|abandon|approve|vote|comments
-│   │       ├── releases.ex           # releases list|show
-│   │       ├── iterations.ex         # iterations list|show|create|update|delete
-│   │       ├── areas.ex              # areas list|show|create|update|delete
-│   │       ├── wikis.ex              # wikis and pages list|show|create|update
-│   │       ├── teams.ex              # teams list|show|create|update|delete|members
-│   │       ├── users.ex              # users list|show|add|remove
-│   │       ├── extensions.ex         # extensions list|show|install|uninstall|enable|disable
-│   │       ├── agent_pools.ex        # agent-pools list|show|queues
-│   │       ├── connections.ex        # connections list|show
-│   │       ├── security.ex           # security groups + permissions
-│   │       ├── banners.ex            # banners show|set|delete
-│   │       ├── packages.ex           # packages list|versions|show
-│   │       ├── imports.ex            # imports list|show|create (GitHub→AzDo migration)
-│   │       ├── auth_commands.ex      # login command
-│   │       ├── logout.ex             # logout command
-│   │       ├── whoami.ex             # whoami command
-│   │       └── skills.ex             # skills list|read command
-│   └── mix/tasks/ci/
-│       └── dialyzer.ex              # CI dialyzer with Finch false-positive filter
-├── priv/skills/                      # Embedded skill content (loaded at compile time)
-│   ├── ado-cli/                      # Main reference
-│   ├── ado-auth/                     # Auth details
-│   └── ado-ci/                       # CI/CD patterns
-├── config/
-│   └── config.exs                    # Application configuration
-├── test/
-├── .credo.exs                        # Credo configuration (strict mode)
-├── AGENTS.md                         # CI quality gate principles
-└── mix.exs                           # Project definition & aliases
+├── crates/
+│   ├── ado/                          # The `ado` binary
+│   │   ├── src/main.rs               # Entry point, exit codes, output rendering
+│   │   ├── src/cli.rs                # The clap surface
+│   │   ├── src/context.rs            # Per-invocation state (config, store, client)
+│   │   ├── src/commands/             # One module per command group
+│   │   └── tests/cli_<area>.rs       # Per-area integration suites (mock-backed)
+│   ├── ado-core/                     # Envelope, errors, the sync ureq client,
+│   │                                 # auth, credential resolution, config,
+│   │                                 # the one-time legacy import
+│   ├── ado-skills/                   # The embedded `ado skills` assets
+│   │   └── assets/                   # skills: ado-cli, ado-auth, ado-ci
+│   │       ├── ado-cli/SKILL.md      # Main reference (+ references/*.md)
+│   │       ├── ado-auth/SKILL.md     # Auth details
+│   │       └── ado-ci/SKILL.md       # CI/CD patterns
+│   └── ado-testkit/                  # Dev-only: the axum mock, TempHome and fixtures
+├── docs/rust-rewrite/                # The contract record and the wave records
+├── npm/                              # The six npm packages
+├── github-page/                      # The project site
+├── scripts/npm-publish.sh            # The npm publish flow
+├── Cargo.toml                        # Workspace manifest (version source)
+├── rust-toolchain.toml               # The toolchain pin
+├── justfile                          # Every check, the budgets, the bump
+├── dist-workspace.toml               # cargo-dist configuration
+└── AGENTS.md                         # CI quality gate principles
 ```
 
 ## Command Reference
@@ -516,7 +499,7 @@ up-to-date reference is the **`ado-cli` skill** embedded in the binary:
 ado skills read ado-cli
 ```
 
-Or see the on-disk source at `priv/skills/ado-cli/SKILL.md`. The skill
+Or see the on-disk source at `crates/ado-skills/assets/ado-cli/SKILL.md`. The skill
 includes the full command table, conventions, and quick-start examples.
 
 ---
@@ -539,20 +522,19 @@ and per-endpoint coverage.
 | Sprints / Iterations | `{project}/_apis/work/teamsettings/iterations` | list, show, create, update, delete |
 | Area Paths | `{project}/_apis/wit/classificationNodes/areas` | list, show, create, update, delete |
 | Pipelines (YAML) | `{project}/_apis/pipelines`, `/runs` | list, show, run, create, update, delete |
-| Pipelines (Variables) | `{project}/_apis/pipelines/{id}/variables` | list, create, delete |
+| Pipelines (Variables) | `{project}/_apis/pipelines/{id}` (the definition's `variables`) | list, create, delete |
 | Variable Groups | `{project}/_apis/distributedtask/variablegroups` | list, show, create, update, delete |
 | Pipelines (Classic) | `{project}/_apis/build/builds` | list, show, queue, cancel, tags, definitions |
 | Pipelines (Folders) | `{project}/_apis/pipelines/folders` | list, create, delete |
 | Pipeline Artifacts | `{project}/_apis/build/builds/{id}/artifacts` | list, download |
 | Releases | `{project}/_apis/release/releases` | list, show |
-| Wikis | `{project}/_apis/wiki/wikis`, `pages` | list, show, create, update, delete |
+| Wikis | `{project}/_apis/wiki/wikis`, `pages` | list, show, pages (list/show/create/update) |
 | Teams | `_apis/teams` | list, show, create, update, delete, members |
-| Users | `_apis/accesscontrolentries` | list, show, add, remove |
+| Users | `_apis/userentitlements` | list, show, add, remove |
 | Extensions | `_apis/extensionmanagement/installedextensions` | list, show, install, uninstall, enable, disable |
 | Agent Pools | `_apis/distributedtask/pools`, `/queues` | list, show, queues |
 | Service Connections | `{project}/_apis/serviceendpoint/endpoints` | list, show |
-| Security Groups | `_apis/graph/groups` | list, show, create, delete, members |
-| Security Permissions | `_apis/securitynamespaces`, `_apis/permissions` | namespaces, list |
+| Security | `_apis/connectionData`, `_apis/accesscontrolentries` | grant, revoke (the caller's Library ViewSecrets bit) |
 | Admin Banners | `_apis/settings/entries/banners` | show, set, delete |
 | Universal Packages | `{project}/_apis/packaging/feeds/{id}/packages` | list, versions, show |
 
@@ -560,19 +542,20 @@ and per-endpoint coverage.
 
 ## CI Pipeline
 
-Every commit must pass the full CI gate (`mix ci`):
+Every commit must pass the full CI gate (`just ci`):
 
 | Step | Check |
 |------|-------|
-| 1 | `compile --all-warnings --warnings-as-errors` |
-| 2 | `format --check-formatted` |
-| 3 | `credo --strict` |
-| 4 | `deps.unlock --check-unused` |
-| 5 | `deps.audit` |
-| 6 | `xref graph --label compile-connected --fail-above 0` |
-| 7 | `dialyzer` (with Finch false-positive filtering) |
+| 1 | `cargo fmt --check` |
+| 2 | `cargo clippy --all-targets -- -D warnings` |
+| 3 | `RUSTFLAGS="-Dwarnings" cargo build --locked` |
+| 4 | `cargo machete` |
+| 5 | `cargo deny check advisories licenses bans sources` |
+| 6 | `cargo nextest run --workspace` |
+| 7 | `cargo llvm-cov --workspace --fail-under-lines 85` |
 
-See `AGENTS.md` for the full quality gate specification.
+See `AGENTS.md` for the full quality gate specification, and
+`docs/rust-rewrite/` for the contract record and the wave records.
 
 ---
 
@@ -626,13 +609,13 @@ ado skills read ado-auth              # Authentication details (PAT, browser, MS
 ado skills read ado-ci                # CI/CD patterns: GitHub Actions, GitLab CI, secrets, scripts
 ```
 
-Skills are also on disk in `priv/skills/{name}/SKILL.md` for repository-level
+Skills are also on disk in `crates/ado-skills/assets/{name}/SKILL.md` for repository-level
 inspection or to copy into an agent's `~/.claude/skills/` directory.
 
 ### For AI agents: how to use these skills
 
 1. **Read `ado-cli` first** when you need to discover available commands. The
-   `Command Groups` table in that skill is the canonical reference — it
+   reference table in that skill is the canonical index — it
    covers all 24 service areas (projects, repos, workitems, pipelines,
    vars, builds, artifacts, folders, prs, releases, iterations, areas,
    wikis, teams, users, extensions, agent-pools, connections, security
@@ -647,7 +630,8 @@ inspection or to copy into an agent's `~/.claude/skills/` directory.
    skill documents:
    - The recommended env-var-based auth (`ADO_ORG` + `ADO_PAT`)
    - JSON output (`ado --json ... | jq ...`) for scripting
-   - Exit codes (`0` success, `1` generic, `2` API error, `3` auth)
+   - Exit codes (`0` success, `1` for any error, `2` only for a cancelled
+     `ado ci watch`)
    - GitHub Actions and GitLab CI examples
 
 4. **Always prefer `--json` flag** when scripting. The CLI emits stable
@@ -677,7 +661,7 @@ ado skills read ado-cli > ~/.claude/skills/ado-cli/SKILL.md
 
 If your agent does **not** support the skills protocol, paste the output of
 `ado skills read ado-cli` into its context — it contains the full command
-reference (~130 lines).
+reference (196 lines at this version).
 
 ### Skills vs REST API
 
@@ -712,28 +696,34 @@ before they go public.
 ### Release flow
 
 ```bash
-# 1. Bump version in mix.exs, commit, tag
-$EDITOR mix.exs                          # bump version: "0.2.0" -> "0.4.4"
-git add -u && git commit -m "v0.2.0"
-git tag -a v0.2.0 -m "Release 0.2.0"
-git push github main v0.2.0
+# 1. Bump every live version source (asserting each one)
+just bump 1.0.0-rc.1
+# 2. Write the CHANGELOG.md entry by hand (the bump does not touch it)
+# 3. Confirm the gate
+just ci && just npm-test
+# 4. Commit and tag (the maintainer's step)
+git add -u && git commit -m 'chore: bump to 1.0.0-rc.1'
+git tag -a v1.0.0-rc.1 -m 'Release 1.0.0-rc.1'
+git push github main v1.0.0-rc.1
 ```
 
-Pushing the tag triggers the `release` workflow, which builds the
-binary for all 5 platforms on native runners and creates the GitHub
-Release with the archives and installers attached.
+Pushing the tag triggers the dist-generated `release` workflow, which builds the
+five native archives on native runners and creates the GitHub Release with the
+archives, installers and checksums attached. The tag also decides the version:
+the archives are named by target triple and never carry the version, so
+`releases/latest/download/<archive>` always resolves to the newest release.
 
 Wait a few minutes for CI to finish. Verify the release is up:
 
 ```bash
-gh release view v0.2.0
+gh release view v1.0.0-rc.1
 ```
 
 Then publish to npm locally:
 
 ```bash
-# Downloads binaries from the v0.2.0 release + publishes all 6 pkgs
-./scripts/npm-publish.sh 0.2.0
+# Downloads the five archives from the v1.0.0-rc.1 release + publishes all 6 pkgs
+./scripts/npm-publish.sh 1.0.0-rc.1
 ```
 
 That's it. The script handles everything else.
@@ -742,22 +732,25 @@ That's it. The script handles everything else.
 
 `scripts/npm-publish.sh VERSION` runs four steps:
 
-1. **`gh release download v${VERSION}`** — fetches the 5 binaries
-   (`ado-${VERSION}-{macos-aarch64,macos-x86_64,linux-x86_64,linux-aarch64,windows-x86_64.exe}`)
-   from the GitHub Release you just tagged.
-2. **Copies each binary** into
+1. **`gh release download v${VERSION}`** — fetches the five cargo-dist archives
+   (`ado-{aarch64-apple-darwin,x86_64-apple-darwin,x86_64-unknown-linux-musl,aarch64-unknown-linux-musl}.tar.gz`
+   and `ado-x86_64-pc-windows-msvc.zip`) from the GitHub Release you just tagged.
+2. **Unpacks each archive** and copies the binary into
    `npm/@gilbertwong1996-ado-<platform>-<arch>/bin/ado{,.exe}`.
-3. **`jq` bumps the version** in all 6 `package.json` files
-   (`@gilbertwong1996/ado` and the 5 platform packages).
+3. **`jq` bumps the version** in all 6 `package.json` files — `version`, and the
+   main package's five `optionalDependencies`.
 4. **`npm publish --access public`** for the 5 platform packages first,
    then the main package last (so its `optionalDependencies` resolve
    cleanly).
 
+The main package's `postinstall` downloads the platform archive itself when npm
+skipped the optional dependency, and installs shell completion.
+
 ### Useful flags
 
 ```bash
-./scripts/npm-publish.sh 0.2.0 --dry-run       # show what would happen, no network
-./scripts/npm-publish.sh 0.2.0 --skip-download  # binaries already in place
+./scripts/npm-publish.sh 1.0.0-rc.1 --dry-run       # show what would happen, no network
+./scripts/npm-publish.sh 1.0.0-rc.1 --skip-download  # binaries already in place
 ```
 
 ### Verifying a publish
@@ -778,9 +771,10 @@ ado skills install --target pi
 
 | Tool | Why | How to get it |
 |---|---|---|
-| `gh` | Download release binaries | `brew install gh && gh auth login` |
+| `gh` | Download release archives | `brew install gh && gh auth login` |
 | `npm` | Publish packages | `brew install node` (bundles npm) |
 | `jq` | Edit `package.json` files | `brew install jq` |
+| `tar` | Unpack the `.tar.gz`/`.zip` archives | system `tar` |
 | An `npm` token with publish rights on `@gilbertwong1996/*` | Auth | `npm login` then verify with `npm whoami` |
 
 The script uses whatever `npm` authentication is in your environment
@@ -812,7 +806,7 @@ locally. The script has no assumptions about where it runs.
 npm allows unpublishing within 72 hours of release:
 
 ```bash
-npm unpublish @gilbertwong1996/ado@0.2.0
+npm unpublish @gilbertwong1996/ado@1.0.0-rc.1
 ```
 
 After 72 hours, you'll need to publish a new patch version. Prefer
