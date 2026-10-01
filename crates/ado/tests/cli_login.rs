@@ -51,17 +51,12 @@ const ORACLE_MISSING_PAT_PLAIN: &str =
 /// The frozen escript's `--json` envelope for a missing `--org`.
 const ORACLE_MISSING_ORG_JSON: &str = r#"{"error":{"code":"validation_error","details":{"env_var":"ADO_ORG","option":"--org"},"message":"--org is required for method='pat' (or set ADO_ORG env var)"},"ok":false}"#;
 
-/// The frozen escript's `--json` envelope for an unknown method. Ours differs by
-/// the words only: `browser` is not shipped in this build, so the suggestion list
-/// and the message name `pat` and `device`.
+/// The frozen escript's `--json` envelope for an unknown method. The two sides are
+/// byte-identical since Wave 3's Task 10 shipped the browser method: the
+/// suggestion list and the message name all three of the oracle's methods.
 const ORACLE_UNKNOWN_METHOD_JSON: &str = r#"{"error":{"code":"validation_error","details":{"valid_methods":["browser","pat","device"]},"message":"Unknown method 'bogus'. Use 'browser', 'pat', or 'device'."},"ok":false}"#;
 
-const UNKNOWN_METHOD_JSON: &str = r#"{"error":{"code":"validation_error","details":{"valid_methods":["pat","device"]},"message":"Unknown method 'bogus'. Use 'pat' or 'device'."},"ok":false}"#;
-
-/// What the two shipped methods are, and nothing else: the message `browser` gets
-/// names them (`--method browser` is Wave 3, so it is a validation error rather
-/// than a silent no-op).
-const BROWSER_JSON: &str = r#"{"error":{"code":"validation_error","details":{"valid_methods":["pat","device"]},"message":"Login method 'browser' is not available in this build. Use '--method pat' or '--method device'."},"ok":false}"#;
+const UNKNOWN_METHOD_JSON: &str = ORACLE_UNKNOWN_METHOD_JSON;
 
 /// The PAT the success tests store; asserted absent from `config.toml`.
 const PAT: &str = "pat-secret-token";
@@ -416,8 +411,9 @@ fn a_blank_value_is_not_a_value() {
 }
 
 /// The oracle rejects any method that is not `browser`, `pat` or `device`, and
-/// `device_code` is one of them (`Unknown method 'device_code'`); ours rejects the
-/// same set minus the browser it does not ship.
+/// `device_code` is one of them (`Unknown method 'device_code'`); this build
+/// rejects the same set and names the same three methods (Wave 3 shipped the
+/// browser flow, so the words and `valid_methods` are the oracle's exactly).
 #[test]
 fn an_unknown_method_is_a_validation_error() {
     let home = TempHome::new();
@@ -429,11 +425,6 @@ fn an_unknown_method_is_a_validation_error() {
 
     assert_eq!(output.status.code(), Some(1));
     assert_eq!(stdout_of(&output), format!("{UNKNOWN_METHOD_JSON}\n"));
-    assert_ne!(
-        stdout_of(&output),
-        format!("{ORACLE_UNKNOWN_METHOD_JSON}\n"),
-        "the oracle suggests browser, which this build does not ship"
-    );
 
     let spelled = run(
         &home,
@@ -444,7 +435,11 @@ fn an_unknown_method_is_a_validation_error() {
     let envelope: Value = serde_json::from_str(&stdout_of(&spelled)).expect("a JSON document");
     assert_eq!(
         envelope["error"]["message"],
-        json!("Unknown method 'device_code'. Use 'pat' or 'device'.")
+        json!("Unknown method 'device_code'. Use 'browser', 'pat', or 'device'.")
+    );
+    assert_eq!(
+        envelope["error"]["details"]["valid_methods"],
+        json!(["browser", "pat", "device"])
     );
     assert_nothing_written(&home);
 }
@@ -493,36 +488,6 @@ fn blank_environment_values_are_not_values() {
     assert_nothing_written(&home);
 }
 
-/// Wave 1 ships `pat` and `device` only: `browser` is Wave 3, and so is the
-/// no-`--method` default it would have selected. Both are validation errors that
-/// name what ships — never a silent no-op.
-#[test]
-fn browser_login_is_not_shipped() {
-    let home = TempHome::new();
-
-    let explicit = run(
-        &home,
-        &["login", "--method", "browser", "--org", ORG, "--json"],
-    );
-
-    assert_eq!(explicit.status.code(), Some(1));
-    assert_eq!(stdout_of(&explicit), format!("{BROWSER_JSON}\n"));
-
-    let inferred = run(&home, &["login", "--org", ORG, "--json"]);
-
-    assert_eq!(inferred.status.code(), Some(1));
-    assert_eq!(
-        stdout_of(&inferred),
-        format!("{BROWSER_JSON}\n"),
-        "no --method and no PAT is the browser method the oracle would have run"
-    );
-    assert!(
-        stderr_of(&run(&home, &["login"])).contains("not available in this build"),
-        "a bare `ado login` explains itself"
-    );
-    assert_nothing_written(&home);
-}
-
 /// D26: the oracle's own guard exempts `device` from the `--org` requirement and
 /// then writes a credential keyed by nothing (`org: nil`) with a token. Our store
 /// and `config.toml` are per-organization, so an org-less device login has nowhere
@@ -551,4 +516,374 @@ fn device_login_without_an_org_is_a_validation_error() {
         "[Validation error] --org is required for method='device' (or set ADO_ORG env var)\n"
     );
     assert_nothing_written(&home);
+}
+
+// ── the browser flow, through the real binary and a scripted opener ─────────
+//
+// The flow's identity and accounts origins are seams the *binary* does not
+// expose (the frozen CLI hardcodes them and this build adds no override), so the
+// end-to-end paths a test can drive are the ones that stop before a network
+// call: the state comparison, a callback that carries an OAuth `error`, and the
+// argv/default-method resolution. Everything the flow does is exercised for
+// real — the loopback listener, the request it reads, the URL it prints, the
+// `open` it calls — while `login.microsoftonline.com` and
+// `app.vssps.visualstudio.com` are never contacted. The full exchange and the
+// org auto-detect run against local fakes in
+// `crates/ado/src/commands/login.rs`'s unit tests.
+
+/// The `open` the flow calls, put in front of `PATH`. It records the authorize
+/// URL it was handed and answers the callback that URL advertises. A matching
+/// state would make the flow exchange the code at the real endpoint, so both
+/// modes here stop before the exchange (a mismatched state, an OAuth error) —
+/// which is also what makes them deterministic.
+#[cfg(unix)]
+const OPENER_SHIM: &str = r#"#!/usr/bin/env bash
+set -u
+printf '%s\n' "$1" >"$ADO_BROWSER_URL_FILE"
+port=$(printf '%s' "$1" | sed -n 's/.*redirect_uri=http%3A%2F%2Flocalhost%3A\([0-9][0-9]*\).*/\1/p')
+(
+    for _ in $(seq 1 600); do
+        case ${ADO_BROWSER_CALLBACK_MODE:-none} in
+            mismatch) query='code=TEST-CODE&state=NOT-THE-STATE' ;;
+            error) query='error=access_denied' ;;
+            *) exit 0 ;;
+        esac
+        if exec 3<>"/dev/tcp/127.0.0.1/$port" 2>/dev/null; then
+            printf 'GET /?%s HTTP/1.1\r\nHost: localhost\r\n\r\n' "$query" >&3
+            exec 3<&- 3>&-
+            exit 0
+        fi
+        sleep 0.05
+    done
+) >/dev/null 2>&1 &
+exit 0
+"#;
+
+/// A `TempHome` with the shim installed, and the command builder that points the
+/// child at it.
+#[cfg(unix)]
+struct Browser {
+    home: TempHome,
+    shim: std::path::PathBuf,
+    url_file: std::path::PathBuf,
+}
+
+#[cfg(unix)]
+impl Browser {
+    fn new() -> Browser {
+        use std::os::unix::fs::PermissionsExt;
+
+        let home = TempHome::new();
+        let shim = home.path().join("bin");
+        let url_file = home.path().join("authorize-url");
+        fs::create_dir_all(&shim).expect("the shim directory");
+        let opener = shim.join("open");
+        fs::write(&opener, OPENER_SHIM).expect("the shim");
+        fs::set_permissions(&opener, fs::Permissions::from_mode(0o755)).expect("the shim is runnable");
+
+        Browser {
+            home,
+            shim,
+            url_file,
+        }
+    }
+
+    fn command(&self, mode: &str, args: &[&str]) -> Command {
+        let mut command = command(&self.home, args);
+        let path = std::env::var_os("PATH").unwrap_or_default();
+        command
+            .env(
+                "PATH",
+                format!("{}:{}", self.shim.display(), path.to_string_lossy()),
+            )
+            .env("ADO_BROWSER_URL_FILE", &self.url_file)
+            .env("ADO_BROWSER_CALLBACK_MODE", mode);
+        command
+    }
+
+    fn run(&self, mode: &str, args: &[&str]) -> Output {
+        self.command(mode, args).output().expect("run ado")
+    }
+
+    /// The authorize URL the flow handed to the opener.
+    fn url(&self) -> String {
+        fs::read_to_string(&self.url_file)
+            .expect("the opener was called and recorded a URL")
+            .trim()
+            .to_owned()
+    }
+}
+
+/// The authorize URL's query, decoded pair by pair and in the order the flow
+/// wrote them: `+` is a space, `%XX` is a byte.
+#[cfg(unix)]
+fn query_pairs(url: &str) -> Vec<(String, String)> {
+    let query = url.split_once('?').expect("a query string").1;
+
+    query
+        .split('&')
+        .filter(|pair| !pair.is_empty())
+        .map(|pair| {
+            let (key, value) = pair.split_once('=').unwrap_or((pair, ""));
+
+            (decode(key), decode(value))
+        })
+        .collect()
+}
+
+#[cfg(unix)]
+fn decode(value: &str) -> String {
+    let bytes = value.as_bytes();
+    let mut decoded = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+
+    while index < bytes.len() {
+        match bytes[index] {
+            b'+' => {
+                decoded.push(b' ');
+                index += 1;
+            }
+            b'%' if index + 2 < bytes.len() => {
+                let hex = std::str::from_utf8(&bytes[index + 1..index + 3])
+                    .ok()
+                    .and_then(|hex| u8::from_str_radix(hex, 16).ok());
+
+                match hex {
+                    Some(byte) => {
+                        decoded.push(byte);
+                        index += 3;
+                    }
+                    None => {
+                        decoded.push(bytes[index]);
+                        index += 1;
+                    }
+                }
+            }
+            byte => {
+                decoded.push(byte);
+                index += 1;
+            }
+        }
+    }
+
+    String::from_utf8_lossy(&decoded).into_owned()
+}
+
+#[cfg(unix)]
+fn value<'a>(pairs: &'a [(String, String)], key: &str) -> &'a str {
+    pairs
+        .iter()
+        .find(|(name, _)| name == key)
+        .map(|(_, value)| value.as_str())
+        .unwrap_or_else(|| panic!("the authorize URL has no `{key}`"))
+}
+
+/// The oracle's authorize URL, captured byte for byte from the frozen escript
+/// (Task 10's `browser-mismatch`): the host, the path, and — the part a port
+/// gets wrong by accident — `URI.encode_query/1` over an Elixir map, i.e. this
+/// exact parameter order.
+#[cfg(unix)]
+const AUTHORIZE_PREFIX: &str =
+    "https://login.microsoftonline.com/organizations/oauth2/v2.0/authorize?";
+
+#[cfg(unix)]
+const AUTHORIZE_KEYS: [&str; 12] = [
+    "scope",
+    "state",
+    "client_info",
+    "prompt",
+    "claims",
+    "client_id",
+    "code_challenge",
+    "code_challenge_method",
+    "nonce",
+    "redirect_uri",
+    "response_mode",
+    "response_type",
+];
+
+/// The whole URL: host, path, parameter order and values. The random parts (the
+/// state, the PKCE challenge, the nonce, the port) are asserted by shape — the
+/// flow generates them — and everything else is the oracle's bytes.
+#[cfg(unix)]
+#[test]
+fn the_printed_authorize_url_is_the_oracles() {
+    let browser = Browser::new();
+    let output = browser.run("mismatch", &["login", "--method", "browser", "--org", ORG, "--json"]);
+
+    assert_eq!(output.status.code(), Some(1));
+    let url = browser.url();
+    assert!(
+        url.starts_with(AUTHORIZE_PREFIX),
+        "the oracle's host and path: {url}"
+    );
+
+    let pairs = query_pairs(&url);
+    let keys: Vec<&str> = pairs.iter().map(|(key, _)| key.as_str()).collect();
+    assert_eq!(
+        keys, AUTHORIZE_KEYS,
+        "the oracle's parameter order (`URI.encode_query/1` over an Elixir map)"
+    );
+    assert_eq!(
+        value(&pairs, "scope"),
+        "https://management.core.windows.net/.default offline_access openid profile"
+    );
+    assert_eq!(value(&pairs, "response_type"), "code");
+    assert_eq!(value(&pairs, "response_mode"), "query");
+    assert_eq!(value(&pairs, "prompt"), "select_account");
+    assert_eq!(value(&pairs, "client_info"), "1");
+    assert_eq!(
+        value(&pairs, "claims"),
+        r#"{"access_token": {"xms_cc": {"values": ["CP1"]}}}"#,
+        "the CP1 claims blob, spaces and all"
+    );
+    assert_eq!(
+        value(&pairs, "client_id"),
+        "04b07795-8ddb-461a-bbee-02f9e1bf7b46",
+        "the Azure CLI public client"
+    );
+    assert_eq!(value(&pairs, "code_challenge_method"), "S256");
+    assert_eq!(
+        value(&pairs, "code_challenge").len(),
+        43,
+        "base64url(SHA256(verifier)), unpadded: {}",
+        value(&pairs, "code_challenge")
+    );
+    assert_eq!(value(&pairs, "state").len(), 22, "base64url(16 bytes), unpadded");
+    assert_eq!(value(&pairs, "nonce").len(), 22, "base64url(16 bytes), unpadded");
+    let redirect = value(&pairs, "redirect_uri");
+    assert!(
+        redirect.starts_with("http://localhost:"),
+        "the loopback redirect the flow bound: {redirect}"
+    );
+    assert!(
+        redirect["http://localhost:".len()..].parse::<u16>().is_ok(),
+        "the redirect's port is the one the listener bound: {redirect}"
+    );
+
+    // The URL is printed before the browser is opened, and the opener is handed
+    // the same string.
+    let stdout = stdout_of(&output);
+    let message: Value = serde_json::from_str(stdout.lines().next().expect("a first line"))
+        .expect("the announcement is one JSON document");
+    assert_eq!(message["ok"], json!(true));
+    assert_eq!(
+        message["message"],
+        json!(format!(
+            "Opening browser to sign in to {ORG}...\n  {url}"
+        )),
+        "the URL reaches stdout under --json, and it is the one the opener got"
+    );
+}
+
+/// `ADO_OAUTH_CLIENT_ID` is the identity app the flow talks to (spec §4.7): the
+/// oracle's *escript* ignores it at runtime — its module attribute is evaluated
+/// at compile time — but the documented behaviour, and this build's, is a runtime
+/// read.
+#[cfg(unix)]
+#[test]
+fn the_oauth_client_id_override_reaches_the_authorize_url() {
+    let browser = Browser::new();
+    let override_id = "11111111-2222-3333-4444-555555555555";
+
+    let mut command = browser.command("mismatch", &["login", "--method", "browser", "--org", ORG]);
+    command.env("ADO_OAUTH_CLIENT_ID", override_id);
+    let output = command.output().expect("run ado");
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(value(&query_pairs(&browser.url()), "client_id"), override_id);
+
+    for blank in ["", "  "] {
+        let mut command = browser.command("mismatch", &["login", "--method", "browser", "--org", ORG]);
+        command.env("ADO_OAUTH_CLIENT_ID", blank);
+        command.output().expect("run ado");
+
+        assert_eq!(
+            value(&query_pairs(&browser.url()), "client_id"),
+            "04b07795-8ddb-461a-bbee-02f9e1bf7b46",
+            "a blank override is not a value (D16): {blank:?}"
+        );
+    }
+}
+
+/// The state is compared before the code is used (`login_browser/1`'s `^state`
+/// match), so a callback that carries the wrong state stops the flow with the
+/// oracle's sentence and exchanges nothing.
+#[cfg(unix)]
+#[test]
+fn a_mismatched_state_stops_the_browser_flow() {
+    let browser = Browser::new();
+    let output = browser.run(
+        "mismatch",
+        &["login", "--method", "browser", "--org", ORG, "--json"],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    let stdout = stdout_of(&output);
+    let mut lines = stdout.lines();
+    let _announcement = lines.next().expect("the URL announcement");
+    let envelope: Value = serde_json::from_str(lines.next().expect("the error envelope"))
+        .expect("a JSON document");
+    assert_eq!(envelope["ok"], json!(false));
+    assert_eq!(envelope["error"]["code"], json!("auth_required"));
+    assert_eq!(
+        envelope["error"]["message"],
+        json!("Login failed: State mismatch — possible CSRF attack.")
+    );
+    assert_eq!(
+        envelope["error"]["details"]["reason"],
+        json!("State mismatch — possible CSRF attack.")
+    );
+    assert_nothing_written(&browser.home);
+
+    let plain = browser.run("mismatch", &["login", "--method", "browser", "--org", ORG]);
+    assert_eq!(plain.status.code(), Some(1));
+    assert_eq!(
+        stderr_of(&plain),
+        "[Auth required] Login failed: State mismatch — possible CSRF attack.\n"
+    );
+    assert_nothing_written(&browser.home);
+}
+
+/// No `--method` and no PAT is the browser method (`resolve_method/1`), and an
+/// OAuth `error` in the callback is the oracle's sentence — again before the
+/// exchange, so no endpoint is contacted.
+#[cfg(unix)]
+#[test]
+fn login_without_a_method_resolves_to_the_browser_flow() {
+    let browser = Browser::new();
+    let output = browser.run("error", &["login", "--org", ORG, "--json"]);
+
+    assert_eq!(output.status.code(), Some(1));
+    let stdout = stdout_of(&output);
+    let envelope: Value = serde_json::from_str(stdout.lines().last().expect("the envelope"))
+        .expect("a JSON document");
+    assert_eq!(
+        envelope["error"]["message"],
+        json!("Login failed: Authorization failed: access_denied")
+    );
+    assert!(
+        !browser.url().is_empty(),
+        "the flow ran: the opener was handed the authorize URL"
+    );
+    assert_nothing_written(&browser.home);
+}
+
+/// An explicit `--method browser` is accepted, and an org-less browser login is
+/// *not* refused up front the way `device` is (D26): the flow starts, because
+/// auto-detection is what resolves the organization (recorded in the inventory).
+#[cfg(unix)]
+#[test]
+fn an_org_less_browser_login_starts_the_flow() {
+    let browser = Browser::new();
+    let output = browser.run("error", &["login", "--method", "browser"]);
+
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(
+        stderr_of(&output),
+        "[Auth required] Login failed: Authorization failed: access_denied\n"
+    );
+
+    let pairs = query_pairs(&browser.url());
+    assert_eq!(value(&pairs, "response_type"), "code");
+    assert_nothing_written(&browser.home);
 }
