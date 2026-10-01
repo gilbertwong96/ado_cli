@@ -16,7 +16,7 @@
 //!     `"pool"`/`"agents"`, so its four field reads are all `nil`; this build
 //!     reads the merged JSON object, whose keys are strings, so the same layout
 //!     carries the pool;
-//!   * `print_agents_detail/2` prints only for a **list** `agents` member, and
+//!   * `print_agents_detail/1` prints only for a **list** `agents` member, and
 //!     the wrapped value is the agents endpoint's whole body (a map), so the
 //!     frozen CLI prints no agents at all. This build hands the human formatter
 //!     the endpoint body's `value` list ([`human_view`]), so the block prints
@@ -207,7 +207,7 @@ fn queue_pool_name(queue: &Value) -> String {
 }
 
 /// The value handed to the human formatter: the agents member unwrapped from the
-/// endpoint's body map to its `value` list, so `print_agents_detail/2`'s list
+/// endpoint's body map to its `value` list, so `print_agents_detail/1`'s list
 /// guard is reached and the block prints (Ruling B3 — D42's repair). Every other
 /// shape is left alone: the bare-pool path (a failed agents fetch) and a body
 /// without a `value` list keep the no-block detail.
@@ -226,7 +226,7 @@ fn human_view(data: &Value) -> Value {
 }
 
 /// The module's `print_pool_detail/1`: the `─` rule, the four labelled fields,
-/// and the agents block `print_agents_detail/2` draws for a **list** `agents`
+/// and the agents block `print_agents_detail/1` draws for a **list** `agents`
 /// member. The pool is the merged result's `pool` member, or the whole result
 /// when the agents fetch failed. The command calls this with [`human_view`]'s
 /// result, so the agents member is the endpoint's `value` list and the block is

@@ -473,23 +473,41 @@ fn attachment_name(metadata: &Value) -> Option<String> {
         .map(str::to_owned)
 }
 
+/// The control characters a server-supplied name may not carry into this build's
+/// output: that name is the one remote string that reaches the terminal here
+/// (Ruling A2's F2), so the terminal's own language is not spoken from it.
+fn strip_control(name: &str) -> String {
+    name.chars()
+        .filter(|character| !character.is_control())
+        .collect()
+}
+
 /// The server-supplied name reduced to the one path component it may write
 /// (Ruling A2): `file_name/1` drops every separator and a trailing one, and a
 /// name that is empty, `.` or `..` — or terminates in one — has no component at
-/// all. A name without a separator is returned unchanged, so a real filename
+/// all. Control characters are removed before the name is used anywhere — the
+/// write target, the request's `fileName` and the success line (F2's deliberate
+/// divergence: the frozen writes and prints the name verbatim). A name without a
+/// separator or a control character is returned unchanged, so a real filename
 /// never moves; the reduction only matters when the name carries path structure.
 fn safe_attachment_name(name: &str) -> Option<String> {
-    Path::new(name)
-        .file_name()
-        .and_then(|component| component.to_str())
-        .filter(|component| !component.is_empty() && *component != "." && *component != "..")
-        .map(str::to_owned)
+    let component = Path::new(name).file_name()?.to_str()?;
+    let cleaned = strip_control(component);
+
+    if cleaned.is_empty() || cleaned == "." || cleaned == ".." {
+        return None;
+    }
+
+    Some(cleaned)
 }
 
 /// The refusal an unusable server name takes. The caller can always pass
-/// `--output`, which is why the wording names it, and the name is quoted so the
-/// surprising input is visible in the error.
+/// `--output`, which is why the wording names it, and the name is quoted — with
+/// control characters removed, because it is printed too — so the surprising
+/// input is visible in the error.
 fn unusable_attachment_name(attachment_id: &str, name: &str) -> AdoError {
+    let name = strip_control(name);
+
     AdoError::validation(format!(
         "Attachment '{attachment_id}' has an unusable server-supplied name '{name}'; pass --output to choose the file name"
     ))
@@ -1269,6 +1287,36 @@ mod tests {
         assert_eq!(
             error.message,
             "Attachment 'att-up' has an unusable server-supplied name '..'; pass --output to choose the file name"
+        );
+    }
+
+    /// F2: the name is the one remote string that reaches the terminal, so its
+    /// control characters are removed before it is used anywhere — the write
+    /// target, the request's `fileName` and the success line alike.
+    #[test]
+    fn the_attachment_name_carries_no_control_characters() {
+        assert_eq!(
+            safe_attachment_name("evil\u{1b}[31mred\u{1b}[0m.bin").as_deref(),
+            Some("evil[31mred[0m.bin")
+        );
+        assert_eq!(
+            safe_attachment_name("evil\u{0}.bin").as_deref(),
+            Some("evil.bin")
+        );
+        assert_eq!(
+            safe_attachment_name("a\nb.txt").as_deref(),
+            Some("ab.txt"),
+            "a control character is removed, not replaced"
+        );
+        assert_eq!(
+            safe_attachment_name("\u{1b}\u{9b}").as_deref(),
+            None,
+            "a name that is only control characters has no component left to write"
+        );
+        assert_eq!(
+            unusable_attachment_name("att-1", "\u{1b}").message,
+            "Attachment 'att-1' has an unusable server-supplied name ''; pass --output to choose the file name",
+            "the refusal prints the stripped name, not the escape"
         );
     }
 }

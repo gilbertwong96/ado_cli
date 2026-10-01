@@ -21,6 +21,7 @@
 use std::io::{Read, Write};
 use std::net::{Ipv4Addr, TcpListener, TcpStream};
 use std::process::{Command, Stdio};
+use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
@@ -49,6 +50,20 @@ pub const ACCEPT_TIMEOUT: Duration = Duration::from_secs(120);
 /// The oracle's `:gen_tcp.recv(socket, 0, 2000)`: a request that has not completed
 /// by then is parsed as it stands.
 pub const READ_TIMEOUT: Duration = Duration::from_secs(2);
+
+/// The largest header block the listener will buffer: 8 KiB without a `\r\n\r\n`
+/// is not a browser callback, so the read stops and the bytes are parsed as they
+/// stand (the frozen `recv_all/2` grows the block without a cap).
+const MAX_HEADER_BYTES: usize = 8 * 1024;
+
+/// The cap on the whole request, body included: a header declaring gigabytes of
+/// `Content-Length` cannot grow the buffer past this before the read stops.
+const MAX_REQUEST_BYTES: usize = 1 << 20;
+
+/// The read phase's whole deadline. The frozen bounds each `recv` at two seconds
+/// but lets a peer that dribbles a byte just under that hold the phase open
+/// forever; this bounds the phase as one interval and parses what arrived.
+const READ_DEADLINE: Duration = Duration::from_secs(10);
 
 /// `@tenant`, the issuer the authorize URL and the code exchange use (the v2.0
 /// paths, where the device flow's poll and the refresh exchange use the v1.0 ones).
@@ -121,9 +136,12 @@ pub trait Callback {
 }
 
 /// `listen_for_code/1` + `wait_for_callback/1`: bind `127.0.0.1:0`, accept one
-/// callback, reply with [`REPLY_PAGE`], and answer what the request carried.
+/// callback, reply with [`REPLY_PAGE`], and answer what the request carried. The
+/// listener lives in an `Option` so [`LoopbackCallback::wait`] can take it: it is
+/// dropped — closed — as soon as the callback is answered, like the oracle's
+/// `after` clause, instead of living to the end of the flow.
 pub struct LoopbackCallback {
-    listener: TcpListener,
+    listener: Mutex<Option<TcpListener>>,
     port: u16,
     accept_timeout: Duration,
     read_timeout: Duration,
@@ -152,7 +170,7 @@ impl LoopbackCallback {
             .port();
 
         Ok(LoopbackCallback {
-            listener,
+            listener: Mutex::new(Some(listener)),
             port,
             accept_timeout,
             read_timeout,
@@ -166,10 +184,15 @@ impl Callback for LoopbackCallback {
     }
 
     fn wait(&self) -> Result<Authorization, AdoError> {
+        let Some(listener) = self.listener.lock().expect("the callback listener").take() else {
+            return Err(auth_failed(
+                "Cannot accept the browser callback: this listener has already answered",
+            ));
+        };
         let deadline = Instant::now() + self.accept_timeout;
 
         let mut stream = loop {
-            match self.listener.accept() {
+            match listener.accept() {
                 Ok((stream, _)) => break stream,
                 Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
                     if Instant::now() >= deadline {
@@ -189,7 +212,7 @@ impl Callback for LoopbackCallback {
         // macOS, so the accepted stream is put back in blocking mode before it is
         // read.
         let _ = stream.set_nonblocking(false);
-        let data = read_request(&mut stream, self.read_timeout);
+        let data = read_request(&mut stream, self.read_timeout, READ_DEADLINE);
         let result = parse_request(&data);
         let _ = stream.write_all(&reply_bytes());
         let _ = stream.flush();
@@ -210,12 +233,27 @@ fn reply_bytes() -> Vec<u8> {
 /// The request, as far as the browser got: the header block's end, plus a body of
 /// the length a `Content-Length` header declares. A request without one is complete
 /// once the headers are — which is what makes a GET instant, where the frozen waits
-/// its two seconds every time.
-fn read_request(stream: &mut TcpStream, read_timeout: Duration) -> Vec<u8> {
+/// its two seconds every time. The read is bounded three ways the frozen is not:
+/// `MAX_HEADER_BYTES`, `MAX_REQUEST_BYTES` and the read deadline.
+fn read_request(
+    stream: &mut TcpStream,
+    read_timeout: Duration,
+    read_deadline: Duration,
+) -> Vec<u8> {
     let _ = stream.set_read_timeout(Some(read_timeout));
+    let deadline = Instant::now() + read_deadline;
     let mut buffer = Vec::new();
 
     loop {
+        let headers_done = header_end(&buffer).is_some();
+
+        if Instant::now() >= deadline
+            || buffer.len() >= MAX_REQUEST_BYTES
+            || (!headers_done && buffer.len() >= MAX_HEADER_BYTES)
+        {
+            break;
+        }
+
         let mut chunk = [0_u8; 1024];
 
         match stream.read(&mut chunk) {
@@ -907,7 +945,9 @@ mod tests {
 
     // ── the listeners ─────────────────────────────────────────────────────
 
-    /// The reply bytes the oracle sends, header lines and body.
+    /// The reply bytes, header lines and body. The oracle's captured reply is these
+    /// bytes plus one trailing `\n` (150 against 149), past its own declared
+    /// `Content-Length: 51` — no HTTP client can observe it (D50).
     #[test]
     fn the_reply_is_the_oracles() {
         assert_eq!(
@@ -1008,6 +1048,174 @@ mod tests {
 
         assert_eq!(error.code, ErrorCode::AuthRequired);
         assert_eq!(error.message, "Browser login timed out or was cancelled.");
+    }
+
+    /// M-6: the listener is closed as soon as the callback is answered (the
+    /// oracle's `after` clause), so a second connection is refused rather than
+    /// queueing unanswered for the rest of the flow.
+    #[test]
+    fn the_listener_closes_once_the_callback_is_answered() {
+        let callback = LoopbackCallback::bind().expect("a listener");
+        let redirect = callback.redirect_uri();
+        let port: u16 = redirect
+            .trim_start_matches("http://localhost:")
+            .parse()
+            .expect("a port");
+        let waiter = std::thread::spawn(move || callback.wait());
+
+        send_request(
+            &redirect,
+            b"GET /?code=the-code&state=the-state HTTP/1.1\r\nHost: localhost\r\n\r\n",
+        );
+        waiter.join().expect("the listener thread").expect("a code");
+
+        assert!(
+            TcpStream::connect((Ipv4Addr::LOCALHOST, port)).is_err(),
+            "the listener is closed once the callback is answered"
+        );
+    }
+
+    /// M-7's header cap: a header block past `MAX_HEADER_BYTES` is not a browser
+    /// callback, so the read stops there instead of growing without a bound.
+    #[test]
+    fn a_header_block_past_the_cap_is_parsed_as_it_stands() {
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).expect("a listener");
+        let port = listener.local_addr().expect("the address").port();
+        let writer = std::thread::spawn(move || {
+            let mut stream = TcpStream::connect((Ipv4Addr::LOCALHOST, port)).expect("connect");
+            write_until_blocked(&mut stream, &vec![b'a'; MAX_HEADER_BYTES + 64 * 1024]);
+        });
+
+        let (mut stream, _) = listener.accept().expect("accept");
+        let started = Instant::now();
+        let data = read_request(&mut stream, READ_TIMEOUT, READ_DEADLINE);
+        let elapsed = started.elapsed();
+
+        assert!(
+            data.len() >= MAX_HEADER_BYTES && data.len() < MAX_HEADER_BYTES + 1024,
+            "the read stopped at the header cap, not at the peer's close ({} bytes)",
+            data.len()
+        );
+        assert!(
+            elapsed < READ_TIMEOUT,
+            "the cap ended the read, not the per-read timeout ({elapsed:?})"
+        );
+
+        drop(stream);
+        writer.join().expect("the writer thread");
+    }
+
+    /// M-7's total cap: a declared `Content-Length` of gigabytes cannot grow the
+    /// buffer past `MAX_REQUEST_BYTES`.
+    #[test]
+    fn a_declared_huge_body_stops_at_the_request_cap() {
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).expect("a listener");
+        let port = listener.local_addr().expect("the address").port();
+        let writer = std::thread::spawn(move || {
+            let mut stream = TcpStream::connect((Ipv4Addr::LOCALHOST, port)).expect("connect");
+            let header = "POST / HTTP/1.1\r\nHost: localhost\r\nContent-Length: 4000000000\r\n\r\n";
+            let _ = stream.write_all(header.as_bytes());
+            write_until_blocked(&mut stream, &vec![b'b'; MAX_REQUEST_BYTES + 64 * 1024]);
+        });
+
+        let (mut stream, _) = listener.accept().expect("accept");
+        let started = Instant::now();
+        let data = read_request(&mut stream, READ_TIMEOUT, READ_DEADLINE);
+        let elapsed = started.elapsed();
+
+        assert!(
+            data.len() >= MAX_REQUEST_BYTES && data.len() < MAX_REQUEST_BYTES + 1024,
+            "the read stopped at the request cap ({} bytes)",
+            data.len()
+        );
+        assert!(
+            elapsed < READ_TIMEOUT,
+            "the cap ended the read, not the per-read timeout ({elapsed:?})"
+        );
+
+        drop(stream);
+        writer.join().expect("the writer thread");
+    }
+
+    /// M-7's deadline: a peer that dribbles just under the per-read timeout cannot
+    /// hold the read phase open forever; the deadline ends it and the bytes so far
+    /// are parsed.
+    #[test]
+    fn a_dribbling_peer_stops_at_the_read_deadline() {
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).expect("a listener");
+        let port = listener.local_addr().expect("the address").port();
+        let writer = std::thread::spawn(move || {
+            let mut stream = TcpStream::connect((Ipv4Addr::LOCALHOST, port)).expect("connect");
+
+            for _ in 0..50 {
+                if stream.write_all(b"G").is_err() {
+                    return;
+                }
+                std::thread::sleep(Duration::from_millis(20));
+            }
+        });
+
+        let (mut stream, _) = listener.accept().expect("accept");
+        let started = Instant::now();
+        let data = read_request(&mut stream, READ_TIMEOUT, Duration::from_millis(200));
+        let elapsed = started.elapsed();
+
+        assert!(
+            elapsed < Duration::from_millis(800),
+            "the deadline ended the read, not the dribbler's fifty bytes ({elapsed:?})"
+        );
+        assert!(
+            data.len() < 50,
+            "the read stopped before the dribbler finished ({} bytes)",
+            data.len()
+        );
+
+        drop(stream);
+        writer.join().expect("the writer thread");
+    }
+
+    /// A second `wait` on the same listener is refused: the listener was closed
+    /// when the first callback was answered (M-6).
+    #[test]
+    fn a_second_wait_is_refused() {
+        let callback = LoopbackCallback::bind().expect("a listener");
+        let redirect = callback.redirect_uri();
+        let client = std::thread::spawn(move || {
+            send_request(
+                &redirect,
+                b"GET /?code=the-code&state=the-state HTTP/1.1\r\nHost: localhost\r\n\r\n",
+            );
+        });
+
+        callback.wait().expect("the first callback");
+        client.join().expect("the client thread");
+
+        let error = callback
+            .wait()
+            .expect_err("the listener has already answered");
+        assert_eq!(error.code, ErrorCode::AuthRequired);
+        assert_eq!(
+            error.message,
+            "Cannot accept the browser callback: this listener has already answered"
+        );
+    }
+
+    /// The shared writer for the two cap tests: non-blocking, so a reader that
+    /// stops at a cap does not deadlock the test, and the bytes already sent stay
+    /// in the socket when the stream drops.
+    fn write_until_blocked(stream: &mut TcpStream, bytes: &[u8]) {
+        stream.set_nonblocking(true).expect("non-blocking");
+        let mut written = 0;
+
+        while written < bytes.len() {
+            match stream.write(&bytes[written..]) {
+                Ok(count) => written += count,
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                    std::thread::sleep(Duration::from_millis(1));
+                }
+                Err(_) => return,
+            }
+        }
     }
 
     fn send_request(redirect: &str, request: &[u8]) -> Vec<u8> {

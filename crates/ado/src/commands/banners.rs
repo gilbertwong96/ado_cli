@@ -42,8 +42,11 @@ const DEFAULT_TYPE: &str = "info";
 /// The module's `Map.get(parsed.options, :level, "projectCollection")`.
 const DEFAULT_LEVEL: &str = "projectCollection";
 
-/// The module's two-branch sentence, shared by the empty value and the 404.
-const NO_BANNER: &str = "\nNo banner configured.";
+/// The module's two-branch sentence, shared by the empty value and the 404. The
+/// two trailing blank lines are the capture's, ANSI-stripped: the module's
+/// `display_banner/2` closes with `writeln("")` and the shell adds its
+/// `halt_success("")` empty line.
+const NO_BANNER: &str = "\nNo banner configured.\n\n\n";
 
 /// `ado banners show`: `GET …/entries/banners`. A 404 is not an error — the
 /// module answers its "no banner" sentence and exits 0 — so this build renders it
@@ -122,6 +125,9 @@ fn banner_view(value: &Value) -> Report {
                 "  Message: {}\n",
                 "  Type:    {}\n",
                 "  Level:   {}\n",
+                // The capture's two blank lines: `display_banner/2`'s own
+                // `writeln("")` plus the shell's `halt_success("")` artefact.
+                "\n\n",
             ),
             field(value, "message", "(empty)"),
             field(value, "type", DEFAULT_TYPE),
@@ -227,7 +233,8 @@ mod tests {
                     "\nCurrent banner:\n",
                     "  Message: Scheduled maintenance tonight\n",
                     "  Type:    warning\n",
-                    "  Level:   projectCollection\n"
+                    "  Level:   projectCollection\n",
+                    "\n\n"
                 )
                 .to_owned()
             )
@@ -243,7 +250,8 @@ mod tests {
                     "\nCurrent banner:\n",
                     "  Message: Heads up\n",
                     "  Type:    info\n",
-                    "  Level:   projectCollection\n"
+                    "  Level:   projectCollection\n",
+                    "\n\n"
                 )
                 .to_owned()
             )
@@ -255,7 +263,8 @@ mod tests {
                     "\nCurrent banner:\n",
                     "  Message: \n",
                     "  Type:    info\n",
-                    "  Level:   projectCollection\n"
+                    "  Level:   projectCollection\n",
+                    "\n\n"
                 )
                 .to_owned()
             ),
@@ -268,7 +277,8 @@ mod tests {
                     "\nCurrent banner:\n",
                     "  Message: (empty)\n",
                     "  Type:    warning\n",
-                    "  Level:   projectCollection\n"
+                    "  Level:   projectCollection\n",
+                    "\n\n"
                 )
                 .to_owned()
             ),

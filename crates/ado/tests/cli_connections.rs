@@ -319,6 +319,7 @@ fn show_emits_the_value_envelope_and_the_detail() {
                 "  Type:  github\n",
                 "  URL:   https://github.com\n",
                 "  Ready: true\n",
+                "\n",
             ),
             "─".repeat(60)
         ),

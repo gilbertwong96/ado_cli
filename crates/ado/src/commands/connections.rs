@@ -360,8 +360,8 @@ fn connections_table(connections: &[Value]) -> Report {
     }
 }
 
-/// The module's `print_connection_detail/1`: the `─` rule and the five labelled
-/// fields.
+/// The module's `print_connection_detail/1`: the `─` rule, the five labelled
+/// fields, and the trailing blank line its closing `writeln("")` writes.
 fn connection_detail(connection: &Value) -> String {
     format!(
         concat!(
@@ -372,6 +372,8 @@ fn connection_detail(connection: &Value) -> String {
             "  Type:  {}\n",
             "  URL:   {}\n",
             "  Ready: {}\n",
+            // The module's closing `writeln("")`, which the capture shows.
+            "\n",
         ),
         "─".repeat(60),
         value_text(connection.get("id")),
@@ -609,6 +611,7 @@ mod tests {
                     "  Type:  github\n",
                     "  URL:   https://github.com\n",
                     "  Ready: true\n",
+                    "\n",
                 ),
                 "─".repeat(60)
             )

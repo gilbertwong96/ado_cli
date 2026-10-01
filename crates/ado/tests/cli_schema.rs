@@ -196,7 +196,7 @@ fn schema_ci_node_lists_every_shipped_subcommand() {
     assert_eq!(
         option(&watch, "poll-interval")["default"],
         json!(""),
-        "the module's own default is applied in code, not declared to clap (the banners precedent)"
+        "the module's own default is applied in code, not declared to clap (the banners precedent;\n         `--poll-interval` is one of D23's six schema-default keys)"
     );
     assert_eq!(argument(&watch, "project")["required"], json!(true));
     assert_eq!(
@@ -2100,7 +2100,7 @@ fn schema_security_node_lists_every_shipped_subcommand() {
     assert_eq!(
         option(&grant, "permission")["default"],
         json!(""),
-        "the module's own default is applied in code, not declared to clap (the banners precedent)"
+        "the module's own default is applied in code, not declared to clap (the banners precedent;\n         `--permission` is one of D23's six schema-default keys)"
     );
     assert_eq!(
         argument(&grant, "project_name_or_id")["required"],

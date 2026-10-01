@@ -410,7 +410,8 @@ fn show_renders_the_modules_detail_and_its_falsy_detail_line() {
                 "  Status: inProgress\n",
                 "  Source: https://github.com/owner/repo.git\n",
                 "  Detail: false\n",
-                "  URL:    https://dev.azure.com/ado-harness/Alpha/_apis/git/repositories/NewRepo/importRequests/imp-1\n"
+                "  URL:    https://dev.azure.com/ado-harness/Alpha/_apis/git/repositories/NewRepo/importRequests/imp-1\n",
+                "\n"
             ),
             "-".repeat(60)
         ),

@@ -140,7 +140,8 @@ fn show_renders_the_modules_three_labelled_fields() {
             "\nCurrent banner:\n",
             "  Message: Scheduled maintenance tonight\n",
             "  Type:    warning\n",
-            "  Level:   projectCollection\n"
+            "  Level:   projectCollection\n",
+            "\n\n"
         ),
         "the module's layout (captured)"
     );
@@ -168,7 +169,8 @@ fn show_renders_the_modules_defaults_for_missing_fields() {
             "\nCurrent banner:\n",
             "  Message: Heads up\n",
             "  Type:    info\n",
-            "  Level:   projectCollection\n"
+            "  Level:   projectCollection\n",
+            "\n\n"
         ),
         "the module's `|| \"info\"`/`|| \"projectCollection\"` defaults"
     );
@@ -187,7 +189,7 @@ fn show_prints_the_empty_value_sentence_for_an_empty_value() {
     let output = run(&home, &server, &["banners", "show"]);
 
     assert_success(&output);
-    assert_eq!(stdout_of(&output), "\nNo banner configured.\n");
+    assert_eq!(stdout_of(&output), "\nNo banner configured.\n\n\n");
 
     let home = TempHome::new();
     let server = MockServer::start();
@@ -219,7 +221,7 @@ fn show_treats_a_missing_entry_as_the_empty_banner_and_exits_zero() {
     let output = run(&home, &server, &["banners", "show"]);
 
     assert_success(&output);
-    assert_eq!(stdout_of(&output), "\nNo banner configured.\n");
+    assert_eq!(stdout_of(&output), "\nNo banner configured.\n\n\n");
 
     let home = TempHome::new();
     let server = MockServer::start();

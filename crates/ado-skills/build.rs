@@ -22,9 +22,10 @@ fn main() {
     for entry in
         fs::read_dir(&assets).unwrap_or_else(|error| panic!("read {}: {error}", assets.display()))
     {
-        let path = entry.expect("a directory entry").path();
+        let entry = entry.expect("a directory entry");
+        let path = entry.path();
 
-        if path.is_dir() {
+        if entry_type(&entry).is_dir() {
             collect(&assets, &path, &mut files);
         }
     }
@@ -48,6 +49,25 @@ fn main() {
     fs::write(&out, generated).expect("write the embedded asset table");
 }
 
+/// A directory entry's own type, not its target's: a directory symlink would
+/// otherwise embed its target a second time under the link's key (and a cycle
+/// would recurse to the OS path limit), so the assets directory is files and real
+/// directories only.
+fn entry_type(entry: &fs::DirEntry) -> fs::FileType {
+    let path = entry.path();
+    let file_type = entry
+        .file_type()
+        .unwrap_or_else(|error| panic!("stat {}: {error}", path.display()));
+
+    assert!(
+        !file_type.is_symlink(),
+        "assets/ must not contain symlinks ({} is one)",
+        path.display()
+    );
+
+    file_type
+}
+
 fn collect(root: &Path, dir: &Path, files: &mut Vec<String>) {
     let entries =
         fs::read_dir(dir).unwrap_or_else(|error| panic!("read {}: {error}", dir.display()));
@@ -56,15 +76,19 @@ fn collect(root: &Path, dir: &Path, files: &mut Vec<String>) {
         let entry = entry.expect("a directory entry");
         let path = entry.path();
 
-        if path.is_dir() {
+        if entry_type(&entry).is_dir() {
             collect(root, &path, files);
         } else {
-            files.push(
-                path.strip_prefix(root)
-                    .expect("a path under assets/")
-                    .to_string_lossy()
-                    .replace('\\', "/"),
-            );
+            // The UTF-8 check runs before the key is built, so a non-UTF-8 name
+            // fails here with this message rather than with rustc's
+            // `couldn't read` on a lossy path that does not exist.
+            let relative = path
+                .strip_prefix(root)
+                .expect("a path under assets/")
+                .to_str()
+                .expect("a UTF-8 asset path")
+                .replace('\\', "/");
+            files.push(relative);
         }
     }
 }

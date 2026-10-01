@@ -2871,6 +2871,48 @@ fn attachments_download_reduces_a_separator_name() {
     );
 }
 
+/// F2's deliberate divergence: the server name is written and printed with its
+/// control characters removed, where the frozen CLI writes and prints them
+/// verbatim — the terminal-injection half of Ruling A2.
+#[test]
+fn attachments_download_strips_control_characters_from_the_name() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    expect_download(
+        &server,
+        ATTACHMENT_1_PATH,
+        attachment_metadata("att-1", Some("evil\u{1b}[31mred.bin")),
+        b"bytes".to_vec(),
+    );
+
+    let output = run_in(
+        &home,
+        &server,
+        home.path(),
+        &["workitems", "attachments", "download", "42", "att-1"],
+    );
+
+    assert_success(&output);
+    assert_eq!(
+        stdout_of(&output),
+        "Downloaded 5 bytes to evil[31mred.bin\n",
+        "the escape byte is gone; the printable remainder is the name"
+    );
+    assert_eq!(
+        fs::read(home.path().join("evil[31mred.bin")).expect("the file"),
+        b"bytes",
+        "the written name is the stripped one, so the printed name locates the file"
+    );
+
+    let received = server.received();
+    assert_eq!(received.len(), 2, "the metadata GET, then the raw GET");
+    assert_eq!(
+        received[1].query_pairs(),
+        vec![api_version(), pair("fileName", "evil%5B31mred.bin")],
+        "the raw GET names the stripped file, not the escape"
+    );
+}
+
 /// The work item `id` positional is declared but never read by the frozen flow:
 /// the requests name only the attachment id, and two work item ids produce the
 /// same chain.

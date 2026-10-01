@@ -219,7 +219,9 @@ fn import_detail(import: &Value) -> String {
     }
 
     detail.push_str(&format!(
-        "  URL:    {}\n",
+        // The double newline is the module's closing `writeln("")`, which the
+        // capture shows as a trailing blank line.
+        "  URL:    {}\n\n",
         or_default(import.get("url"), "(none)"),
     ));
 
@@ -406,7 +408,8 @@ mod tests {
                     "  Status: inProgress\n",
                     "  Source: https://github.com/owner/repo.git\n",
                     "  Detail: false\n",
-                    "  URL:    https://example.test/imp-1\n"
+                    "  URL:    https://example.test/imp-1\n",
+                    "\n",
                 ),
                 "-".repeat(60)
             )
