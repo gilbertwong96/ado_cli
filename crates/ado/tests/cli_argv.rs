@@ -1,7 +1,8 @@
 use ado_testkit::{ado, stderr_of, stdout_of};
 use serde_json::{Value, json};
 
-const VERSION_LINE: &str = "ado 1.0.0-rc.0\n";
+// Read from the package so a version bump does not edit this test.
+const VERSION_LINE: &str = concat!("ado ", env!("CARGO_PKG_VERSION"), "\n");
 
 #[test]
 fn version_flag_short_circuits() {

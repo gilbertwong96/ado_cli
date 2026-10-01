@@ -1,7 +1,12 @@
 use ado_testkit::ado;
 
-const VERSION_LINE: &str = "ado 1.0.0-rc.0\n";
-const VERSION_JSON_LINE: &str = "{\"ok\":true,\"version\":\"1.0.0-rc.0\"}\n";
+// Read from the package so a version bump does not edit this test.
+const VERSION_LINE: &str = concat!("ado ", env!("CARGO_PKG_VERSION"), "\n");
+const VERSION_JSON_LINE: &str = concat!(
+    "{\"ok\":true,\"version\":\"",
+    env!("CARGO_PKG_VERSION"),
+    "\"}\n"
+);
 
 #[test]
 fn version_plain_matches_contract() {
@@ -43,7 +48,7 @@ fn version_json_is_parseable() {
         serde_json::from_slice(&output.stdout).expect("stdout is a JSON document");
 
     assert_eq!(value["ok"], true);
-    assert_eq!(value["version"], "1.0.0-rc.0");
+    assert_eq!(value["version"], env!("CARGO_PKG_VERSION"));
 }
 
 #[test]
