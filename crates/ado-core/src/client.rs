@@ -1,5 +1,7 @@
 //! The HTTP client for the Azure DevOps REST API: URL building, one pooled
-//! `ureq::Agent`, and the spec §6.2 classification of every response.
+//! `ureq::Agent`, and the spec §6.2 classification of every response. The raw
+//! download path attaches the credential only to the client's own origin
+//! (`same_origin`, Ruling A3).
 
 use std::io::{self, Read};
 use std::time::Duration;
@@ -33,6 +35,16 @@ pub struct Client {
     base: Base,
     org: String,
     auth: (String, String),
+    origin: Option<Origin>,
+}
+
+/// The origin the client's credential belongs to (Ruling A3): scheme, host
+/// (lowercased) and the explicit port. A URL outside it is fetched without the
+/// `Authorization` header.
+struct Origin {
+    scheme: String,
+    host: String,
+    port: Option<u16>,
 }
 
 /// Where requests go.
@@ -75,11 +87,31 @@ impl Client {
             .build()
             .new_agent();
 
+        // Ruling A3: the origin the credential may go to. The cloud base is the
+        // org host; a self-hosted base is parsed for its scheme/host/port, and a
+        // base that does not parse matches no URL at all (the request would fail
+        // at build time anyway, so the credential is never the risk).
+        let origin = match &base {
+            Base::Cloud => Some(Origin {
+                scheme: "https".to_owned(),
+                host: format!("{}.visualstudio.com", credentials.org),
+                port: None,
+            }),
+            Base::Server(server) => server.parse::<http::Uri>().ok().and_then(|uri| {
+                Some(Origin {
+                    scheme: uri.scheme_str()?.to_owned(),
+                    host: uri.host()?.to_ascii_lowercase(),
+                    port: uri.port_u16(),
+                })
+            }),
+        };
+
         Ok(Client {
             agent,
             base,
             org: credentials.org.clone(),
             auth: auth_header(credentials),
+            origin,
         })
     }
 
@@ -90,6 +122,24 @@ impl Client {
         let query = encode_query(&with_api_version(params));
 
         self.absolute_url(path, &query)
+    }
+
+    /// Whether `url`'s origin — scheme, host and explicit port — is the client's
+    /// own (Ruling A3). A relative or unparseable URL, and a client whose base did
+    /// not parse, match nothing: the credential goes out only on a positive match.
+    /// `http://host` and `http://host:80` are different origins here, which is the
+    /// conservative direction for a credential.
+    fn same_origin(&self, url: &str) -> bool {
+        let (Some(origin), Ok(uri)) = (&self.origin, url.parse::<http::Uri>()) else {
+            return false;
+        };
+        let (Some(scheme), Some(host)) = (uri.scheme_str(), uri.host()) else {
+            return false;
+        };
+
+        scheme.eq_ignore_ascii_case(&origin.scheme)
+            && host.eq_ignore_ascii_case(&origin.host)
+            && uri.port_u16() == origin.port
     }
 
     /// The absolute URL for `path` with no query string at all: the connectionData
@@ -167,17 +217,23 @@ impl Client {
     /// is merged in (D25). A relative path is resolved with [`Client::url_for`]
     /// first, which does merge the version.
     ///
+    /// The credential is attached only when `url`'s origin is the client's own
+    /// (Ruling A3): a server-supplied absolute URL on another host is fetched
+    /// anonymously, so a credential cannot follow a URL the server chooses. A
+    /// 401/403 on that path still classifies loudly, per spec §6.2.
+    ///
     /// The status is classified before any body byte is handed over: a 2xx answers
     /// an open [`RawBody`], which streams without a size cap, and anything else
     /// classifies per spec §6.2 from a bounded read of the error body, decoded
     /// lossily so a non-text body still classifies by its status.
     pub fn get_raw(&self, url: &str) -> Result<RawBody, AdoError> {
-        let request = http::Request::builder()
-            .method("GET")
-            .uri(url)
-            .header(self.auth.0.as_str(), self.auth.1.as_str())
-            .body(())
-            .map_err(|error| build_failed(&error))?;
+        let mut builder = http::Request::builder().method("GET").uri(url);
+
+        if self.same_origin(url) {
+            builder = builder.header(self.auth.0.as_str(), self.auth.1.as_str());
+        }
+
+        let request = builder.body(()).map_err(|error| build_failed(&error))?;
 
         let mut response = self
             .agent
@@ -662,6 +718,42 @@ mod tests {
             "Elixir's URI.encode/1 keeps / and ? — the deliberate tightening (D22)"
         );
         assert_eq!(encode_path_segment("a'b"), "a%27b");
+    }
+
+    /// Ruling A3: the origin comparison the credential guard uses. Scheme, host
+    /// and the explicit port all participate; an unparseable or relative URL
+    /// matches nothing.
+    #[test]
+    fn the_credential_origin_is_the_clients_own_base() {
+        let cloud = client(None);
+        assert!(cloud.same_origin("https://myorg.visualstudio.com/blob/x"));
+        assert!(!cloud.same_origin("https://otherog.visualstudio.com/blob/x"));
+        assert!(!cloud.same_origin("https://dev.azure.com/myorg/blob/x"));
+        assert!(
+            !cloud.same_origin("http://myorg.visualstudio.com/blob/x"),
+            "the scheme is part of the origin"
+        );
+        assert!(
+            !cloud.same_origin("/blob/x"),
+            "a relative URL matches nothing"
+        );
+        assert!(!cloud.same_origin("not a url"));
+
+        let server = client(Some("https://server.test/tfs"));
+        assert!(server.same_origin("https://server.test/tfs/myorg/blob/x"));
+        assert!(
+            server.same_origin("https://SERVER.test/blob/x"),
+            "hosts compare case-insensitively"
+        );
+        assert!(!server.same_origin("http://server.test/blob/x"));
+        assert!(
+            !server.same_origin("https://server.test:8443/blob/x"),
+            "an explicit port is part of the origin"
+        );
+
+        let ported = client(Some("http://127.0.0.1:8080"));
+        assert!(ported.same_origin("http://127.0.0.1:8080/blob/x"));
+        assert!(!ported.same_origin("http://127.0.0.1:9090/blob/x"));
     }
 
     #[test]

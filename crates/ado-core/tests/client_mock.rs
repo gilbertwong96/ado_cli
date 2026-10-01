@@ -9,7 +9,7 @@ use ado_core::credentials::Credentials;
 use ado_core::env::{ENV_SERVER, MapEnv};
 use ado_core::error::ErrorCode;
 use ado_testkit::{MockResponse, MockServer};
-use serde_json::json;
+use serde_json::{Value, json};
 
 const SIGN_IN_MESSAGE: &str = "API redirected to sign-in page. Run 'ado login' to authenticate.";
 const NO_LOCATION_MESSAGE: &str =
@@ -325,6 +325,24 @@ fn malformed_json_on_200_is_network_error() {
     );
 }
 
+/// Reads a raw body to its end.
+fn read_all(mut body: ado_core::client::RawBody) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    let mut buffer = [0u8; 4096];
+
+    loop {
+        let read = body.read_chunk(&mut buffer).expect("the body reads");
+
+        if read == 0 {
+            break;
+        }
+
+        bytes.extend_from_slice(&buffer[..read]);
+    }
+
+    bytes
+}
+
 /// `get_raw` is the download path: the URL is used verbatim (no `api-version` is
 /// merged in) and the body streams out in chunks — the zip fixture is not valid
 /// UTF-8, so a string body could not carry it, and the reader has no size cap
@@ -391,6 +409,84 @@ fn get_raw_classifies_status_errors() {
         details["body"],
         json!("{\"message\":\"TF400813: Resource not found.\"}")
     );
+}
+
+/// Ruling A3: `get_raw` attaches the credential only when the URL's origin is the
+/// client's own. The second server stands in for a server-supplied absolute
+/// `downloadUrl` on another host: the bytes still arrive, the request carries **no**
+/// `Authorization` header, and its 401 is the classified loud failure rather than a
+/// retry or a silent download.
+#[test]
+fn get_raw_keeps_the_credential_on_its_own_origin() {
+    let own = MockServer::start();
+    own.expect(
+        "GET",
+        "/blob/drop.zip",
+        MockResponse::json(200, json!({"same": true})),
+    );
+    let other = MockServer::start();
+    other.expect(
+        "GET",
+        "/blob/drop.zip",
+        MockResponse::json(200, json!({"cross": true})),
+    );
+    other.expect(
+        "GET",
+        "/blob/locked.zip",
+        MockResponse::json(401, json!({"message": "Unauthorized"})),
+    );
+    let client = client_for(&own);
+
+    let same = read_all(
+        client
+            .get_raw(&format!("{}/blob/drop.zip", own.base_url()))
+            .expect("the same-host answer"),
+    );
+    assert_eq!(
+        serde_json::from_slice::<Value>(&same).expect("json"),
+        json!({"same": true})
+    );
+
+    let cross = read_all(
+        client
+            .get_raw(&format!("{}/blob/drop.zip", other.base_url()))
+            .expect("the cross-host answer"),
+    );
+    assert_eq!(
+        serde_json::from_slice::<Value>(&cross).expect("json"),
+        json!({"cross": true}),
+        "a cross-host URL is still fetched — anonymously, not refused outright"
+    );
+
+    let error = client
+        .get_raw(&format!("{}/blob/locked.zip", other.base_url()))
+        .err()
+        .expect("the cross-host 401 is an error");
+    assert_eq!(error.code, ErrorCode::AuthRequired);
+    assert_eq!(error.status, Some(401));
+    assert_eq!(
+        error.message, "Authentication failed. PAT is invalid or expired.",
+        "a 401 without the credential fails loudly (spec §6.2)"
+    );
+
+    let own_received = own.received();
+    assert_eq!(own_received.len(), 1);
+    assert_eq!(
+        own_received[0].header("authorization"),
+        Some("Basic OnBhdA=="),
+        "the same-host download keeps the credential"
+    );
+
+    let other_received = other.received();
+    assert_eq!(other_received.len(), 2);
+    for request in &other_received {
+        assert_eq!(
+            request.header("authorization"),
+            None,
+            "a cross-host download carries no credential: {:?}",
+            request.headers
+        );
+    }
 }
 
 /// A non-2xx body that is not valid UTF-8 still classifies by its status: the body
