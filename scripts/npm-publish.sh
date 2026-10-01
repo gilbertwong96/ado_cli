@@ -12,7 +12,11 @@
 #      npm/@gilbertwong1996-ado-<platform>-<arch>/bin/.
 #   2. Updates the version field in all 6 package.json files to <version>.
 #   3. Publishes the 5 platform packages first, then the main
-#      @gilbertwong1996/ado.
+#      @gilbertwong1996/ado, with a dist-tag derived from the version:
+#      a prerelease (1.0.0-rc.1) goes to `next`, a stable version keeps
+#      npm's default `latest`. A version shape the derivation does not
+#      recognise fails before any pack — a prerelease must never be
+#      published to `latest` by accident.
 #
 # Requirements:
 #   - gh (GitHub CLI, authenticated)
@@ -45,6 +49,27 @@ if [[ -z "$VERSION" ]]; then
     echo "Usage: $0 VERSION [--dry-run] [--skip-download]" >&2
     echo "  e.g. $0 0.1.0" >&2
     exit 1
+fi
+
+# ── dist-tag derivation ───────────────────────────────────────────────
+# npm refuses to publish a semver prerelease without an explicit --tag.
+# A prerelease goes to `next` (the ecosystem's convention), a stable
+# version keeps npm's default `latest`. Anything else fails here: a
+# prerelease must never fall through to `latest` by accident.
+if [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    DIST_TAG=""
+elif [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+-[0-9A-Za-z.-]+$ ]]; then
+    DIST_TAG="next"
+else
+    echo "ERROR: cannot derive an npm dist-tag for version '$VERSION'" >&2
+    echo "       expected <major>.<minor>.<patch> or <major>.<minor>.<patch>-<prerelease>" >&2
+    exit 1
+fi
+
+if [[ -n "$DIST_TAG" ]]; then
+    echo "==> Prerelease $VERSION → dist-tag '$DIST_TAG'"
+else
+    echo "==> Stable $VERSION → npm's default dist-tag 'latest'"
 fi
 
 # ── paths ────────────────────────────────────────────────────────────
@@ -185,9 +210,12 @@ done
 
 # ── step 4: publish (platform packages first, then main) ────────────
 PUBLISH_FLAGS=(--access public)
+if [[ -n "$DIST_TAG" ]]; then
+    PUBLISH_FLAGS+=(--tag "$DIST_TAG")
+fi
 if [[ -n "$DRY_RUN" ]]; then
     PUBLISH_FLAGS+=(--dry-run)
-    echo "==> Dry run: would publish the following packages..."
+    echo "==> Dry run: would publish the following packages (dist-tag ${DIST_TAG:-latest})..."
 fi
 
 # Platform packages
