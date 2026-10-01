@@ -94,7 +94,7 @@
         <tbody>
           <tr>
             <td>Output</td>
-            <td>Tables + colors</td>
+            <td>Tables (plain when piped)</td>
             <td>Stable JSON envelopes on every command</td>
           </tr>
           <tr>
@@ -109,7 +109,7 @@
           </tr>
           <tr>
             <td>Errors</td>
-            <td>Pretty stack traces</td>
+            <td>One-line <code>[Code] message</code> on stderr</td>
             <td><code>{ok: false, error: {code, status, message, details}}</code></td>
           </tr>
           <tr>
@@ -127,7 +127,7 @@
 
       <h3>Try it: structured output in one command</h3>
       <div class="code-block">
-<pre><code><span class="prompt">$</span> <strong>ado projects list --json</strong>
+<pre><code><span class="prompt">$</span> <strong>ado projects list --json | jq</strong>
 {
   "ok": true,
   "result": [
@@ -140,7 +140,7 @@
 
       <h3>Errors that agents can match on</h3>
       <div class="code-block">
-<pre><code><span class="prompt">$</span> <strong>ado projects show nonexistent --json</strong>
+<pre><code><span class="prompt">$</span> <strong>ado projects show nonexistent --json | jq</strong>
 {
   "ok": false,
   "error": {

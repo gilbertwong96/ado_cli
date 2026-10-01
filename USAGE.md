@@ -220,7 +220,7 @@ ado logout
 | Flag | Effect |
 |------|--------|
 | `--json` | Raw JSON output instead of formatted tables |
-| `--verbose` | Detailed logging for troubleshooting |
+| `--verbose` | Verbose output (the global flag parses; no output change is observable in this build) |
 | `--help` | Show help for any command or subcommand |
 
 ## Environment Variables

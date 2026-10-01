@@ -29,7 +29,7 @@ flags that nobody uses. `ado` is designed the other way around:
 
 | Feature | Human-friendly | AI-agent-friendly |
 |---|---|---|
-| Output | Tables + colors | Stable JSON envelopes on every command |
+| Output | Tables (bordered on a terminal, plain when piped) | Stable JSON envelopes on every command |
 | Discovery | `ado --help` → 3 levels deep | `ado schema --json` — full command tree in 1 round trip |
 | Documentation | Built-in `--help` at every level | `ado skills list` / `ado skills read NAME` |
 | Error handling | Pretty stack traces | `{ok: false, error: {code, status, message, details}}` |
@@ -616,15 +616,17 @@ inspection or to copy into an agent's `~/.claude/skills/` directory.
 
 1. **Read `ado-cli` first** when you need to discover available commands. The
    reference table in that skill is the canonical index — it
-   covers all 24 service areas (projects, repos, workitems, pipelines,
-   vars, builds, artifacts, folders, prs, releases, iterations, areas,
-   wikis, teams, users, extensions, agent-pools, connections, security
-   groups, security permissions, banners, packages, imports, branch-policies).
+   covers all 24 service areas (agent-pools, areas, connections, extensions,
+   imports, banners, security, iterations, projects, repos, branch-policies,
+   prs, workitems, teams, test-coverage, test-results, users, pipelines,
+   pipelines-folders, pipelines-builds, pipelines-artifacts, packages,
+   releases, wikis).
 
 2. **Read `ado-auth`** before invoking any command, to confirm which auth
    method is in effect and how to handle the `Not authenticated` error. The
    skill explains PAT vs browser OAuth vs device code, MSA personal org
-   support, and the priority order of CLI flags / env vars / config file.
+   support, and the priority order of CLI flags / env vars / credential store /
+   config file.
 
 3. **Read `ado-ci`** when running `ado` in a pipeline / CI script. The
    skill documents:
@@ -634,18 +636,18 @@ inspection or to copy into an agent's `~/.claude/skills/` directory.
      `ado ci watch`)
    - GitHub Actions and GitLab CI examples
 
-4. **Always prefer `--json` flag** when scripting. The CLI emits stable
-   JSON in non-tabular mode; `--json` also skips table-formatting errors
-   that can appear in CI environments that don't handle ANSI escapes well.
+4. **Always prefer `--json` flag** when scripting. The CLI emits a single
+   stable JSON document per command under `--json`, with no table formatting;
+   human output is a table on a terminal and plain padded lines when piped.
 
 5. **Always quote project and repo names** that contain spaces:
    ```bash
    ado repos list "Employee Management"
    ```
 
-6. **Never log credentials.** The CLI masks PATs in error output, but
-   don't echo them yourself. Pass via `ADO_PAT` env var or `--pat` flag
-   only.
+6. **Never log credentials.** The CLI keeps the token in the credential store and
+   out of the config file; pass it via the `ADO_PAT` env var or `--pat` rather
+   than hard-coding it, and never echo it yourself.
 
 ### Loading skills into an agent
 
