@@ -6,7 +6,7 @@ use std::path::PathBuf;
 
 use ado::argv::MULTIVALUE_FLAGS;
 use ado_core::client::API_VERSION;
-use ado_core::env::{ENV_ORG, ENV_PAT, ENV_SERVER};
+use ado_core::env::{ENV_OAUTH_CLIENT_ID, ENV_ORG, ENV_PAT, ENV_SERVER};
 
 fn inventory_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../docs/rust-rewrite/contract-inventory.md")
@@ -34,7 +34,7 @@ fn inventory_records_the_multivalue_flags() {
 fn inventory_records_the_environment_variables() {
     let inventory = inventory();
 
-    for name in [ENV_ORG, ENV_PAT, ENV_SERVER] {
+    for name in [ENV_ORG, ENV_PAT, ENV_SERVER, ENV_OAUTH_CLIENT_ID] {
         assert!(
             inventory.contains(name),
             "contract-inventory.md does not mention the environment variable `{name}`"

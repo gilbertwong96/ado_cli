@@ -901,3 +901,32 @@ fn an_org_less_browser_login_starts_the_flow() {
     assert_eq!(value(&pairs, "response_type"), "code");
     assert_nothing_written(&browser.home);
 }
+
+/// D16's consequence since Wave 3 shipped the browser method: a blank `ADO_PAT` is not
+/// a value, so with no `--method` there is no PAT to infer and the invocation falls to
+/// the oracle's browser default — it does not refuse. (Before Task 10 it hit the
+/// browser-not-shipped refusal, which is what the harness's blank-`ADO_PAT` case pinned
+/// until the method-less form could no longer be run there; that case now names the
+/// method, and this case pins the fall-through through the scripted opener.)
+#[cfg(unix)]
+#[test]
+fn a_blank_environment_pat_falls_through_to_the_browser_flow() {
+    let browser = Browser::new();
+    let mut command = browser.command("error", &["login", "--json"]);
+    command.env("ADO_PAT", "");
+
+    let output = command.output().expect("run ado");
+
+    assert_eq!(output.status.code(), Some(1));
+    let stdout = stdout_of(&output);
+    let envelope: Value = serde_json::from_str(stdout.lines().last().expect("the envelope"))
+        .expect("a JSON document");
+    assert_eq!(
+        envelope["error"]["message"],
+        json!("Login failed: Authorization failed: access_denied")
+    );
+    assert!(
+        !browser.url().is_empty(),
+        "the blank PAT left no method to infer, so the browser flow ran"
+    );
+}

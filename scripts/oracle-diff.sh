@@ -952,15 +952,40 @@ run_mock_cases() {
     mock_case login-blank-pat "login --method pat --pat ''" \
         login --method pat --org "$mock_org" --pat "" --json
 
-    envelope_rule='D16: a blank ADO_PAT leaves no method to infer, so this build refuses the invocation (the message wording is §8)'
-    status_rule='D16: a blank ADO_PAT reads as unset here (exit 1) where the frozen CLI infers method=pat from it and exits 0'
+    # Reshaped by Task 10: `login` with no `--method` and no PAT is the *browser*
+    # flow since D29 closed, so the method-less form of this case would run an
+    # interactive login on both sides (the oracle would open a browser and hold its
+    # accept for 120 s; the harness must never reach it). Naming the method pins the
+    # same D16 rule — a blank ADO_PAT is not a value, so the PAT cannot be resolved —
+    # with an invocation both sides run to completion and neither leaves interactive.
+    # The oracle treats the empty string as a PAT, stores it and exits 0.
+    envelope_rule='D16: a blank ADO_PAT is not a value here, so method=pat refuses the invocation; the oracle stores an empty token'
+    status_rule='D16: a blank ADO_PAT reads as unset here (exit 1) where the frozen CLI treats it as a value, stores an empty token and exits 0'
     expect_statuses='0 1'
+    expect_oracle_requests='length == 0'
+    expect_rust_requests='length == 0'
     case_pat=
     case_extra=("ADO_PAT=")
-    mock_case login-blank-env-pat "login with a blank ADO_PAT" login --json
+    mock_case login-blank-env-pat "login --method pat with a blank ADO_PAT" \
+        login --method pat --org "$mock_org" --json
 
     envelope_rule='D27c: the message says what was removed instead of the legacy ~/.ado_cli/config.json path'
     mock_case logout "logout" logout --json
+
+    # Wave 3's browser method closed D29: both sides now name the same three methods
+    # and refuse an unknown spelling with the same message. The refusal is decided
+    # before any flow starts, so no request goes out — asserted on both sides. The
+    # browser flow itself is deliberately absent: the oracle would open a real
+    # browser and hold its accept for 120 s (spec §10).
+    expect_oracle_requests='length == 0'
+    expect_rust_requests='length == 0'
+    mock_case login-unknown-method "login --method bogus" \
+        login --method bogus --org "$mock_org" --json
+
+    expect_oracle_requests='length == 0'
+    expect_rust_requests='length == 0'
+    mock_case login-blank-method "login --method ''" \
+        login --method "" --org "$mock_org" --json
 
     envelope_rule='D27c: the message says what was removed instead of the legacy ~/.ado_cli/config.json path'
     mock_case logout-org "logout --org" logout --org "$mock_org" --json
