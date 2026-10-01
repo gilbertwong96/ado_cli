@@ -328,7 +328,11 @@ fn install_text(targets: &[install::Target], rows: &[install::InstallRow]) -> St
     ));
 
     for target in targets {
-        out.push_str(&format!("    - {}: {}\n", target.name, target.path.display()));
+        out.push_str(&format!(
+            "    - {}: {}\n",
+            target.name,
+            target.path.display()
+        ));
     }
 
     if targets.iter().all(|target| target.name != "copilot") {
@@ -385,7 +389,9 @@ enum Status {
 }
 
 fn count(rows: &[install::InstallRow], status: Status) -> usize {
-    rows.iter().filter(|row| same_status(&row.status, status)).count()
+    rows.iter()
+        .filter(|row| same_status(&row.status, status))
+        .count()
 }
 
 fn same_status(row: &InstallStatus, status: Status) -> bool {
@@ -412,8 +418,8 @@ fn rows_json(rows: &[install::InstallRow], status: Status) -> Vec<Value> {
 
 #[cfg(test)]
 mod tests {
-    use ado_core::env::MapEnv;
     use ado_core::credentials::InMemoryStore;
+    use ado_core::env::MapEnv;
     use ado_testkit::TempHome;
 
     use super::*;
@@ -458,7 +464,10 @@ mod tests {
                 .expect("the content")
                 .starts_with("# ado — Azure DevOps CLI\n")
         );
-        assert_eq!(document["metadata"]["commands"].as_array().unwrap().len(), 87);
+        assert_eq!(
+            document["metadata"]["commands"].as_array().unwrap().len(),
+            87
+        );
         assert!(document["metadata"].get("name").is_none());
     }
 

@@ -239,23 +239,46 @@ fn schema_skills_node_lists_every_shipped_subcommand() {
     );
 
     let list = find_node("skills list").expect("the list node");
-    assert_eq!(list["doc"], json!("List all embedded skills with name, description, version, and command count. Use --json for structured output suitable for agent discovery."));
+    assert_eq!(
+        list["doc"],
+        json!(
+            "List all embedded skills with name, description, version, and command count. Use --json for structured output suitable for agent discovery."
+        )
+    );
     assert_eq!(argument(&list, "path")["required"], json!(false));
-    assert_eq!(argument(&list, "path")["doc"], json!("Optional: skill name or skill/path"));
+    assert_eq!(
+        argument(&list, "path")["doc"],
+        json!("Optional: skill name or skill/path")
+    );
 
     let describe = find_node("skills describe").expect("the describe node");
-    assert_eq!(describe["doc"], json!("Return the YAML frontmatter and command index for a skill (no body text). Use this to check version/description before loading the full content with read."));
+    assert_eq!(
+        describe["doc"],
+        json!(
+            "Return the YAML frontmatter and command index for a skill (no body text). Use this to check version/description before loading the full content with read."
+        )
+    );
     assert_eq!(argument(&describe, "name")["required"], json!(true));
 
     let read = find_node("skills read").expect("the read node");
-    assert_eq!(read["doc"], json!("Read a skill's SKILL.md (or a file under the skill). Returns the full Markdown body for human or LLM consumption."));
+    assert_eq!(
+        read["doc"],
+        json!(
+            "Read a skill's SKILL.md (or a file under the skill). Returns the full Markdown body for human or LLM consumption."
+        )
+    );
     assert_eq!(
         argument(&read, "target")["doc"],
         json!("Skill name[/path] or 'skillname path'")
     );
 
     let search = find_node("skills search").expect("the search node");
-    assert_eq!(search["doc"], json!("Find skills by keyword search (name, description, or command list). Case-insensitive. Use for discovery when you do not know the exact skill name."));
+    assert_eq!(
+        search["doc"],
+        json!(
+            "Find skills by keyword search (name, description, or command list). Case-insensitive. Use for discovery when you do not know the exact skill name."
+        )
+    );
     assert_eq!(
         argument(&search, "query")["doc"],
         json!("Search query (e.g. 'create PR', 'pipeline', 'auth')")

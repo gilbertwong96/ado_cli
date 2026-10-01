@@ -276,7 +276,10 @@ fn describe_json_is_the_captured_result_document() {
     let commands = result["commands"].as_array().expect("the commands array");
     assert_eq!(commands.len(), 87, "the frontmatter's command list");
     assert_eq!(commands[0], json!("ado --version"));
-    assert_eq!(commands[86], json!("ado test-coverage show PROJECT BUILD_ID"));
+    assert_eq!(
+        commands[86],
+        json!("ado test-coverage show PROJECT BUILD_ID")
+    );
     assert!(
         !commands.iter().any(|command| command
             .as_str()
@@ -485,9 +488,7 @@ fn search_ranks_name_then_reversed_commands_then_description() {
     assert_eq!(results[0]["match_type"], json!("name"));
     assert_eq!(results[0]["skill"], json!("ado-auth"));
     assert!(
-        results
-            .iter()
-            .all(|result| result["context"] == json!("")),
+        results.iter().all(|result| result["context"] == json!("")),
         "the frozen struct carries `context` and nothing ever sets it"
     );
 
@@ -722,7 +723,9 @@ fn install_reports_an_unknown_skill_as_an_error_row_and_exits_zero() {
 
     let output = run(
         &home,
-        &["skills", "install", "--target", "pi", "--skill", "no-such", "--json"],
+        &[
+            "skills", "install", "--target", "pi", "--skill", "no-such", "--json",
+        ],
     );
 
     assert_exit(&output, 0);
@@ -810,7 +813,12 @@ fn install_copilot_writes_the_repo_layout_and_requires_an_existing_repo() {
         json(&output)["result"]["targets"][0]["path"],
         json!(repo.join(".github").join("ado-cli").display().to_string())
     );
-    assert!(repo.join(".github").join("ado-cli").join("ado-auth").is_dir());
+    assert!(
+        repo.join(".github")
+            .join("ado-cli")
+            .join("ado-auth")
+            .is_dir()
+    );
 
     let missing = home.path().join("nope");
     let output = run(
@@ -895,7 +903,10 @@ fn install_copilot_defaults_to_the_working_directory_without_checking_for_a_repo
 fn install_an_unknown_target_is_a_custom_path_expanded_from_home_or_cwd() {
     let home = TempHome::new();
 
-    let output = run(&home, &["skills", "install", "--target", "~/custom", "--json"]);
+    let output = run(
+        &home,
+        &["skills", "install", "--target", "~/custom", "--json"],
+    );
 
     assert_exit(&output, 0);
     assert_eq!(
@@ -954,11 +965,7 @@ fn install_human_names_the_targets_and_omits_the_note_for_copilot() {
 
     let repo = home.path().join("repo");
     fs::create_dir_all(&repo).expect("the repo directory");
-    let copilot = run_from(
-        &home,
-        &repo,
-        &["skills", "install", "--target", "copilot"],
-    );
+    let copilot = run_from(&home, &repo, &["skills", "install", "--target", "copilot"]);
 
     assert_exit(&copilot, 0);
     let stdout = stdout_of(&copilot);
@@ -971,7 +978,10 @@ fn install_reports_a_failed_skill_in_the_human_summary() {
     let home = TempHome::new();
     let pi = home.path().join(".pi").join("agent").join("skills");
 
-    let output = run(&home, &["skills", "install", "--target", "pi", "--skill", "no-such"]);
+    let output = run(
+        &home,
+        &["skills", "install", "--target", "pi", "--skill", "no-such"],
+    );
 
     assert_exit(&output, 0);
     assert_eq!(
@@ -1007,9 +1017,18 @@ fn every_leaf_refuses_a_missing_argument() {
 
     for (args, expected) in [
         (vec!["skills"], "missing sub-command"),
-        (vec!["skills", "describe"], "required arguments were not provided"),
-        (vec!["skills", "read"], "required arguments were not provided"),
-        (vec!["skills", "search"], "required arguments were not provided"),
+        (
+            vec!["skills", "describe"],
+            "required arguments were not provided",
+        ),
+        (
+            vec!["skills", "read"],
+            "required arguments were not provided",
+        ),
+        (
+            vec!["skills", "search"],
+            "required arguments were not provided",
+        ),
         (
             vec!["skills", "list", "ado-cli", "extra"],
             "unexpected argument 'extra'",

@@ -184,7 +184,10 @@ mod tests {
 
     #[test]
     fn an_empty_value_is_an_empty_string() {
-        assert_eq!(parse("---\nkey:\nkey2:   \n---\n"), map(&[("key", ""), ("key2", "")]));
+        assert_eq!(
+            parse("---\nkey:\nkey2:   \n---\n"),
+            map(&[("key", ""), ("key2", "")])
+        );
     }
 
     #[test]
@@ -239,7 +242,10 @@ mod tests {
     #[test]
     fn parse_commands_without_a_field_or_with_an_empty_one_is_empty() {
         assert_eq!(parse_commands("no frontmatter"), Vec::<String>::new());
-        assert_eq!(parse_commands("---\ncommands:\n---\nbody"), Vec::<String>::new());
+        assert_eq!(
+            parse_commands("---\ncommands:\n---\nbody"),
+            Vec::<String>::new()
+        );
     }
 
     #[test]

@@ -12,10 +12,23 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 fn main() {
-    let assets = PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR"))
-        .join("assets");
+    let assets =
+        PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR")).join("assets");
     let mut files = Vec::new();
-    collect(&assets, &assets, &mut files);
+
+    // The frozen module filters `File.ls!/1` through `File.dir?/1`, so a top-level
+    // entry is a skill only when it is a directory; a stray file at the root is
+    // ignored, not embedded.
+    for entry in
+        fs::read_dir(&assets).unwrap_or_else(|error| panic!("read {}: {error}", assets.display()))
+    {
+        let path = entry.expect("a directory entry").path();
+
+        if path.is_dir() {
+            collect(&assets, &path, &mut files);
+        }
+    }
+
     files.sort();
 
     println!("cargo:rerun-if-changed=assets");
@@ -36,8 +49,8 @@ fn main() {
 }
 
 fn collect(root: &Path, dir: &Path, files: &mut Vec<String>) {
-    let entries = fs::read_dir(dir)
-        .unwrap_or_else(|error| panic!("read {}: {error}", dir.display()));
+    let entries =
+        fs::read_dir(dir).unwrap_or_else(|error| panic!("read {}: {error}", dir.display()));
 
     for entry in entries {
         let entry = entry.expect("a directory entry");

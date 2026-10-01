@@ -71,9 +71,9 @@ pub enum SkillError {
 impl SkillError {
     pub fn message(&self) -> String {
         match self {
-            SkillError::UnknownSkill(name) => format!(
-                "unknown skill {name:?}. Run 'ado skills list' to see available skills"
-            ),
+            SkillError::UnknownSkill(name) => {
+                format!("unknown skill {name:?}. Run 'ado skills list' to see available skills")
+            }
             SkillError::FileNotFound(path) => format!("file not found: {path}"),
         }
     }
@@ -169,7 +169,7 @@ pub fn list_path(arg: &str) -> Result<Listing, SkillError> {
     let mut seen: Vec<&str> = Vec::new();
     let mut entries = Vec::new();
 
-    for (path, _) in &skill.files {
+    for path in skill.files.keys() {
         let Some(rest) = path.strip_prefix(&prefix) else {
             continue;
         };
@@ -200,7 +200,7 @@ pub fn read_skill(name: &str) -> Result<&'static str, SkillError> {
         .files
         .get(full.as_str())
         .copied()
-        .ok_or_else(|| SkillError::FileNotFound(full))
+        .ok_or(SkillError::FileNotFound(full))
 }
 
 /// `AdoCli.Skills.read_reference/2`.
@@ -212,7 +212,7 @@ pub fn read_file(name: &str, relative: &str) -> Result<&'static str, SkillError>
         .files
         .get(full.as_str())
         .copied()
-        .ok_or_else(|| SkillError::FileNotFound(full))
+        .ok_or(SkillError::FileNotFound(full))
 }
 
 fn get(name: &str) -> Option<&'static Skill> {
@@ -238,7 +238,8 @@ fn match_priority(match_type: &str) -> u8 {
 }
 
 fn build_skills() -> Vec<Skill> {
-    let mut by_skill: BTreeMap<&'static str, BTreeMap<&'static str, &'static str>> = BTreeMap::new();
+    let mut by_skill: BTreeMap<&'static str, BTreeMap<&'static str, &'static str>> =
+        BTreeMap::new();
 
     for (path, content) in EMBEDDED_FILES {
         let (skill, _) = path
@@ -342,14 +343,20 @@ mod tests {
 
     #[test]
     fn read_skill_and_read_file_keep_the_frozen_paths() {
-        assert!(read_skill("ado-auth").expect("ado-auth").starts_with("---\nname: ado-auth\n"));
+        assert!(
+            read_skill("ado-auth")
+                .expect("ado-auth")
+                .starts_with("---\nname: ado-auth\n")
+        );
         assert!(
             read_file("ado-cli", "references/prs.md")
                 .expect("prs")
                 .starts_with("# Pull Requests\n")
         );
         assert_eq!(
-            read_file("ado-cli", "references").expect_err("a directory is not a file").message(),
+            read_file("ado-cli", "references")
+                .expect_err("a directory is not a file")
+                .message(),
             "file not found: ado-cli/references"
         );
         assert_eq!(
@@ -436,7 +443,11 @@ mod tests {
         assert_eq!(search("create PR").len(), 9);
         assert_eq!(search("CREATE pr").len(), 9);
         assert_eq!(search("zzz").len(), 0);
-        assert_eq!(search("").len(), 116, "3 names + 3 descriptions + 110 commands");
+        assert_eq!(
+            search("").len(),
+            116,
+            "3 names + 3 descriptions + 110 commands"
+        );
         assert_eq!(
             search("export ADO_SERVER").len(),
             0,

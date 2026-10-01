@@ -227,8 +227,8 @@ mod tests {
 
     #[test]
     fn a_named_per_user_target_resolves_alone() {
-        let resolved = targets("pi", None, Path::new("/home/u"), Path::new("/work"))
-            .expect("pi resolves");
+        let resolved =
+            targets("pi", None, Path::new("/home/u"), Path::new("/work")).expect("pi resolves");
 
         assert_eq!(resolved.len(), 1);
         assert_eq!(resolved[0].name, "pi");
@@ -259,7 +259,8 @@ mod tests {
     fn copilot_expands_a_tilde_repo() {
         let home = ado_testkit_home();
 
-        let resolved = targets("copilot", Some("~"), &home, Path::new("/work")).expect("~ resolves");
+        let resolved =
+            targets("copilot", Some("~"), &home, Path::new("/work")).expect("~ resolves");
 
         assert_eq!(resolved[0].path, home.join(".github").join("ado-cli"));
 
@@ -329,7 +330,11 @@ mod tests {
             true,
         );
         assert_eq!(forced[0].status, InstallStatus::Installed);
-        assert!(fs::read_to_string(&rows[0].path).expect("restored").starts_with("---"));
+        assert!(
+            fs::read_to_string(&rows[0].path)
+                .expect("restored")
+                .starts_with("---")
+        );
 
         fs::remove_dir_all(&home).ok();
     }
