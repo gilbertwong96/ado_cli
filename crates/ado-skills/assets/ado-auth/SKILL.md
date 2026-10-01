@@ -1,7 +1,7 @@
 ---
 name: ado-auth
 description: "Authenticate ado: PAT (CI-friendly), browser OAuth (AAD + MSA), device code (headless), env vars, self-hosted server"
-version: "0.5.0"
+version: "1.0.0-rc.1"
 commands:
   - ado login
   - ado login --method device
@@ -20,9 +20,18 @@ commands:
 
 1. **CLI flags** (`--org`, `--pat`, `--server`) — one-off, never persisted
 2. **Environment variables** (`ADO_ORG`, `ADO_PAT`, `ADO_SERVER`) — session-level
-3. **Config file** (`~/.ado_cli/config.json`) — persistent, set via `ado login`
+3. **OS credential store** — persistent, set via `ado login`; macOS Keychain, Windows
+   Credential Manager or the Linux secret service, keyed by organization. Where no
+   store is reachable the credential falls back to
+   `<config dir>/ado/credentials.json` (mode 0600)
+4. **Config file** (`<config dir>/ado/config.toml`) — the organization and method
+   `ado login` recorded; the token is never written there
 
-There is **no `az` CLI dependency**.
+There is **no `az` CLI dependency** — no Azure CLI token is detected or used.
+
+On first use a legacy Elixir install is imported once: `~/.ado_cli/config.json`'s
+organization, server and token are moved into the store and the config file, and the
+file is never read again.
 
 ## Decision tree: which auth method?
 
@@ -79,7 +88,7 @@ Supports:
 - Prompt=select_account for multi-account Microsoft sessions
 
 Prerequisites:
-- Port 58585 must be free (localhost callback)
+- The OS assigns the localhost callback port; nothing fixed must be free
 - Default browser must be installed
 
 ### Device Code — headless, no browser
@@ -87,14 +96,14 @@ Prerequisites:
 ```bash
 ado login --method device         # org auto-detected, no --org needed
 ado login --method device --org myorg  # or hint a specific org
-# CLI prints a URL and code → visit https://login.microsoft.com/device
+# CLI prints a URL and code → visit https://microsoft.com/devicelogin
 # Enter the code → CLI polls for completion
 ```
 
 Use when:
 - Browser is blocked by firewall/Zscaler
 - Running on a headless server
-- The default browser OAuth port is unavailable
+- A browser cannot reach the machine running `ado`
 
 ### Self-hosted Server
 
@@ -121,13 +130,16 @@ ado whoami
 # Organization: myorg
 # Server:       dev.azure.com (cloud)
 # Auth Method:  browser
-# Config File:  ~/.ado_cli/config.json
+# Config File:  <config dir>/ado/config.toml
 ```
+
+(The path shown is the OS config directory: `~/Library/Application Support` on
+macOS, `%APPDATA%` on Windows, `$XDG_CONFIG_HOME` or `~/.config` on Linux.)
 
 ## Logging out
 
 ```bash
-ado logout    # deletes ~/.ado_cli/config.json
+ado logout    # removes the stored credential and clears the config entry
 ```
 
 ## Switching auth methods
@@ -170,9 +182,9 @@ ado <command>  # uses saved config
 ## Security
 
 - PATs from env vars (`ADO_PAT`) and per-command `--pat` flags are transient — never written to disk
-- PATs from `ado login --pat` (or `ado login --method pat`) ARE saved to `~/.ado_cli/config.json` for reuse
-- Config file also stores browser/device OAuth bearer tokens and the org name
-- File permissions: 0600 (owner read/write only)
+- PATs from `ado login --pat` (or `ado login --method pat`) ARE saved to the OS credential store for reuse
+- Browser/device OAuth bearer tokens are stored the same way; the config file records only the org and method
+- The `credentials.json` fallback is written mode 0600 (owner read/write only)
 - `--pat` flag masked in error output
 
 ## See also

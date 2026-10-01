@@ -1,7 +1,7 @@
 ---
 name: ado-cli
 description: Complete command reference for all 24 Azure DevOps service areas (projects, repos, workitems, pipelines, prs, releases, packages, and more)
-version: "0.5.0"
+version: "1.0.0-rc.1"
 commands:
   - ado --version
   - ado version
@@ -102,22 +102,25 @@ commands:
 
 A self-contained, cross-compiled CLI for managing every Azure DevOps service:
 projects, repos, work items, pipelines, PRs, releases, packages, and more.
-Single-file binaries for macOS, Linux, and Windows via Burrito. No `az` or
-Node.js dependency.
+Single-file binaries for macOS, Linux, and Windows, built on native runners by
+cargo-dist. No `az`, Node.js or runtime dependency.
 
 ## When to use this skill
 
 - You need to automate Azure DevOps from a CI pipeline or script
 - You are an LLM agent helping a user manage their DevOps org
 - You want to script PR reviews, pipeline triggers, or work item workflows
-- You are behind a firewall/offline and cannot use `az devops`
+- You are behind a firewall/offline and cannot use the Azure CLI or the web UI
 
 ## Quick start
 
 ```bash
-# Build from source or download a binary
-mix escript.build && cp ado /usr/local/bin/
-# Or: curl -L -o ado https://github.com/gilbertwong96/ado_cli/releases/latest/download/ado_linux
+# Install via npm (recommended)
+npm install -g @gilbertwong1996/ado --foreground-scripts
+# Or download a release archive (version-free names; pick your target)
+#   https://github.com/gilbertwong96/ado_cli/releases/latest/download/ado-x86_64-unknown-linux-musl.tar.gz
+#   …/ado-aarch64-apple-darwin.tar.gz, …/ado-x86_64-apple-darwin.tar.gz,
+#   …/ado-aarch64-unknown-linux-musl.tar.gz, …/ado-x86_64-pc-windows-msvc.zip
 
 # Authenticate
 ado login                                                   # browser OAuth, auto-detects org
@@ -177,11 +180,11 @@ The full command reference is split into topic-focused files. Each file
 contains copy-paste-ready examples for every subcommand in that area.
 
 ```bash
-# Read a reference file:
-ado skills read ado-cli references/prs.md
+# Read a reference file (the skill name and the path are one argument, slash-separated):
+ado skills read ado-cli/references/prs.md
 
 # Or from disk:
-cat priv/skills/ado-cli/references/prs.md
+cat crates/ado-skills/assets/ado-cli/references/prs.md
 ```
 
 | Area | Reference file | Commands |
@@ -264,10 +267,9 @@ ado --server https://ado.example.com --org Coll projects list
 
 | Code | Meaning |
 |------|---------|
-| 0    | Success |
-| 1    | Generic error |
-| 2    | API error (4xx/5xx) |
-| 3    | Auth not configured |
+| 0    | Success — also a closed stdout pipe (`ado schema | head`) |
+| 1    | Any error path, whatever `error.code` says |
+| 2    | `ado ci watch` only: the watched build was cancelled or the watch interrupted |
 
 ## Common pitfalls
 

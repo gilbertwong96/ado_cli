@@ -1,7 +1,7 @@
 ---
 name: ado-ci
 description: "Use ado in CI/CD: auth setup, pipeline triggers, PR automation, package publishing, work item creation on failure"
-version: "0.5.0"
+version: "1.0.0-rc.1"
 commands:
   - ado projects list
   - ado pipelines list PROJECT
@@ -65,22 +65,35 @@ ado projects list
 
 ## Downloading the binary
 
+The release archives are cargo-dist's, named by target triple and **not** by
+version — `releases/latest/download/<archive>` is always the newest release:
+
 ```bash
-# Download the latest release binary (check the releases page for exact filenames):
-# https://github.com/gilbertwong96/ado_cli/releases/latest
+# Latest release archives (pick your target):
+#   https://github.com/gilbertwong96/ado_cli/releases/latest/download/<archive>
+#
+#   ado-x86_64-unknown-linux-musl.tar.gz     Linux x86_64
+#   ado-aarch64-unknown-linux-musl.tar.gz    Linux arm64
+#   ado-x86_64-apple-darwin.tar.gz           macOS Intel
+#   ado-aarch64-apple-darwin.tar.gz          macOS Apple Silicon
+#   ado-x86_64-pc-windows-msvc.zip           Windows x86_64
 
 # Linux x86_64
-curl -L -o ado https://github.com/gilbertwong96/ado_cli/releases/latest/download/ado-linux-x86_64
-chmod +x ado && sudo mv ado /usr/local/bin/
+curl -L -o ado.tar.gz https://github.com/gilbertwong96/ado_cli/releases/latest/download/ado-x86_64-unknown-linux-musl.tar.gz
+tar -xzf ado.tar.gz ado-x86_64-unknown-linux-musl/ado
+sudo mv ado-x86_64-unknown-linux-musl/ado /usr/local/bin/
 
-# macOS arm64 (Apple Silicon)
-curl -L -o ado https://github.com/gilbertwong96/ado_cli/releases/latest/download/ado-macos-aarch64
-chmod +x ado && sudo mv ado /usr/local/bin/
-
-# Or install via npm: npm install -g @gilbertwong1996/ado
+# macOS Apple Silicon
+curl -L -o ado.tar.gz https://github.com/gilbertwong96/ado_cli/releases/latest/download/ado-aarch64-apple-darwin.tar.gz
+tar -xzf ado.tar.gz ado-aarch64-apple-darwin/ado
+sudo mv ado-aarch64-apple-darwin/ado /usr/local/bin/
 ```
 
-Or install via npm: `npm install -g @gilbertwong1996/ado`
+Each archive holds the `ado` binary (or `ado.exe`) beside `CHANGELOG.md`, `LICENSE`
+and `README.md`, inside a directory named after the archive. cargo-dist also ships
+`ado-installer.sh` and `ado-installer.ps1`; the npm package
+(`npm install -g @gilbertwong1996/ado --foreground-scripts`) downloads and unpacks
+the archive for the running platform itself.
 
 ## Pipeline triggers
 
@@ -216,8 +229,9 @@ echo "$result" | jq -r '.[].name'
 ```yaml
 - name: Download ado binary
   run: |
-    curl -L -o ado https://github.com/gilbertwong96/ado_cli/releases/latest/download/ado_linux
-    chmod +x ado && sudo mv ado /usr/local/bin/
+    curl -L -o ado.tar.gz https://github.com/gilbertwong96/ado_cli/releases/latest/download/ado-x86_64-unknown-linux-musl.tar.gz
+    tar -xzf ado.tar.gz ado-x86_64-unknown-linux-musl/ado
+    chmod +x ado-x86_64-unknown-linux-musl/ado && sudo mv ado-x86_64-unknown-linux-musl/ado /usr/local/bin/
 
 - name: Create work item on failure
   if: failure()
@@ -245,8 +259,9 @@ trigger_deploy:
   stage: deploy
   image: alpine:latest
   before_script:
-    - curl -L -o ado https://github.com/gilbertwong96/ado_cli/releases/latest/download/ado_linux
-    - chmod +x ado && mv ado /usr/local/bin/
+    - curl -L -o ado.tar.gz https://github.com/gilbertwong96/ado_cli/releases/latest/download/ado-x86_64-unknown-linux-musl.tar.gz
+    - tar -xzf ado.tar.gz ado-x86_64-unknown-linux-musl/ado
+    - chmod +x ado-x86_64-unknown-linux-musl/ado && mv ado-x86_64-unknown-linux-musl/ado /usr/local/bin/
   script:
     - ado pipelines run MyProject 42 --branch $CI_COMMIT_REF_NAME
   variables:
@@ -269,12 +284,12 @@ trigger_deploy:
 
 | Code | Meaning |
 |------|---------|
-| 0    | Success |
-| 1    | Generic error |
-| 2    | API error (4xx/5xx) |
-| 3    | Auth not configured |
+| 0    | Success — also a closed stdout pipe (`ado schema | head`) |
+| 1    | Any error path, whatever `error.code` says |
+| 2    | `ado ci watch` only: the watched build was cancelled or the watch interrupted |
 
-Use `set -euo pipefail` in shell scripts. Non-zero always means failure.
+`ado ci watch` additionally exits 1 when the watched build failed. Use
+`set -euo pipefail` in shell scripts: non-zero always means failure.
 
 ## See also
 
