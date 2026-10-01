@@ -684,8 +684,8 @@ fn schema_login_node_has_the_method_option_and_the_globals() {
     assert!(doc.contains("pat"), "doc: {doc}");
     assert!(doc.contains("device"), "doc: {doc}");
     assert!(
-        doc.contains("Browser login is not available in this build"),
-        "the help names what ships, not what Wave 3 adds: {doc}"
+        doc.contains("browser (default"),
+        "the help names the oracle's three methods and its default: {doc}"
     );
 }
 

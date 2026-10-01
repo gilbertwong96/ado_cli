@@ -4,15 +4,19 @@
 //! refresh token for a DevOps access token.
 //!
 //! The tenant, resource and endpoint constants are the Elixir's, verbatim. The
-//! identity origin is a parameter rather than a constant, so a test can point the
-//! flow at a local fake server — the frozen CLI hardcodes the endpoint, and this
-//! module deliberately has no environment override of its own.
+//! identity origin and the OAuth client id are parameters rather than constants, so
+//! a test can point the flow at a local fake server and `ADO_OAUTH_CLIENT_ID` can
+//! override the app — the frozen CLI hardcodes the endpoint, and this module
+//! deliberately has no environment override of its own.
 
 use std::time::Duration;
 
 use serde_json::Value;
 
-use crate::error::{AdoError, ErrorCode};
+use super::identity::{
+    agent, auth_failed, endpoint, json_or_null, post_form, reason, string_field,
+};
+use crate::error::AdoError;
 
 /// The Microsoft identity origin the flow talks to.
 pub const IDENTITY_BASE: &str = "https://login.microsoftonline.com";
@@ -32,8 +36,11 @@ pub const DEVOPS_RESOURCE: &str = "499b84ac-1321-427f-aa17-267ca6975798";
 pub const ARM_RESOURCE: &str = "https://management.core.windows.net";
 
 /// `@ado_client_id` — the Azure CLI public client, which accepts work/school and
-/// personal Microsoft accounts. The Elixir also lets `ADO_OAUTH_CLIENT_ID` override
-/// it; this build has no surface for that.
+/// personal Microsoft accounts. The default only: `ADO_OAUTH_CLIENT_ID` overrides
+/// it for both flows (spec §4.7), resolved by the caller through
+/// [`crate::env::ENV_OAUTH_CLIENT_ID`] — which is what the Elixir's module
+/// attribute *intended*, and what it could not do from an escript, where the
+/// attribute was already baked at build time.
 pub const CLIENT_ID: &str = "04b07795-8ddb-461a-bbee-02f9e1bf7b46";
 
 /// The device-code grant type the poll posts.
@@ -47,10 +54,6 @@ pub const SLOW_DOWN_INCREMENT: Duration = Duration::from_secs(5);
 /// gives up — the run can never loop forever on a server that never grants.
 pub const POLL_ATTEMPT_LIMIT: u32 = 120;
 
-/// The identity requests' timeouts, shaped like the ADO client's.
-const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
-const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
-
 /// The code the user enters on any device, with the interval the server asks us to
 /// poll at.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -63,12 +66,12 @@ pub struct DeviceCode {
 
 /// Requests a device code for the ARM resource
 /// (`request_device_code/1`).
-pub fn request(identity_base: &str) -> Result<DeviceCode, AdoError> {
+pub fn request(identity_base: &str, client_id: &str) -> Result<DeviceCode, AdoError> {
     let agent = agent();
     let (status, body) = post_form(
         &agent,
         &endpoint(identity_base, &format!("{TENANT}/oauth2/devicecode")),
-        &[("client_id", CLIENT_ID), ("resource", ARM_RESOURCE)],
+        &[("client_id", client_id), ("resource", ARM_RESOURCE)],
     )?;
 
     if status != 200 {
@@ -111,7 +114,11 @@ pub fn request(identity_base: &str) -> Result<DeviceCode, AdoError> {
 /// `interval + SLOW_DOWN_INCREMENT` and keeps that as the new interval, and every
 /// other error is terminal. A transport failure is a `network_error` (§6.2) rather
 /// than the oracle's flat "Token polling failed".
-pub fn poll(identity_base: &str, device: &DeviceCode) -> Result<Option<String>, AdoError> {
+pub fn poll(
+    identity_base: &str,
+    client_id: &str,
+    device: &DeviceCode,
+) -> Result<Option<String>, AdoError> {
     let agent = agent();
     let url = endpoint(identity_base, &format!("{TENANT}/oauth2/token"));
     let mut interval = device.interval;
@@ -128,7 +135,7 @@ pub fn poll(identity_base: &str, device: &DeviceCode) -> Result<Option<String>, 
             &url,
             &[
                 ("grant_type", DEVICE_CODE_GRANT),
-                ("client_id", CLIENT_ID),
+                ("client_id", client_id),
                 ("device_code", &device.device_code),
             ],
         )?;
@@ -148,7 +155,11 @@ pub fn poll(identity_base: &str, device: &DeviceCode) -> Result<Option<String>, 
 /// Exchanges the ARM refresh token for a DevOps access token, trying the primary
 /// issuer then the MSA fallback (`exchange_refresh_for_devops/2` → `try_tenants/2`).
 /// Both failing is the oracle's one message for that case.
-pub fn exchange(identity_base: &str, refresh_token: Option<&str>) -> Result<String, AdoError> {
+pub fn exchange(
+    identity_base: &str,
+    client_id: &str,
+    refresh_token: Option<&str>,
+) -> Result<String, AdoError> {
     let Some(refresh_token) = refresh_token else {
         return Err(auth_failed(
             "No refresh token available for DevOps exchange",
@@ -158,7 +169,7 @@ pub fn exchange(identity_base: &str, refresh_token: Option<&str>) -> Result<Stri
     let agent = agent();
 
     for tenant in [TENANT, FALLBACK_TENANT] {
-        if let Ok(token) = exchange_at(&agent, identity_base, tenant, refresh_token) {
+        if let Ok(token) = exchange_at(&agent, identity_base, client_id, tenant, refresh_token) {
             return Ok(token);
         }
     }
@@ -171,6 +182,7 @@ pub fn exchange(identity_base: &str, refresh_token: Option<&str>) -> Result<Stri
 fn exchange_at(
     agent: &ureq::Agent,
     identity_base: &str,
+    client_id: &str,
     tenant: &str,
     refresh_token: &str,
 ) -> Result<String, AdoError> {
@@ -178,7 +190,7 @@ fn exchange_at(
         agent,
         &endpoint(identity_base, &format!("{tenant}/oauth2/token")),
         &[
-            ("client_id", CLIENT_ID),
+            ("client_id", client_id),
             ("grant_type", "refresh_token"),
             ("refresh_token", refresh_token),
             ("resource", DEVOPS_RESOURCE),
@@ -246,84 +258,10 @@ fn unknown_token_error(error: Option<&str>, value: &Value) -> AdoError {
     }
 }
 
-/// The flow's own failures: this CLI's `auth_required`, which the command then
-/// prefixes with "Login failed: " the way the oracle's `Output.error` does. The one
-/// error that keeps its own code is a transport failure, which
-/// [`AdoError::from_transport`] classifies per §6.2.
-fn auth_failed(message: impl Into<String>) -> AdoError {
-    AdoError {
-        code: ErrorCode::AuthRequired,
-        status: None,
-        message: message.into(),
-        details: None,
-    }
-}
-
-fn endpoint(identity_base: &str, path: &str) -> String {
-    format!("{}/{}", identity_base.trim_end_matches('/'), path)
-}
-
-/// The same shape the ADO client uses: statuses are the caller's to read, a
-/// redirect is not followed, and a request cannot hang forever.
-fn agent() -> ureq::Agent {
-    ureq::Agent::config_builder()
-        .http_status_as_error(false)
-        .max_redirects(0)
-        .timeout_global(Some(REQUEST_TIMEOUT))
-        .timeout_connect(Some(CONNECT_TIMEOUT))
-        .build()
-        .new_agent()
-}
-
-/// One form-encoded `POST`, answered with its status and body. `send_form` encodes
-/// `URI.encode_query/1` style — a space as `+`, everything outside the unreserved
-/// set percent-encoded — so the wire body is the oracle's, pair for pair.
-fn post_form(
-    agent: &ureq::Agent,
-    url: &str,
-    form: &[(&str, &str)],
-) -> Result<(u16, String), AdoError> {
-    let mut response = agent
-        .post(url)
-        .send_form(form.iter().copied())
-        .map_err(|error| AdoError::from_transport(&error))?;
-
-    let status = response.status().as_u16();
-    let body = response
-        .body_mut()
-        .read_to_string()
-        .map_err(|error| AdoError::from_transport(&error))?;
-
-    Ok((status, body))
-}
-
-fn json_or_null(body: &str) -> Value {
-    serde_json::from_str(body).unwrap_or(Value::Null)
-}
-
-fn string_field(value: &Value, key: &str) -> Option<String> {
-    value.get(key).and_then(Value::as_str).map(str::to_owned)
-}
-
-/// `safe_decode/1`: the server's `error_description`, else its `message`, else
-/// "Unknown error" for a JSON body, else the raw body.
-fn reason(body: &str) -> String {
-    let Ok(value) = serde_json::from_str::<Value>(body) else {
-        return body.to_owned();
-    };
-
-    if !value.is_object() {
-        return "Unknown error".to_owned();
-    }
-
-    string_field(&value, "error_description")
-        .or_else(|| string_field(&value, "message"))
-        .unwrap_or_else(|| "Unknown error".to_owned())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::error::ErrorCode;
     use serde_json::json;
 
     /// The flow's constants are the frozen module's, verbatim
@@ -454,29 +392,12 @@ mod tests {
 
     #[test]
     fn a_grant_without_a_refresh_token_is_a_stable_error() {
-        let error = exchange(IDENTITY_BASE, None).expect_err("no refresh token");
+        let error = exchange(IDENTITY_BASE, CLIENT_ID, None).expect_err("no refresh token");
 
         assert_eq!(error.code, ErrorCode::AuthRequired);
         assert_eq!(
             error.message,
             "No refresh token available for DevOps exchange"
         );
-    }
-
-    /// `safe_decode/1` exactly: the description, else the message, else
-    /// "Unknown error" for JSON, else the raw body.
-    #[test]
-    fn reason_mirrors_safe_decode() {
-        assert_eq!(
-            reason(&json!({"error_description": "why"}).to_string()),
-            "why"
-        );
-        assert_eq!(reason(&json!({"message": "sorry"}).to_string()), "sorry");
-        assert_eq!(
-            reason(&json!({"error": "nope"}).to_string()),
-            "Unknown error"
-        );
-        assert_eq!(reason(&json!([1, 2]).to_string()), "Unknown error");
-        assert_eq!(reason("<html>502</html>"), "<html>502</html>");
     }
 }

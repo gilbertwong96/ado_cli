@@ -1,12 +1,15 @@
 //! Request headers for a resolved credential, and the credential a login stores.
 
 use base64::{Engine, engine::general_purpose::STANDARD};
+use serde_json::json;
 
 use crate::config::{AuthMethod, Config, OrgEntry};
 use crate::credentials::{Credentials, SecretStore, Stored};
-use crate::error::AdoError;
+use crate::error::{AdoError, ErrorCode};
 
+pub mod browser;
 pub mod device_code;
+pub mod identity;
 
 /// PATs are sent as HTTP Basic with an empty username — `Basic base64(":PAT")` —
 /// and OAuth tokens as Bearer, matching the Elixir CLI.
@@ -54,11 +57,25 @@ pub fn save_credential(
     Ok(())
 }
 
+/// `--org is required for method='<method>' (or set ADO_ORG env var)` and its
+/// `details` pair, captured byte-for-byte from the frozen CLI. Every login method
+/// needs an organization in this build: `pat` by the oracle's own guard, `device`
+/// because our credential store is keyed by one (D26), and `browser` when the
+/// freshly exchanged token's account resolves to no single organization (D26's
+/// extension — the oracle stores an unkeyed credential there).
+pub fn org_required(method: &str) -> AdoError {
+    AdoError {
+        code: ErrorCode::ValidationError,
+        status: None,
+        message: format!("--org is required for method='{method}' (or set ADO_ORG env var)"),
+        details: Some(json!({"option": "--org", "env_var": "ADO_ORG"})),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::credentials::InMemoryStore;
-    use crate::error::ErrorCode;
 
     fn credentials(method: AuthMethod, token: &str) -> Credentials {
         Credentials {

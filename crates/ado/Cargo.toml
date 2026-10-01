@@ -18,5 +18,6 @@ signal-hook = { workspace = true }
 
 [dev-dependencies]
 ado-testkit = { path = "../ado-testkit" }
+base64 = { workspace = true }
 insta = { workspace = true }
 sha2 = { workspace = true }

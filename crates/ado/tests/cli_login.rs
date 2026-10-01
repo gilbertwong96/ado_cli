@@ -579,7 +579,8 @@ impl Browser {
         fs::create_dir_all(&shim).expect("the shim directory");
         let opener = shim.join("open");
         fs::write(&opener, OPENER_SHIM).expect("the shim");
-        fs::set_permissions(&opener, fs::Permissions::from_mode(0o755)).expect("the shim is runnable");
+        fs::set_permissions(&opener, fs::Permissions::from_mode(0o755))
+            .expect("the shim is runnable");
 
         Browser {
             home,
@@ -709,7 +710,10 @@ const AUTHORIZE_KEYS: [&str; 12] = [
 #[test]
 fn the_printed_authorize_url_is_the_oracles() {
     let browser = Browser::new();
-    let output = browser.run("mismatch", &["login", "--method", "browser", "--org", ORG, "--json"]);
+    let output = browser.run(
+        "mismatch",
+        &["login", "--method", "browser", "--org", ORG, "--json"],
+    );
 
     assert_eq!(output.status.code(), Some(1));
     let url = browser.url();
@@ -749,8 +753,16 @@ fn the_printed_authorize_url_is_the_oracles() {
         "base64url(SHA256(verifier)), unpadded: {}",
         value(&pairs, "code_challenge")
     );
-    assert_eq!(value(&pairs, "state").len(), 22, "base64url(16 bytes), unpadded");
-    assert_eq!(value(&pairs, "nonce").len(), 22, "base64url(16 bytes), unpadded");
+    assert_eq!(
+        value(&pairs, "state").len(),
+        22,
+        "base64url(16 bytes), unpadded"
+    );
+    assert_eq!(
+        value(&pairs, "nonce").len(),
+        22,
+        "base64url(16 bytes), unpadded"
+    );
     let redirect = value(&pairs, "redirect_uri");
     assert!(
         redirect.starts_with("http://localhost:"),
@@ -769,9 +781,7 @@ fn the_printed_authorize_url_is_the_oracles() {
     assert_eq!(message["ok"], json!(true));
     assert_eq!(
         message["message"],
-        json!(format!(
-            "Opening browser to sign in to {ORG}...\n  {url}"
-        )),
+        json!(format!("Opening browser to sign in to {ORG}...\n  {url}")),
         "the URL reaches stdout under --json, and it is the one the opener got"
     );
 }
@@ -790,10 +800,14 @@ fn the_oauth_client_id_override_reaches_the_authorize_url() {
     command.env("ADO_OAUTH_CLIENT_ID", override_id);
     let output = command.output().expect("run ado");
     assert_eq!(output.status.code(), Some(1));
-    assert_eq!(value(&query_pairs(&browser.url()), "client_id"), override_id);
+    assert_eq!(
+        value(&query_pairs(&browser.url()), "client_id"),
+        override_id
+    );
 
     for blank in ["", "  "] {
-        let mut command = browser.command("mismatch", &["login", "--method", "browser", "--org", ORG]);
+        let mut command =
+            browser.command("mismatch", &["login", "--method", "browser", "--org", ORG]);
         command.env("ADO_OAUTH_CLIENT_ID", blank);
         command.output().expect("run ado");
 
@@ -821,8 +835,8 @@ fn a_mismatched_state_stops_the_browser_flow() {
     let stdout = stdout_of(&output);
     let mut lines = stdout.lines();
     let _announcement = lines.next().expect("the URL announcement");
-    let envelope: Value = serde_json::from_str(lines.next().expect("the error envelope"))
-        .expect("a JSON document");
+    let envelope: Value =
+        serde_json::from_str(lines.next().expect("the error envelope")).expect("a JSON document");
     assert_eq!(envelope["ok"], json!(false));
     assert_eq!(envelope["error"]["code"], json!("auth_required"));
     assert_eq!(

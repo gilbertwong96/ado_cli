@@ -9,6 +9,11 @@ pub const ENV_ORG: &str = "ADO_ORG";
 pub const ENV_PAT: &str = "ADO_PAT";
 /// The base URL of a self-hosted Azure DevOps Server: `ADO_SERVER`.
 pub const ENV_SERVER: &str = "ADO_SERVER";
+/// The OAuth client id both interactive login flows use: `ADO_OAUTH_CLIENT_ID`.
+/// The frozen Elixir reads it through a module attribute, so an escript has the
+/// value baked at build time and the documented runtime override never applied
+/// (captured in Task 10's report); this build reads it per invocation.
+pub const ENV_OAUTH_CLIENT_ID: &str = "ADO_OAUTH_CLIENT_ID";
 
 pub trait EnvSource {
     fn get(&self, key: &str) -> Option<String>;

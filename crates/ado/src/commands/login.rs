@@ -1,22 +1,27 @@
-//! `ado login` — the PAT method and the device-code flow, ported from
-//! `lib/ado_cli/cli/auth_commands.ex` (`login/1`, `resolve_method/1`,
-//! `login_with_pat/3`, `login_with_device/2`, `login_success/4`) and
-//! `lib/ado_cli/auth.ex` (`login_pat/2`, `request_device_code/1`,
-//! `poll_for_token/4`, `exchange_and_save_device/2`).
+//! `ado login` — the PAT method, the device-code flow and the browser OAuth flow,
+//! ported from `lib/ado_cli/cli/auth_commands.ex` (`login/1`, `resolve_method/1`,
+//! `login_with_pat/3`, `login_with_device/2`, `login_with_browser/2`,
+//! `login_success/4`) and `lib/ado_cli/auth.ex` (`login_pat/2`,
+//! `request_device_code/1`, `poll_for_token/4`, `exchange_and_save_device/2`,
+//! `login_browser/1`).
 //!
-//! Both methods ship in Wave 1 (`browser` is Wave 3, and an unsupported method is a
-//! validation error rather than a silent no-op). The storage is §7's clean slate:
-//! the token goes to the credential store — the OS keychain, with
-//! `credentials.json` behind it — and `config.toml` records the organization and the
-//! method, never the token. That is the one deliberate difference from the oracle in
-//! the success output: `credentials_saved_to` names the config file where the oracle
-//! names the JSON file its own token lives in.
+//! The storage is §7's clean slate: the token goes to the credential store — the OS
+//! keychain, with `credentials.json` behind it — and `config.toml` records the
+//! organization and the method, never the token. That is the one deliberate
+//! difference from the oracle in the success output: `credentials_saved_to` names
+//! the config file where the oracle names the JSON file its own token lives in.
+//!
+//! `ADO_OAUTH_CLIENT_ID` is read here, once, and threaded into whichever flow runs
+//! (spec §4.7): the OAuth app is part of the auth contract, so it is not a constant
+//! inside `ado-core`.
 
 use std::io::Write;
 
+use ado_core::auth::browser::{self, BrowserLogin};
 use ado_core::auth::device_code::{self, DeviceCode};
+use ado_core::auth::org_required;
 use ado_core::config::AuthMethod;
-use ado_core::env::{ENV_ORG, ENV_PAT, ENV_SERVER, EnvSource, non_empty};
+use ado_core::env::{ENV_OAUTH_CLIENT_ID, ENV_ORG, ENV_PAT, ENV_SERVER, EnvSource, non_empty};
 use ado_core::envelope::{ok_message, ok_value};
 use ado_core::error::{AdoError, ErrorCode};
 use serde_json::json;
@@ -24,25 +29,66 @@ use serde_json::json;
 use crate::context::Context;
 use crate::output::{Report, WriteFailure, write_bytes};
 
-/// The `--method` values this build accepts. The oracle's list is these two plus
-/// `browser`, which Wave 3 adds; the validation messages name what ships.
-const METHODS: [&str; 2] = ["pat", "device"];
+/// The `--method` values this build accepts — the oracle's list, in the oracle's
+/// order (`valid_methods: ["browser", "pat", "device"]`).
+const METHODS: [&str; 3] = ["browser", "pat", "device"];
+
+/// The parts of the interactive flows production fixes and a test replaces. The
+/// origins are parameters for the same reason the device flow's already was: the
+/// frozen CLI hardcodes them and this build adds no environment override, so a
+/// test's only way to run the flow is to hand it a local fake.
+pub struct LoginSeams<'a> {
+    pub identity_base: &'a str,
+    pub accounts_base: &'a str,
+    pub opener: &'a dyn browser::Opener,
+    /// `None` binds the real loopback listener.
+    pub callback: Option<&'a dyn browser::Callback>,
+}
+
+impl<'a> LoginSeams<'a> {
+    /// Production: the real origins, the system browser and a freshly bound
+    /// loopback listener.
+    pub fn production(identity_base: &'a str) -> LoginSeams<'a> {
+        LoginSeams {
+            identity_base,
+            accounts_base: browser::ACCOUNTS_BASE,
+            opener: &browser::SystemOpener,
+            callback: None,
+        }
+    }
+}
 
 /// `ado login`.
 ///
-/// `identity_base` is the identity origin the device flow talks to —
+/// `identity_base` is the identity origin the interactive flows talk to —
 /// [`device_code::IDENTITY_BASE`] in production, a local fake in the tests, because
 /// the flow's endpoints are otherwise not redirectable and this build adds no
 /// environment override for them. `announce` receives the device code and its URL
 /// after the code is requested and before the first poll, which is the only moment
-/// the user can read them.
+/// the user can read them, and the browser flow's authorize URL before it opens
+/// anything.
 pub fn run(
     context: &mut Context,
     method: Option<&str>,
     identity_base: &str,
     announce: &mut dyn Write,
 ) -> Result<Report, AdoError> {
-    let (org, pat, server) = {
+    run_with_seams(
+        context,
+        method,
+        &LoginSeams::production(identity_base),
+        announce,
+    )
+}
+
+/// [`run`] with the flows' injected parts exposed to the caller.
+pub fn run_with_seams(
+    context: &mut Context,
+    method: Option<&str>,
+    seams: &LoginSeams<'_>,
+    announce: &mut dyn Write,
+) -> Result<Report, AdoError> {
+    let (org, pat, server, client_id) = {
         let env = context.env();
 
         // `FlagEnv::set` drops a blank flag, but the environment behind it answers
@@ -54,32 +100,47 @@ pub fn run(
         // `set_server/1` reads the flag, then `ADO_SERVER`, and nothing else: the
         // config's `server` is `whoami`'s display field (W1-R10), so a login never
         // reports one this invocation did not name.
-        (value(ENV_ORG), value(ENV_PAT), value(ENV_SERVER))
+        //
+        // `ADO_OAUTH_CLIENT_ID` overrides the OAuth app for both interactive flows
+        // (spec §4.7); a blank value is not a value (D16), so it falls back to the
+        // Azure CLI public client. The frozen escript cannot honour this at runtime
+        // at all — its module attribute is evaluated at compile time (captured in
+        // the Task 10 report) — which is why this build reads it here.
+        (
+            value(ENV_ORG),
+            value(ENV_PAT),
+            value(ENV_SERVER),
+            value(ENV_OAUTH_CLIENT_ID).unwrap_or_else(|| device_code::CLIENT_ID.to_owned()),
+        )
     };
 
     match resolve_method(method, pat.as_deref())? {
         LoginMethod::Pat => login_with_pat(context, org, pat, server.as_deref()),
-        LoginMethod::Device => login_with_device(context, org, identity_base, announce),
+        LoginMethod::Device => {
+            login_with_device(context, org, seams.identity_base, &client_id, announce)
+        }
+        LoginMethod::Browser => login_with_browser(context, org, seams, &client_id, announce),
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum LoginMethod {
+    Browser,
     Pat,
     Device,
 }
 
 /// `resolve_method/1`: an explicit `--method` wins; otherwise a PAT on `--pat` or
-/// `ADO_PAT` means `pat`, and anything else is the browser flow the oracle would have
-/// run — which this build does not ship.
+/// `ADO_PAT` means `pat`, and anything else is the browser flow — the oracle's
+/// default, and this build's since Wave 3.
 fn resolve_method(method: Option<&str>, pat: Option<&str>) -> Result<LoginMethod, AdoError> {
     match method {
+        Some("browser") => Ok(LoginMethod::Browser),
         Some("pat") => Ok(LoginMethod::Pat),
         Some("device") => Ok(LoginMethod::Device),
-        Some("browser") => Err(browser_not_shipped()),
         Some(other) => Err(unknown_method(other)),
         None if pat.is_some() => Ok(LoginMethod::Pat),
-        None => Err(browser_not_shipped()),
+        None => Ok(LoginMethod::Browser),
     }
 }
 
@@ -109,6 +170,7 @@ fn login_with_device(
     context: &mut Context,
     org: Option<String>,
     identity_base: &str,
+    client_id: &str,
     announce: &mut dyn Write,
 ) -> Result<Report, AdoError> {
     // D26: the oracle's guard exempts `device` from the `--org` requirement and then
@@ -116,7 +178,7 @@ fn login_with_device(
     // `config.toml` are per-organization, so the org is required before the flow
     // starts — a dead end refused rather than ported.
     let org = org.ok_or_else(|| org_required("device"))?;
-    let device = device_code::request(identity_base).map_err(login_failed)?;
+    let device = device_code::request(identity_base, client_id).map_err(login_failed)?;
 
     if let Err(failure) = announce_device_code(context, &device, announce) {
         return match failure {
@@ -128,14 +190,63 @@ fn login_with_device(
         };
     }
 
-    let refresh = device_code::poll(identity_base, &device).map_err(login_failed)?;
-    let token = device_code::exchange(identity_base, refresh.as_deref()).map_err(login_failed)?;
+    let refresh = device_code::poll(identity_base, client_id, &device).map_err(login_failed)?;
+    let token = device_code::exchange(identity_base, client_id, refresh.as_deref())
+        .map_err(login_failed)?;
 
     context
         .save_login(&org, AuthMethod::Device, &token)
         .map_err(login_failed)?;
 
     Ok(success(context, &org, "device", None))
+}
+
+/// `login_with_browser/2` → `login_browser/1`: the PKCE authorization against ARM,
+/// the loopback callback, the state check, the code exchange, the ARM→DevOps
+/// exchange — and, when `--org` was absent, the organization the account resolves
+/// to. The oracle's browser path has no server to report
+/// (`login_success(parsed, org_name, "browser", nil)`), so this one passes none.
+///
+/// Unlike `device`, the org is *not* required up front: the browser flow's
+/// auto-detect is what resolves it, so an unruly account is refused only after the
+/// exchange (D26's extension — the flow itself announces the reason, and the token
+/// is deliberately not stored).
+fn login_with_browser(
+    context: &mut Context,
+    org: Option<String>,
+    seams: &LoginSeams<'_>,
+    client_id: &str,
+    announce: &mut dyn Write,
+) -> Result<Report, AdoError> {
+    let listener;
+    let callback: &dyn browser::Callback = match seams.callback {
+        Some(callback) => callback,
+        None => {
+            listener = browser::LoopbackCallback::bind().map_err(login_failed)?;
+            &listener
+        }
+    };
+    let mut flow = browser::BrowserFlow {
+        identity_base: seams.identity_base,
+        accounts_base: seams.accounts_base,
+        client_id,
+        org: org.as_deref(),
+        opener: seams.opener,
+        callback,
+        json: context.json(),
+        announce,
+    };
+
+    match browser::login(&mut flow).map_err(browser_failed)? {
+        BrowserLogin::NotShown => Ok(Report::Text(String::new())),
+        BrowserLogin::Authenticated { org, token } => {
+            context
+                .save_login(&org, AuthMethod::Browser, &token)
+                .map_err(login_failed)?;
+
+            Ok(success(context, &org, "browser", None))
+        }
+    }
 }
 
 /// The module's device-code instructions: one `{"ok":true,"message":…}` line under
@@ -209,18 +320,6 @@ fn capitalize(method: &str) -> String {
     }
 }
 
-/// The module's `--org is required for method='<method>' (or set ADO_ORG env var)`
-/// and its `details` pair, captured byte-for-byte for `pat` and reused for `device`,
-/// whose org the oracle's guard exempted (D26).
-fn org_required(method: &str) -> AdoError {
-    AdoError {
-        code: ErrorCode::ValidationError,
-        status: None,
-        message: format!("--org is required for method='{method}' (or set ADO_ORG env var)"),
-        details: Some(json!({"option": "--org", "env_var": "ADO_ORG"})),
-    }
-}
-
 /// The module's `--pat is required for method=pat (or set ADO_PAT env var)`.
 fn pat_required() -> AdoError {
     AdoError {
@@ -231,28 +330,26 @@ fn pat_required() -> AdoError {
     }
 }
 
-/// `dispatch_login/4`'s fallback. The oracle suggests `browser` as well; this build
-/// ships `pat` and `device`, so the message and `valid_methods` name those.
+/// `dispatch_login/4`'s fallback, byte for byte (`valid_methods` is the oracle's
+/// three-name list).
 fn unknown_method(method: &str) -> AdoError {
     AdoError {
         code: ErrorCode::ValidationError,
         status: None,
-        message: format!("Unknown method '{method}'. Use 'pat' or 'device'."),
+        message: format!("Unknown method '{method}'. Use 'browser', 'pat', or 'device'."),
         details: Some(json!({"valid_methods": METHODS})),
     }
 }
 
-/// Wave 3's browser flow — and what the oracle would have run for `--method browser`
-/// or for no `--method` and no PAT. It is a validation error that says what ships,
-/// never a silent no-op.
-fn browser_not_shipped() -> AdoError {
-    AdoError {
-        code: ErrorCode::ValidationError,
-        status: None,
-        message:
-            "Login method 'browser' is not available in this build. Use '--method pat' or '--method device'."
-                .to_owned(),
-        details: Some(json!({"valid_methods": METHODS})),
+/// The browser flow's failures, split by what they are: its own are the oracle's
+/// `auth_required`-prefixed ones, while a refusal to key the login is the same
+/// `validation_error` the other methods' `--org` guard emits before their flow starts
+/// (D26) — prefixed by nothing, because the oracle never prefixes it either.
+fn browser_failed(error: AdoError) -> AdoError {
+    if error.code == ErrorCode::AuthRequired {
+        login_failed(error)
+    } else {
+        error
     }
 }
 
@@ -291,6 +388,7 @@ mod tests {
 
     use super::*;
     use crate::args::GlobalOpts;
+    use ado_core::auth::identity;
 
     fn opts(org: Option<&str>, pat: Option<&str>, server: Option<&str>, json: bool) -> GlobalOpts {
         GlobalOpts {
@@ -355,10 +453,18 @@ mod tests {
     struct Received {
         path: String,
         form: Vec<(String, String)>,
+        headers: Vec<(String, String)>,
         at: Instant,
     }
 
     impl Received {
+        fn header(&self, name: &str) -> Option<&str> {
+            self.headers
+                .iter()
+                .find(|(key, _)| key.eq_ignore_ascii_case(name))
+                .map(|(_, value)| value.as_str())
+        }
+
         fn form_value(&self, key: &str) -> Option<&str> {
             self.form
                 .iter()
@@ -429,13 +535,18 @@ mod tests {
                         .expect("a read timeout");
 
                     let at = Instant::now();
-                    let Some((path, form)) = read_request(&mut stream) else {
+                    let Some((path, form, headers)) = read_request(&mut stream) else {
                         continue;
                     };
 
                     let answer = {
                         let mut state = lock(&thread_state);
-                        state.requests.push(Received { path, form, at });
+                        state.requests.push(Received {
+                            path,
+                            form,
+                            headers,
+                            at,
+                        });
                         state.replies.pop_front().or_else(|| state.default.clone())
                     };
 
@@ -491,9 +602,11 @@ mod tests {
         mutex.lock().unwrap_or_else(|error| error.into_inner())
     }
 
-    /// One HTTP/1.1 request: its path and its form body decoded. `ureq` sends
-    /// `content-length`, so the body is read exactly.
-    fn read_request(stream: &mut TcpStream) -> Option<(String, Vec<(String, String)>)> {
+    /// One HTTP/1.1 request: its path, its form body and its headers.
+    type Request = (String, Vec<(String, String)>, Vec<(String, String)>);
+
+    /// `ureq` sends `content-length`, so the body is read exactly.
+    fn read_request(stream: &mut TcpStream) -> Option<Request> {
         let mut buffer = Vec::new();
         let header_end = loop {
             if let Some(position) = buffer.windows(4).position(|window| window == b"\r\n\r\n") {
@@ -520,11 +633,21 @@ mod tests {
             }
         }
 
-        let path = head.lines().next()?.split_whitespace().nth(1)?.to_owned();
+        let request_line = head.lines().next()?;
+        let path = request_line.split_whitespace().nth(1)?.to_owned();
         let end = (header_end + content_length).min(buffer.len());
         let body = String::from_utf8_lossy(&buffer[header_end..end]).into_owned();
+        let headers = head
+            .lines()
+            .skip(1)
+            .filter_map(|line| {
+                let (name, value) = line.split_once(':')?;
 
-        Some((path, parse_form(&body)))
+                Some((name.trim().to_owned(), value.trim().to_owned()))
+            })
+            .collect();
+
+        Some((path, parse_form(&body), headers))
     }
 
     fn read_more(stream: &mut TcpStream, buffer: &mut Vec<u8>) -> Option<bool> {
@@ -1690,6 +1813,7 @@ mod tests {
     #[test]
     fn the_methods_are_resolved_like_the_module() {
         for (method, expected) in [
+            (Some("browser"), LoginMethod::Browser),
             (Some("pat"), LoginMethod::Pat),
             (Some("device"), LoginMethod::Device),
         ] {
@@ -1702,22 +1826,930 @@ mod tests {
             "a PAT infers the method"
         );
         assert_eq!(
-            resolve_method(None, None)
-                .expect_err("browser is not shipped")
-                .message,
-            browser_not_shipped().message
-        );
-        assert_eq!(
-            resolve_method(Some("browser"), None)
-                .expect_err("browser is not shipped")
-                .message,
-            browser_not_shipped().message
+            resolve_method(None, None),
+            Ok(LoginMethod::Browser),
+            "no --method and no PAT is the oracle's default: the browser flow"
         );
         assert_eq!(
             resolve_method(Some("device_code"), None)
                 .expect_err("the oracle rejects this spelling too")
                 .message,
-            "Unknown method 'device_code'. Use 'pat' or 'device'."
+            "Unknown method 'device_code'. Use 'browser', 'pat', or 'device'."
         );
+        assert_eq!(
+            unknown_method("bogus").details,
+            Some(json!({"valid_methods": ["browser", "pat", "device"]})),
+            "the oracle's own three-name list"
+        );
+    }
+
+    // ── the browser flow ──────────────────────────────────────────────────
+
+    /// What the scripted callback answers. The state the flow generated is only
+    /// visible in the authorize URL the opener was handed, so the scripted opener
+    /// records it and the callback replays it (or a different one).
+    #[derive(Debug, Clone, PartialEq)]
+    enum CallbackReply {
+        Code,
+        MismatchedState,
+        NoState,
+        NoCode,
+        OAuthError(String),
+        Timeout,
+    }
+
+    /// The scripted browser seams in one type: [`browser::Opener`] records the URL
+    /// (and can fail, like a machine with no browser), and [`browser::Callback`]
+    /// answers what the case scripted.
+    struct ScriptedBrowser {
+        seen_url: Mutex<Option<String>>,
+        reply: CallbackReply,
+        opener_fails: bool,
+    }
+
+    impl ScriptedBrowser {
+        fn new(reply: CallbackReply) -> ScriptedBrowser {
+            ScriptedBrowser {
+                seen_url: Mutex::new(None),
+                reply,
+                opener_fails: false,
+            }
+        }
+
+        fn with_failing_opener(reply: CallbackReply) -> ScriptedBrowser {
+            ScriptedBrowser {
+                opener_fails: true,
+                ..ScriptedBrowser::new(reply)
+            }
+        }
+
+        /// The authorize URL the flow printed and handed to the opener.
+        fn url(&self) -> String {
+            lock(&self.seen_url)
+                .clone()
+                .expect("the flow opens the URL it printed")
+        }
+
+        fn state(&self) -> Option<String> {
+            state_of(&self.url())
+        }
+
+        /// Whether the flow opened anything at all.
+        fn opened(&self) -> Option<String> {
+            lock(&self.seen_url).clone()
+        }
+
+        fn redirect_uri(&self) -> String {
+            let url = self.url();
+            let redirect = url
+                .split_once("redirect_uri=")
+                .expect("the authorize URL carries a redirect_uri")
+                .1
+                .split('&')
+                .next()
+                .expect("a value")
+                .to_owned();
+
+            decode_component(&redirect)
+        }
+    }
+
+    impl browser::Opener for ScriptedBrowser {
+        fn open(&self, url: &str) -> Result<(), String> {
+            *lock(&self.seen_url) = Some(url.to_owned());
+
+            if self.opener_fails {
+                Err("no browser".to_owned())
+            } else {
+                Ok(())
+            }
+        }
+    }
+
+    impl browser::Callback for ScriptedBrowser {
+        fn redirect_uri(&self) -> String {
+            "http://localhost:41234".to_owned()
+        }
+
+        fn wait(&self) -> Result<browser::Authorization, AdoError> {
+            let state = self.state();
+
+            match &self.reply {
+                CallbackReply::Code => Ok(browser::Authorization {
+                    code: "AUTH-CODE".to_owned(),
+                    state,
+                }),
+                CallbackReply::MismatchedState => Ok(browser::Authorization {
+                    code: "AUTH-CODE".to_owned(),
+                    state: Some("NOT-THE-STATE".to_owned()),
+                }),
+                CallbackReply::NoState => Ok(browser::Authorization {
+                    code: "AUTH-CODE".to_owned(),
+                    state: None,
+                }),
+                CallbackReply::NoCode => {
+                    Err(identity::auth_failed("No authorization code received."))
+                }
+                CallbackReply::OAuthError(error) => Err(identity::auth_failed(format!(
+                    "Authorization failed: {error}"
+                ))),
+                CallbackReply::Timeout => Err(identity::auth_failed(
+                    "Browser login timed out or was cancelled.",
+                )),
+            }
+        }
+    }
+
+    /// The generated `state` from the authorize URL: the flow's own value, read back
+    /// by the test so the callback can echo it.
+    fn state_of(url: &str) -> Option<String> {
+        let rest = url.split_once("&state=")?.1;
+        let encoded = rest.split('&').next()?;
+
+        Some(decode_component(encoded))
+    }
+
+    /// The PKCE challenge the URL advertised, derived from the verifier the exchange
+    /// actually sent: the wire's own relationship, computed by the test (with
+    /// `sha2` and `base64`, the crates the product itself does not use for this).
+    fn challenge_of(verifier: &str) -> String {
+        use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+        use sha2::{Digest, Sha256};
+
+        URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()))
+    }
+
+    fn code_challenge_of(url: &str) -> String {
+        let rest = url
+            .split_once("code_challenge=")
+            .expect("the authorize URL carries a challenge")
+            .1;
+        let encoded = rest.split('&').next().expect("a value");
+
+        decode_component(encoded)
+    }
+
+    /// A login against the scripted seams: the identity fake answers the two
+    /// exchanges, the accounts fake the auto-detect.
+    fn run_scripted(
+        context: &mut Context,
+        identity: &FakeIdentity,
+        accounts: &FakeIdentity,
+        browser: &ScriptedBrowser,
+        announce: &mut dyn Write,
+    ) -> Result<Report, AdoError> {
+        let seams = LoginSeams {
+            identity_base: identity.base_url(),
+            accounts_base: accounts.base_url(),
+            opener: browser,
+            callback: Some(browser),
+        };
+
+        run_with_seams(context, Some("browser"), &seams, announce)
+    }
+
+    /// The two exchanges' replies: the ARM grant (access + refresh) and the DevOps
+    /// token.
+    fn browser_replies(token: &str) -> Vec<Reply> {
+        vec![
+            reply(
+                200,
+                json!({"access_token": "arm-token", "refresh_token": "refresh-token"}),
+            ),
+            devops_token(token),
+        ]
+    }
+
+    fn accounts_reply(value: Value) -> Reply {
+        reply(200, value)
+    }
+
+    /// The whole flow, end to end: PKCE, the authorize URL, the code exchange, the
+    /// ARM→DevOps exchange, the credential and the oracle's envelope. The code
+    /// exchange's `code_verifier` is checked against the URL's `code_challenge` —
+    /// the one relationship a port can get wrong without any byte differing.
+    #[test]
+    fn the_browser_flow_exchanges_the_code_and_stores_the_devops_token() {
+        let home = TempHome::new();
+        let identity = FakeIdentity::start(browser_replies("devops-token"), None);
+        let accounts = FakeIdentity::start(Vec::new(), Some(reply(500, json!({}))));
+        let store = InMemoryStore::new();
+        let browser = ScriptedBrowser::new(CallbackReply::Code);
+        let mut announce = Vec::new();
+        let mut context = test_context(
+            opts(None, None, None, true),
+            org_env("myorg"),
+            store.clone(),
+            &home,
+        );
+
+        let report = run_scripted(&mut context, &identity, &accounts, &browser, &mut announce)
+            .expect("the browser login");
+
+        assert_eq!(
+            report,
+            Report::Json(json!({
+                "ok": true,
+                "result": {
+                    "org": "myorg",
+                    "method": "browser",
+                    "server": null,
+                    "credentials_saved_to": config_file(&home),
+                }
+            })),
+            "the oracle's value envelope for the browser path"
+        );
+        assert_eq!(
+            store.get("myorg").expect("get"),
+            Some(stored(AuthMethod::Browser, "devops-token")),
+            "the DevOps token is stored, not the ARM one or the refresh token"
+        );
+        assert_eq!(
+            config_text(&home),
+            "default_org = \"myorg\"\n\n[orgs.myorg]\nauth = \"browser\"\n"
+        );
+
+        let url = browser.url();
+        assert!(
+            url.starts_with(&format!(
+                "{}/organizations/oauth2/v2.0/authorize?",
+                identity.base_url()
+            )),
+            "the authorize URL is built on the injected identity origin: {url}"
+        );
+
+        // The `--json` announcement is one document, and it carries the URL the
+        // opener was handed (the human block is pinned by its own case).
+        let announced = String::from_utf8(announce).expect("utf-8");
+        let message: Value = serde_json::from_str(announced.trim_end()).expect("one document");
+        assert_eq!(
+            message["message"],
+            json!(format!("Opening browser to sign in to myorg...\n  {url}"))
+        );
+
+        let received = identity.received();
+        assert_eq!(
+            received.len(),
+            2,
+            "the code exchange and the refresh exchange"
+        );
+        let exchange = &received[0];
+        assert_eq!(exchange.path, "/organizations/oauth2/v2.0/token");
+        assert_eq!(
+            exchange.form_value("grant_type"),
+            Some("authorization_code")
+        );
+        assert_eq!(exchange.form_value("code"), Some("AUTH-CODE"));
+        assert_eq!(
+            exchange.form_value("redirect_uri"),
+            Some("http://localhost:41234")
+        );
+        assert_eq!(
+            exchange.form_value("client_id"),
+            Some(CLIENT_ID),
+            "the Azure CLI public client"
+        );
+        assert_eq!(
+            challenge_of(exchange.form_value("code_verifier").expect("a verifier")),
+            code_challenge_of(&url),
+            "the verifier sent is the one the URL's challenge commits to"
+        );
+        assert_eq!(
+            browser.redirect_uri(),
+            "http://localhost:41234",
+            "the redirect_uri in the URL and the one in the exchange agree"
+        );
+
+        let refresh = &received[1];
+        assert_eq!(refresh.form_value("grant_type"), Some("refresh_token"));
+        assert_eq!(refresh.form_value("refresh_token"), Some("refresh-token"));
+        assert_eq!(refresh.form_value("resource"), Some(DEVOPS_RESOURCE));
+        assert!(
+            accounts.received().is_empty(),
+            "an explicit --org never asks the accounts endpoint"
+        );
+    }
+
+    /// The oracle's browser success lines: `login_success/4`'s two, with this build's
+    /// config file. The oracle's extra `Authenticated successfully as X.` line is not
+    /// reproduced — the device path already dropped its twin (W1's record).
+    #[test]
+    fn the_browser_human_lines_are_the_oracles() {
+        let home = TempHome::new();
+        let identity = FakeIdentity::start(browser_replies("devops-token"), None);
+        let accounts = FakeIdentity::start(Vec::new(), Some(reply(500, json!({}))));
+        let browser = ScriptedBrowser::new(CallbackReply::Code);
+        let mut announce = Vec::new();
+        let mut context = test_context(
+            opts(None, None, None, false),
+            org_env("myorg"),
+            InMemoryStore::new(),
+            &home,
+        );
+
+        let report = run_scripted(&mut context, &identity, &accounts, &browser, &mut announce)
+            .expect("the browser login");
+
+        assert_eq!(
+            report,
+            Report::Text(format!(
+                "\n  Logged in to myorg via Browser.\n  Credentials saved to {}",
+                config_file(&home)
+            ))
+        );
+        assert_eq!(
+            String::from_utf8(announce).expect("utf-8"),
+            format!(
+                "\nOpening browser to sign in to myorg...\n  {}\n\n",
+                browser.url()
+            )
+        );
+    }
+
+    /// `--json`: the URL reaches stdout as one parseable document, the way the device
+    /// path's code does.
+    #[test]
+    fn the_json_announcement_is_one_message_line_with_the_url() {
+        let home = TempHome::new();
+        let identity = FakeIdentity::start(browser_replies("devops-token"), None);
+        let accounts = FakeIdentity::start(Vec::new(), Some(reply(500, json!({}))));
+        let browser = ScriptedBrowser::new(CallbackReply::Code);
+        let mut announce = Vec::new();
+        let mut context = test_context(
+            opts(None, None, None, true),
+            org_env("myorg"),
+            InMemoryStore::new(),
+            &home,
+        );
+
+        run_scripted(&mut context, &identity, &accounts, &browser, &mut announce)
+            .expect("the browser login");
+
+        let announced = String::from_utf8(announce).expect("utf-8");
+        let message: Value = serde_json::from_str(announced.trim_end()).expect("one JSON document");
+        assert_eq!(message["ok"], json!(true));
+        assert_eq!(
+            message["message"],
+            json!(format!(
+                "Opening browser to sign in to myorg...\n  {}",
+                browser.url()
+            ))
+        );
+    }
+
+    /// Auto-detect, the one-account branch: the org is adopted, printed, and the
+    /// credential is stored under it. The accounts request carries the fresh DevOps
+    /// token as a bearer.
+    #[test]
+    fn the_browser_flow_adopts_the_only_detected_org() {
+        let home = TempHome::new();
+        let identity = FakeIdentity::start(browser_replies("devops-token"), None);
+        let accounts = FakeIdentity::start(
+            vec![accounts_reply(
+                json!({"value": [{"AccountName": "detected-org"}]}),
+            )],
+            None,
+        );
+        let store = InMemoryStore::new();
+        let browser = ScriptedBrowser::new(CallbackReply::Code);
+        let mut announce = Vec::new();
+        let mut context = test_context(
+            opts(None, None, None, true),
+            MapEnv::new(),
+            store.clone(),
+            &home,
+        );
+
+        let report = run_scripted(&mut context, &identity, &accounts, &browser, &mut announce)
+            .expect("the org was detected");
+
+        let Report::Json(envelope) = report else {
+            panic!("the json context reports an envelope");
+        };
+        assert_eq!(envelope["result"]["org"], json!("detected-org"));
+        assert_eq!(
+            store.get("detected-org").expect("get"),
+            Some(stored(AuthMethod::Browser, "devops-token"))
+        );
+        let announced = String::from_utf8(announce).expect("utf-8");
+        let detected: Value = serde_json::from_str(announced.lines().last().expect("a line"))
+            .expect("the detected-org line is one JSON document");
+        assert_eq!(
+            detected["message"],
+            json!("Detected org: detected-org"),
+            "the oracle prints the org it adopted"
+        );
+
+        let received = accounts.received();
+        assert_eq!(received.len(), 1);
+        assert_eq!(received[0].path, "/_apis/accounts");
+        assert_eq!(
+            received[0].header("authorization"),
+            Some("Bearer devops-token"),
+            "the accounts call authenticates with the fresh DevOps token"
+        );
+    }
+
+    /// The accounts document the API really returns is a top-level array, and a name
+    /// may come from `accountUri` when neither `AccountName` spelling is there — the
+    /// oracle's `extract_account_names/1` fallback chain.
+    #[test]
+    fn the_accounts_names_fall_back_and_the_body_may_be_an_array() {
+        let home = TempHome::new();
+        let identity = FakeIdentity::start(browser_replies("devops-token"), None);
+        let accounts = FakeIdentity::start(
+            vec![accounts_reply(
+                json!([{"accountUri": "https://dev.azure.com/x"}]),
+            )],
+            None,
+        );
+        let store = InMemoryStore::new();
+        let browser = ScriptedBrowser::new(CallbackReply::Code);
+        let mut context = test_context(
+            opts(None, None, None, true),
+            MapEnv::new(),
+            store.clone(),
+            &home,
+        );
+
+        run_scripted(
+            &mut context,
+            &identity,
+            &accounts,
+            &browser,
+            &mut Vec::new(),
+        )
+        .expect("the accountUri is a name");
+
+        assert_eq!(
+            store.get("https://dev.azure.com/x").expect("get"),
+            Some(stored(AuthMethod::Browser, "devops-token"))
+        );
+    }
+
+    /// The zero-account branch, after the oracle's own lines: D26's refusal, and
+    /// nothing stored although the exchange succeeded.
+    #[test]
+    fn the_browser_flow_refuses_when_no_org_can_be_adopted() {
+        let home = TempHome::new();
+        let identity = FakeIdentity::start(browser_replies("devops-token"), None);
+        let accounts = FakeIdentity::start(vec![accounts_reply(json!({"value": []}))], None);
+        let store = InMemoryStore::new();
+        let browser = ScriptedBrowser::new(CallbackReply::Code);
+        let mut announce = Vec::new();
+        let mut context = test_context(
+            opts(None, None, None, false),
+            MapEnv::new(),
+            store.clone(),
+            &home,
+        );
+
+        let error = run_scripted(&mut context, &identity, &accounts, &browser, &mut announce)
+            .expect_err("no organization to key the credential to");
+
+        assert_eq!(error.code, ErrorCode::ValidationError);
+        assert_eq!(
+            error.message,
+            "--org is required for method='browser' (or set ADO_ORG env var)"
+        );
+        assert_eq!(
+            error.details,
+            Some(json!({"option": "--org", "env_var": "ADO_ORG"}))
+        );
+        assert_eq!(
+            String::from_utf8(announce).expect("utf-8"),
+            format!(
+                "\nOpening browser...\n  {}\n\nNo Azure DevOps organizations were found for this account.\nSet your org with: export ADO_ORG=<your-org>\n",
+                browser.url()
+            ),
+            "the oracle's own lines, then the refusal (this build's, not the oracle's \
+             `Authenticated successfully.`)"
+        );
+        assert!(store.calls().is_empty(), "calls: {:?}", store.calls());
+        assert!(
+            !home
+                .config_dir()
+                .join(ado_core::config::CONFIG_FILE)
+                .exists(),
+            "a refused login writes nothing"
+        );
+    }
+
+    /// Several accounts are printed and not adopted: the oracle's two lines, then the
+    /// same refusal.
+    #[test]
+    fn several_detected_orgs_are_printed_and_refused() {
+        let home = TempHome::new();
+        let identity = FakeIdentity::start(browser_replies("devops-token"), None);
+        let accounts = FakeIdentity::start(
+            vec![accounts_reply(
+                json!({"value": [{"AccountName": "one"}, {"accountName": "two"}]}),
+            )],
+            None,
+        );
+        let store = InMemoryStore::new();
+        let browser = ScriptedBrowser::new(CallbackReply::Code);
+        let mut announce = Vec::new();
+        let mut context = test_context(
+            opts(None, None, None, false),
+            MapEnv::new(),
+            store.clone(),
+            &home,
+        );
+
+        let error = run_scripted(&mut context, &identity, &accounts, &browser, &mut announce)
+            .expect_err("several organizations, none adopted");
+
+        assert_eq!(error.code, ErrorCode::ValidationError);
+        let announced = String::from_utf8(announce).expect("utf-8");
+        assert!(
+            announced.contains(
+                "Multiple organizations found: one, two\nRe-run with --org <name> to pick one.\n"
+            ),
+            "{announced}"
+        );
+        assert!(store.calls().is_empty());
+    }
+
+    /// A lookup that fails is the oracle's `{:error, _} -> nil`: the same lines and
+    /// the same refusal as an empty account list (the oracle prints those two lines
+    /// for both).
+    #[test]
+    fn a_failed_accounts_lookup_is_no_org() {
+        for failure in [
+            reply(500, json!({"message": "boom"})),
+            reply(200, json!({})),
+        ] {
+            let home = TempHome::new();
+            let identity = FakeIdentity::start(browser_replies("devops-token"), None);
+            let accounts = FakeIdentity::start(vec![failure], None);
+            let store = InMemoryStore::new();
+            let browser = ScriptedBrowser::new(CallbackReply::Code);
+            let mut announce = Vec::new();
+            let mut context = test_context(
+                opts(None, None, None, false),
+                MapEnv::new(),
+                store.clone(),
+                &home,
+            );
+
+            let error = run_scripted(&mut context, &identity, &accounts, &browser, &mut announce)
+                .expect_err("no organizations");
+
+            assert_eq!(error.code, ErrorCode::ValidationError);
+            assert!(
+                String::from_utf8(announce)
+                    .expect("utf-8")
+                    .contains("No Azure DevOps organizations were found for this account.")
+            );
+            assert!(store.calls().is_empty());
+        }
+    }
+
+    /// The state check happens before the code is used: a mismatched (or missing)
+    /// state stops the flow with the oracle's sentence and contacts nothing.
+    #[test]
+    fn a_state_that_is_not_the_flows_own_stops_before_the_exchange() {
+        for answer in [CallbackReply::MismatchedState, CallbackReply::NoState] {
+            let home = TempHome::new();
+            let identity = FakeIdentity::start(browser_replies("devops-token"), None);
+            let accounts = FakeIdentity::start(Vec::new(), Some(reply(500, json!({}))));
+            let store = InMemoryStore::new();
+            let browser = ScriptedBrowser::new(answer);
+            let mut context = test_context(
+                opts(None, None, None, true),
+                org_env("myorg"),
+                store.clone(),
+                &home,
+            );
+
+            let error = run_scripted(
+                &mut context,
+                &identity,
+                &accounts,
+                &browser,
+                &mut Vec::new(),
+            )
+            .expect_err("the state does not match");
+
+            assert_eq!(error.code, ErrorCode::AuthRequired);
+            assert_eq!(
+                error.message,
+                "Login failed: State mismatch — possible CSRF attack."
+            );
+            assert_eq!(
+                error.details,
+                Some(json!({"reason": "State mismatch — possible CSRF attack."}))
+            );
+            assert!(
+                identity.received().is_empty(),
+                "no request is made with a code that failed the state check"
+            );
+            assert!(store.calls().is_empty());
+        }
+    }
+
+    /// The callback's own failures are the oracle's sentences, prefixed by
+    /// `login_failed/1` and carrying `auth_required`.
+    #[test]
+    fn the_callback_failures_are_the_oracles_sentences() {
+        for (answer, expected) in [
+            (CallbackReply::NoCode, "No authorization code received."),
+            (
+                CallbackReply::OAuthError("access_denied".to_owned()),
+                "Authorization failed: access_denied",
+            ),
+            (
+                CallbackReply::Timeout,
+                "Browser login timed out or was cancelled.",
+            ),
+        ] {
+            let home = TempHome::new();
+            let identity = FakeIdentity::start(Vec::new(), Some(reply(500, json!({}))));
+            let accounts = FakeIdentity::start(Vec::new(), Some(reply(500, json!({}))));
+            let browser = ScriptedBrowser::new(answer.clone());
+            let mut context = test_context(
+                opts(None, None, None, true),
+                org_env("myorg"),
+                InMemoryStore::new(),
+                &home,
+            );
+
+            let error = run_scripted(
+                &mut context,
+                &identity,
+                &accounts,
+                &browser,
+                &mut Vec::new(),
+            )
+            .expect_err("the callback failed");
+
+            assert_eq!(error.code, ErrorCode::AuthRequired, "{answer:?}");
+            assert_eq!(
+                error.message,
+                format!("Login failed: {expected}"),
+                "{answer:?}"
+            );
+            assert_eq!(
+                error.details,
+                Some(json!({"reason": expected})),
+                "{answer:?}"
+            );
+        }
+    }
+
+    /// A machine with no browser is not a failed login: the URL is printed, and the
+    /// flow waits for the callback regardless.
+    #[test]
+    fn a_failed_opener_is_not_a_failed_login() {
+        let home = TempHome::new();
+        let identity = FakeIdentity::start(browser_replies("devops-token"), None);
+        let accounts = FakeIdentity::start(Vec::new(), Some(reply(500, json!({}))));
+        let store = InMemoryStore::new();
+        let browser = ScriptedBrowser::with_failing_opener(CallbackReply::Code);
+        let mut announce = Vec::new();
+        let mut context = test_context(
+            opts(None, None, None, true),
+            org_env("myorg"),
+            store.clone(),
+            &home,
+        );
+
+        run_scripted(&mut context, &identity, &accounts, &browser, &mut announce)
+            .expect("an opener that fails is not a login that fails");
+
+        assert!(browser.opened().is_some(), "the opener was still called");
+        assert_eq!(
+            store.get("myorg").expect("get"),
+            Some(stored(AuthMethod::Browser, "devops-token"))
+        );
+        assert!(
+            String::from_utf8(announce)
+                .expect("utf-8")
+                .contains("Opening browser to sign in to myorg..."),
+            "the URL is printed whether or not the browser opened"
+        );
+    }
+
+    /// A closed stdout cannot show the URL, so the flow stops before opening
+    /// anything: a silent success, like the device path's code (spec §6.3, R19).
+    #[test]
+    fn a_closed_stdout_stops_the_browser_flow_before_the_opener() {
+        let home = TempHome::new();
+        let identity = FakeIdentity::start(Vec::new(), Some(reply(500, json!({}))));
+        let accounts = FakeIdentity::start(Vec::new(), Some(reply(500, json!({}))));
+        let browser = ScriptedBrowser::new(CallbackReply::Code);
+        let mut context = test_context(
+            opts(None, None, None, false),
+            org_env("myorg"),
+            InMemoryStore::new(),
+            &home,
+        );
+
+        let report = run_scripted(
+            &mut context,
+            &identity,
+            &accounts,
+            &browser,
+            &mut ClosedStdout,
+        )
+        .expect("a closed stdout is a silent success");
+
+        assert_eq!(report, Report::Text(String::new()));
+        assert!(
+            browser.opened().is_none(),
+            "no browser is opened when the URL cannot be shown"
+        );
+        assert!(identity.received().is_empty());
+    }
+
+    /// The ARM→DevOps exchange tries `organizations` and falls back to `consumers`,
+    /// exactly as the device path's does (the frozen reuses
+    /// `exchange_refresh_for_devops/2` for both).
+    #[test]
+    fn the_browser_exchange_falls_back_to_the_msa_tenant() {
+        let home = TempHome::new();
+        let identity = FakeIdentity::start(
+            vec![
+                reply(
+                    200,
+                    json!({"access_token": "arm-token", "refresh_token": "refresh-token"}),
+                ),
+                reply(400, json!({"error": "invalid_grant"})),
+                devops_token("devops-token"),
+            ],
+            None,
+        );
+        let accounts = FakeIdentity::start(Vec::new(), Some(reply(500, json!({}))));
+        let store = InMemoryStore::new();
+        let browser = ScriptedBrowser::new(CallbackReply::Code);
+        let mut context = test_context(
+            opts(None, None, None, true),
+            org_env("myorg"),
+            store.clone(),
+            &home,
+        );
+
+        run_scripted(
+            &mut context,
+            &identity,
+            &accounts,
+            &browser,
+            &mut Vec::new(),
+        )
+        .expect("the consumers fallback answers");
+
+        let exchanges: Vec<String> = identity
+            .received()
+            .into_iter()
+            .filter(|request| request.grant() == Some("refresh_token"))
+            .map(|request| request.path)
+            .collect();
+        assert_eq!(
+            exchanges,
+            ["/organizations/oauth2/token", "/consumers/oauth2/token"]
+        );
+        assert_eq!(
+            store.get("myorg").expect("get"),
+            Some(stored(AuthMethod::Browser, "devops-token"))
+        );
+    }
+
+    /// The ARM exchange's refusals: the oracle's message with the server's own words,
+    /// and its `Invalid ARM token response` for a 200 that carries no access token.
+    #[test]
+    fn a_refused_code_exchange_is_the_oracles_message() {
+        let refused = FakeIdentity::start(
+            vec![reply(
+                400,
+                json!({"error": "invalid_grant", "error_description": "AADSTS9002313: Invalid request."}),
+            )],
+            None,
+        );
+        let home = TempHome::new();
+        let accounts = FakeIdentity::start(Vec::new(), Some(reply(500, json!({}))));
+        let browser = ScriptedBrowser::new(CallbackReply::Code);
+        let mut context = test_context(
+            opts(None, None, None, true),
+            org_env("myorg"),
+            InMemoryStore::new(),
+            &home,
+        );
+
+        let error = run_scripted(&mut context, &refused, &accounts, &browser, &mut Vec::new())
+            .expect_err("the code was refused");
+
+        assert_eq!(
+            error.message,
+            "Login failed: ARM token exchange failed (HTTP 400): AADSTS9002313: Invalid request."
+        );
+
+        let empty = FakeIdentity::start(vec![reply(200, json!({"token_type": "Bearer"}))], None);
+        let mut context = test_context(
+            opts(None, None, None, true),
+            org_env("myorg"),
+            InMemoryStore::new(),
+            &home,
+        );
+
+        let error = run_scripted(&mut context, &empty, &accounts, &browser, &mut Vec::new())
+            .expect_err("no access token");
+
+        assert_eq!(error.message, "Login failed: Invalid ARM token response");
+    }
+
+    /// `ADO_OAUTH_CLIENT_ID` is threaded into both interactive flows (spec §4.7): the
+    /// authorize URL, the code exchange, the device-code request and its poll all
+    /// carry it.
+    #[test]
+    fn the_oauth_client_id_override_reaches_both_flows() {
+        let home = TempHome::new();
+        let override_id = "11111111-2222-3333-4444-555555555555";
+        let identity = FakeIdentity::start(browser_replies("devops-token"), None);
+        let accounts = FakeIdentity::start(Vec::new(), Some(reply(500, json!({}))));
+        let store = InMemoryStore::new();
+        let browser = ScriptedBrowser::new(CallbackReply::Code);
+        let mut context = test_context(
+            opts(None, None, None, true),
+            org_env("myorg").set(ENV_OAUTH_CLIENT_ID, override_id),
+            store.clone(),
+            &home,
+        );
+
+        run_scripted(
+            &mut context,
+            &identity,
+            &accounts,
+            &browser,
+            &mut Vec::new(),
+        )
+        .expect("the browser login");
+
+        let url = browser.url();
+        assert!(url.contains(&format!("client_id={override_id}")), "{url}");
+        assert_eq!(
+            identity.received()[0].form_value("client_id"),
+            Some(override_id)
+        );
+
+        // The device flow reads the same variable.
+        let device_fake = FakeIdentity::start(
+            vec![
+                device_code_reply(0),
+                granted(),
+                devops_token("devops-token"),
+            ],
+            None,
+        );
+        let mut context = test_context(
+            opts(None, None, None, true),
+            org_env("myorg").set(ENV_OAUTH_CLIENT_ID, override_id),
+            store,
+            &home,
+        );
+
+        run(
+            &mut context,
+            Some("device"),
+            device_fake.base_url(),
+            &mut Vec::new(),
+        )
+        .expect("the device login");
+
+        let received = device_fake.received();
+        assert_eq!(
+            received[0].form_value("client_id"),
+            Some(override_id),
+            "the device-code request"
+        );
+        assert_eq!(
+            received[1].form_value("client_id"),
+            Some(override_id),
+            "the poll"
+        );
+        assert_eq!(
+            received
+                .last()
+                .expect("the exchange")
+                .form_value("client_id"),
+            Some(override_id),
+            "the ARM→DevOps exchange"
+        );
+
+        // A blank override is not a value (D16).
+        let blank = FakeIdentity::start(browser_replies("devops-token"), None);
+        let browser = ScriptedBrowser::new(CallbackReply::Code);
+        let mut context = test_context(
+            opts(None, None, None, true),
+            org_env("myorg").set(ENV_OAUTH_CLIENT_ID, "  "),
+            InMemoryStore::new(),
+            &home,
+        );
+
+        run_scripted(&mut context, &blank, &accounts, &browser, &mut Vec::new())
+            .expect("the blank override falls back");
+
+        assert!(browser.url().contains(&format!("client_id={CLIENT_ID}")));
+        assert_eq!(blank.received()[0].form_value("client_id"), Some(CLIENT_ID));
     }
 }
