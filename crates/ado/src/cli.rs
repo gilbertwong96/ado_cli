@@ -336,7 +336,7 @@ pub fn command() -> Command {
                                 .long("data")
                                 .value_name("JSON")
                                 .help(
-                                    "JSON object with type-specific fields merged into the request body (e.g. '{\"subscriptionId\":\"...\",\"subscriptionName\":\"...\"}' for Azure RM). The top-level keys 'name', 'type', 'url', and 'authorization' are reserved; use the dedicated flags for those.",
+                                    "JSON object with type-specific fields, nested under the request body's 'data' key (e.g. '{\"subscriptionId\":\"...\",\"subscriptionName\":\"...\"}' for Azure RM). The dedicated --name/--type/--url/--access-token/--scheme flags fill the body's own top-level fields.",
                                 ),
                         )
                         .arg(
@@ -396,7 +396,7 @@ pub fn command() -> Command {
                                 .long("data")
                                 .value_name("JSON")
                                 .help(
-                                    "JSON object merged into the request body. Use this to update type-specific fields (e.g. subscriptionId, clusterUrl).",
+                                    "JSON object with type-specific fields, nested under the request body's 'data' key (e.g. subscriptionId, clusterUrl).",
                                 ),
                         ),
                 )
@@ -2732,7 +2732,7 @@ pub fn command() -> Command {
                                 .value_name("N")
                                 .value_parser(clap::value_parser!(i64))
                                 .allow_negative_numbers(true)
-                                .help("Max runs to return (default: 50)"),
+                                .help("Max runs to return; absent sends no $top and the server's own default applies"),
                         )
                         .arg(
                             Arg::new("build-id")

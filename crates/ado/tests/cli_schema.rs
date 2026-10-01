@@ -1999,7 +1999,8 @@ fn schema_test_results_node_lists_every_shipped_subcommand() {
     );
     assert_eq!(
         option(&list, "top")["doc"],
-        json!("Max runs to return (default: 50)")
+        json!("Max runs to return; absent sends no $top and the server's own default applies"),
+        "the repaired help line (Ruling B6): neither side sends a default 50"
     );
     assert_eq!(
         option(&list, "build-id")["doc"],

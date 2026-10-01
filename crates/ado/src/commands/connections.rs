@@ -10,9 +10,11 @@
 //!     (the oracle refuses all three option spellings), while `update` keeps
 //!     `--name`/`--description`/`--url` as options;
 //!   * `--data` is **nested under `"data"`**, not merged into the body — the
-//!     help text's "merged into the request body" and "reserved keys" describe a
-//!     merge that does not happen (`connections_test.exs` pins the nesting:
-//!     `decoded["data"]["subscriptionId"]`);
+//!     frozen help text's "merged into the request body" and "reserved keys"
+//!     described a merge that does not happen (`connections_test.exs` pins the
+//!     nesting: `decoded["data"]["subscriptionId"]`). Ruling B6 corrected this
+//!     build's help line to the nesting; the frozen help still lies and Wave 4's
+//!     docs rewrite owns that side (D55).
 //!   * the success line names the **response's** `name` on `update` (a rename to
 //!     `Renamed` answers `Service connection 'GitHub' updated.`) and the
 //!     positional id on `delete`.
