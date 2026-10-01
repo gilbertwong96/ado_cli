@@ -509,6 +509,7 @@ fn search_ranks_name_then_reversed_commands_then_description() {
             json!("command"),
             json!("command"),
             json!("command"),
+            json!("command"),
             json!("description"),
         ]
     );
@@ -519,6 +520,40 @@ fn search_ranks_name_then_reversed_commands_then_description() {
         .collect::<Vec<_>>();
     assert_eq!(matched[1], json!("export ADO_ORG=org ADO_PAT=token"));
     assert_eq!(matched[8], json!("ado login"));
+}
+
+/// The group order is the frozen `Enum.group_by/2` map's key order (name-sorted),
+/// **not** first-appearance order: `search ci`'s first hit is `ado-ci`'s name, but
+/// its first group is `ado-auth` (a description-only match).
+#[test]
+fn search_human_groups_in_name_order_not_first_appearance() {
+    let home = TempHome::new();
+
+    let output = run(&home, &["skills", "search", "ci"]);
+
+    assert_exit(&output, 0);
+    assert_eq!(
+        stdout_of(&output),
+        concat!(
+            "\n",
+            "  Matches for \"ci\" (7):\n",
+            "\n",
+            "  ado-auth\n",
+            "    [command] ado login --method pat --org ORG --pat TOKEN   # explicit form (same result)\n",
+            "    [description] Authenticate ado: PAT (CI-friendly), browser OAuth (AAD + MSA), device code (headless), env vars, self-hosted server\n",
+            "\n",
+            "  ado-ci\n",
+            "    [name] ado-ci\n",
+            "    [command] ado ci watch PROJECT BUILD_ID\n",
+            "    [description] Use ado in CI/CD: auth setup, pipeline triggers, PR automation, package publishing, work item creation on failure\n",
+            "\n",
+            "  ado-cli\n",
+            "    [command] ado ci watch PROJECT BUILD_ID\n",
+            "    [command] ado branch-policies list PROJECT REPO\n",
+            "\n",
+            "\n",
+        )
+    );
 }
 
 #[test]

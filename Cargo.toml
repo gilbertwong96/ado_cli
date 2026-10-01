@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/ado", "crates/ado-core", "crates/ado-testkit"]
+members = ["crates/ado", "crates/ado-core", "crates/ado-skills", "crates/ado-testkit"]
 resolver = "3"
 
 [workspace.package]

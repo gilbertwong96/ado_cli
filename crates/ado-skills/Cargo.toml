@@ -1,0 +1,10 @@
+[package]
+name = "ado-skills"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository = "https://github.com/gilbertwong96/ado_cli"
+description = "The embedded `ado skills` assets, their frontmatter, the search index and the installer"
+
+[dependencies]

@@ -7,10 +7,12 @@ name = "ado"
 version = "1.0.0-rc.0"
 dependencies = [
  "ado-core",
+ "ado-skills",
  "ado-testkit",
  "clap",
  "clap_complete",
  "comfy-table",
+ "dirs",
  "insta",
  "serde_json",
  "sha2",
@@ -31,6 +33,10 @@ dependencies = [
  "toml",
  "ureq",
 ]
+
+[[package]]
+name = "ado-skills"
+version = "1.0.0-rc.0"
 
 [[package]]
 name = "ado-testkit"

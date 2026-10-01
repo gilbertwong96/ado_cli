@@ -358,6 +358,49 @@ fn main() -> ExitCode {
                 _ => Err(AdoError::validation(MISSING_SUBCOMMAND)),
             }
         }
+        Some(("skills", sub)) => {
+            let context = Context::load(globals);
+
+            match sub.subcommand() {
+                Some(("list", list)) => commands::skills::list(
+                    &context,
+                    list.get_one::<String>("path").map(String::as_str),
+                ),
+                Some(("describe", describe)) => commands::skills::describe(
+                    &context,
+                    describe
+                        .get_one::<String>("name")
+                        .expect("the positional is required")
+                        .as_str(),
+                ),
+                Some(("read", read)) => commands::skills::read(
+                    &context,
+                    read.get_one::<String>("target")
+                        .expect("the positional is required")
+                        .as_str(),
+                ),
+                Some(("search", search)) => commands::skills::search(
+                    &context,
+                    search
+                        .get_one::<String>("query")
+                        .expect("the positional is required")
+                        .as_str(),
+                ),
+                Some(("install", install)) => commands::skills::install(
+                    &context,
+                    commands::skills::InstallOptions {
+                        target: install
+                            .get_one::<String>("target")
+                            .map(String::as_str)
+                            .unwrap_or(commands::skills::DEFAULT_TARGET),
+                        repo: install.get_one::<String>("repo").map(String::as_str),
+                        skill: install.get_one::<String>("skill").map(String::as_str),
+                        force: install.get_flag("force"),
+                    },
+                ),
+                _ => Err(AdoError::validation(MISSING_SUBCOMMAND)),
+            }
+        }
         Some(("imports", sub)) => {
             let mut context = Context::load(globals);
 

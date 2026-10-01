@@ -22,6 +22,7 @@ pub mod releases;
 pub mod repos;
 pub mod schema;
 pub mod security;
+pub mod skills;
 pub mod teams;
 pub mod test_coverage;
 pub mod test_results;

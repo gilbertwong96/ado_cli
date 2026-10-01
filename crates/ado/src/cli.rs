@@ -2459,6 +2459,94 @@ pub fn command() -> Command {
                 ),
         )
         .subcommand(
+            Command::new("skills")
+                .about(
+                    "Read embedded skill content for AI agents (pi, Claude Code, Cursor, Copilot). Commands: list all skills, describe one (frontmatter only), read full content, search by topic, install to agent directories.",
+                )
+                .subcommand(
+                    Command::new("list")
+                        .about(
+                            "List all embedded skills with name, description, version, and command count. Use --json for structured output suitable for agent discovery.",
+                        )
+                        .arg(
+                            Arg::new("path")
+                                .value_name("PATH")
+                                .help("Optional: skill name or skill/path"),
+                        ),
+                )
+                .subcommand(
+                    Command::new("describe")
+                        .about(
+                            "Return the YAML frontmatter and command index for a skill (no body text). Use this to check version/description before loading the full content with read.",
+                        )
+                        .arg(
+                            Arg::new("name")
+                                .value_name("NAME")
+                                .required(true)
+                                .help("Skill name"),
+                        ),
+                )
+                .subcommand(
+                    Command::new("read")
+                        .about(
+                            "Read a skill's SKILL.md (or a file under the skill). Returns the full Markdown body for human or LLM consumption.",
+                        )
+                        .arg(
+                            Arg::new("target")
+                                .value_name("TARGET")
+                                .required(true)
+                                .help("Skill name[/path] or 'skillname path'"),
+                        ),
+                )
+                .subcommand(
+                    Command::new("search")
+                        .about(
+                            "Find skills by keyword search (name, description, or command list). Case-insensitive. Use for discovery when you do not know the exact skill name.",
+                        )
+                        .arg(
+                            Arg::new("query")
+                                .value_name("QUERY")
+                                .required(true)
+                                .help("Search query (e.g. 'create PR', 'pipeline', 'auth')"),
+                        ),
+                )
+                .subcommand(
+                    Command::new("install")
+                        .about(
+                            "Install the embedded skills to an LLM agent's skill directory (pi, Claude Code, Cursor, GitHub Copilot, or a custom path). Lets agents discover ado as a native skill on startup, instead of shelling out to `ado skills read`.",
+                        )
+                        .arg(
+                            Arg::new("target")
+                                .long("target")
+                                .value_name("TARGET")
+                                .default_value(crate::commands::skills::DEFAULT_TARGET)
+                                .help(
+                                    "Where to install: 'pi' (~/.pi/agent/skills/), 'claude' (~/.claude/skills/), 'cursor' (~/.cursor/skills/), 'codex' (~/.codex/skills/), 'copilot' (per-repo, requires --repo or cwd to be a git repo; writes to <repo>/.github/ado-cli/). Default: 'all' (installs to every per-user target above; copilot is NOT included because it needs a repo).",
+                                ),
+                        )
+                        .arg(
+                            Arg::new("repo")
+                                .long("repo")
+                                .value_name("PATH")
+                                .help(
+                                    "Path to a local git repository. Used by --target=copilot (writes to <repo>/.github/ado-cli/); default: current working directory. Ignored for other targets.",
+                                ),
+                        )
+                        .arg(
+                            Arg::new("skill")
+                                .long("skill")
+                                .value_name("NAME")
+                                .help("Install only this skill (default: all embedded skills)"),
+                        )
+                        .arg(
+                            Arg::new("force")
+                                .long("force")
+                                .action(ArgAction::SetTrue)
+                                .help("Overwrite existing files (default: skip them)"),
+                        ),
+                ),
+        )
+        .subcommand(
             Command::new("teams")
                 .about(
                     "Manage Azure DevOps teams (groups of members with shared area paths and iterations). Teams are the unit for sprint planning and work item assignment.",
