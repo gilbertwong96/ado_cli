@@ -19,15 +19,27 @@ use serde_json::{Value, json};
 
 const ORG: &str = "myorg";
 
-/// A completed, succeeded build, as the mock serves it.
-fn completed(result: &str) -> Value {
+/// A completed build with `result`, as the mock serves it.
+fn terminal(id: i64, result: &str) -> Value {
     json!({
-        "id": 123,
+        "id": id,
         "status": "completed",
         "result": result,
         "sourceBranch": "refs/heads/main",
         "definition": {"name": "Alpha CI"},
     })
+}
+
+/// A completed, succeeded build, as the mock serves it.
+fn completed(result: &str) -> Value {
+    terminal(123, result)
+}
+
+/// A timeline whose one record is an in-progress job logging to log 9.
+fn log_timeline() -> Value {
+    timeline(json!([
+        {"id": "job-1", "state": "inProgress", "type": "Job", "name": "Build", "log": {"id": 9}}
+    ]))
 }
 
 fn running(id: i64) -> Value {
@@ -498,20 +510,130 @@ fn the_watch_reports_a_missing_build() {
 #[test]
 fn a_timeline_failure_is_swallowed_like_the_oracle() {
     let home = TempHome::new();
+    // Two ticks, so both per-tick fetch sites meet the failing timeline: the
+    // diff fetch on each tick and the log-stream fetch on the non-terminal one
+    // (captured `w8-timeline-500`).
     let server = mock(json!({"responses": [
-        build_route(123, vec![completed("succeeded")]),
-        json!({"method": "GET", "path": format!("/{ORG}/Alpha/_apis/build/builds/123/timeline"),
+        build_route(127, vec![running(127), terminal(127, "succeeded")]),
+        json!({"method": "GET", "path": format!("/{ORG}/Alpha/_apis/build/builds/127/timeline"),
                "status": 500, "json": {"message": "TF400813: The server is unavailable."}}),
     ]}));
 
-    let output = run(&home, &server, &["ci", "watch", "Alpha", "123"]);
+    let output = run(
+        &home,
+        &server,
+        &["ci", "watch", "Alpha", "127", "--poll-interval", "250"],
+    );
 
     assert_exit(&output, 0);
     assert!(
-        stdout_of(&output).ends_with("\n  Build succeeded.\n\n✓ Build 123 completed.\n"),
+        stdout_of(&output).ends_with("\n  Build succeeded.\n\n✓ Build 127 completed.\n"),
         "no timeline line, the final sentence still printed (captured `w8-timeline-500`):\n{}",
         stdout_of(&output)
     );
+}
+
+#[test]
+fn latest_reports_a_malformed_collection() {
+    let home = TempHome::new();
+
+    for body in [
+        json!({"count": 1, "value": [{"status": "completed"}]}),
+        json!({"count": 0}),
+    ] {
+        let server = mock(json!({"responses": [
+            json!({"method": "GET", "path": format!("/{ORG}/Alpha/_apis/build/builds"), "json": body}),
+        ]}));
+
+        let output = run(&home, &server, &["ci", "watch", "Alpha", "--latest"]);
+
+        assert_exit(&output, 1);
+        assert!(
+            stderr_of(&output).contains("the builds endpoint answered an unexpected response"),
+            "{body}: stderr:\n{}",
+            stderr_of(&output)
+        );
+    }
+}
+
+#[test]
+fn a_failed_log_fetch_keeps_the_cursor() {
+    let home = TempHome::new();
+    let server = mock(json!({"responses": [
+        build_route(129, vec![running(129), running(129), terminal(129, "failed")]),
+        timeline_route(129, log_timeline()),
+        json!({"method": "GET", "path": format!("/{ORG}/Alpha/_apis/build/builds/129/logs/9"), "sequence": [
+            {"status": 500, "json": {"message": "TF400813: The server is unavailable."}},
+            {"fixture": "build_log_part_two.txt"}
+        ]}),
+    ]}));
+
+    let output = run(
+        &home,
+        &server,
+        &["ci", "watch", "Alpha", "129", "--poll-interval", "250"],
+    );
+
+    assert_exit(&output, 1);
+    let logs = server
+        .received()
+        .into_iter()
+        .filter(|request| request.path.ends_with("/logs/9"))
+        .collect::<Vec<_>>();
+    assert_eq!(logs.len(), 2, "one fetch per non-terminal tick");
+    assert_eq!(
+        logs[0].query_pairs(),
+        [
+            ("api-version".to_owned(), "7.1".to_owned()),
+            ("id".to_owned(), "1".to_owned())
+        ]
+    );
+    assert_eq!(
+        logs[1].query_pairs(),
+        [
+            ("api-version".to_owned(), "7.1".to_owned()),
+            ("id".to_owned(), "1".to_owned())
+        ],
+        "a failed fetch keeps the cursor, so the next tick retries the same range"
+    );
+    assert!(
+        stdout_of(&output).contains("Step C\n"),
+        "the retry's body prints:\n{}",
+        stdout_of(&output)
+    );
+}
+
+#[test]
+fn an_empty_log_body_keeps_the_cursor() {
+    let home = TempHome::new();
+    let server = mock(json!({"responses": [
+        build_route(130, vec![running(130), running(130), terminal(130, "succeeded")]),
+        timeline_route(130, log_timeline()),
+        json!({"method": "GET", "path": format!("/{ORG}/Alpha/_apis/build/builds/130/logs/9"), "sequence": [
+            {"fixture": "build_log_empty.txt"},
+            {"fixture": "build_log_part_two.txt"}
+        ]}),
+    ]}));
+
+    let output = run(
+        &home,
+        &server,
+        &["ci", "watch", "Alpha", "130", "--poll-interval", "250"],
+    );
+
+    assert_exit(&output, 0);
+    let logs = server
+        .received()
+        .into_iter()
+        .filter(|request| request.path.ends_with("/logs/9"))
+        .collect::<Vec<_>>();
+    assert_eq!(logs.len(), 2);
+    assert_eq!(
+        logs[1].query_pairs().get(1),
+        Some(&("id".to_owned(), "1".to_owned())),
+        "an empty body leaves the cursor where it was"
+    );
+    assert!(stdout_of(&output).contains("Step C\n"));
 }
 
 #[test]

@@ -184,9 +184,26 @@ fn outcome(build_id: &str, ended: watcher::Ended) -> WatchOutcome {
 
 #[cfg(test)]
 mod tests {
+    use std::io::{self, Write};
+
+    use ado_core::credentials::InMemoryStore;
+    use ado_core::env::{ENV_ORG, ENV_PAT, ENV_SERVER, MapEnv};
+    use ado_testkit::{MockResponse, MockServer, TempHome};
     use serde_json::json;
 
     use super::*;
+
+    struct BrokenPipe;
+
+    impl Write for BrokenPipe {
+        fn write(&mut self, _bytes: &[u8]) -> io::Result<usize> {
+            Err(io::Error::new(io::ErrorKind::BrokenPipe, "closed"))
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
 
     #[test]
     fn poll_ms_is_the_documented_clamp() {
@@ -239,5 +256,63 @@ mod tests {
         assert_eq!(watcher::text(Some(&json!(null))), "");
         assert_eq!(watcher::text(Some(&json!("abc"))), "abc");
         assert_eq!(watcher::text(Some(&json!(7))), "7");
+    }
+
+    /// The stream's reader going away is the silent success every write path gives
+    /// a closed pipe (spec §6.4): the watch stops at the first failed write and
+    /// reports an empty message with status 0, so `main` writes nothing more.
+    #[test]
+    fn a_broken_pipe_stream_is_a_silent_success() {
+        let home = TempHome::new();
+        let server = MockServer::start();
+        server.expect(
+            "GET",
+            "/myorg/Alpha/_apis/build/builds/201",
+            MockResponse::json(
+                200,
+                json!({
+                    "id": 201,
+                    "status": "completed",
+                    "result": "succeeded",
+                    "sourceBranch": "refs/heads/main",
+                    "definition": {"name": "Watch CI"},
+                }),
+            ),
+        );
+        server.expect(
+            "GET",
+            "/myorg/Alpha/_apis/build/builds/201/timeline",
+            MockResponse::json(200, json!({"records": []})),
+        );
+
+        let env = MapEnv::new()
+            .set(ENV_ORG, "myorg")
+            .set(ENV_PAT, "test-pat")
+            .set(ENV_SERVER, server.base_url());
+        let opts = crate::args::GlobalOpts {
+            org: None,
+            pat: None,
+            server: None,
+            verbose: false,
+            json: false,
+        };
+        let mut context = Context::for_test(opts, env, InMemoryStore::new(), &home);
+        let args = WatchArgs {
+            project: "Alpha",
+            build_id: Some(201),
+            latest: false,
+            definition: None,
+            branch: None,
+            poll_interval: None,
+        };
+
+        let outcome =
+            watch(&mut context, args, &mut BrokenPipe).expect("a closed pipe is not an error");
+
+        assert_eq!(outcome.exit_code, 0);
+        assert!(
+            outcome.message.is_empty(),
+            "nothing is written after the stream is gone"
+        );
     }
 }

@@ -694,6 +694,11 @@ mod tests {
             "%{\"a\" => [1, \"b\"]}"
         );
         assert_eq!(elixir_inspect(Some(&json!("a\"b\n"))), "\"a\\\"b\\n\"");
+        assert_eq!(
+            elixir_inspect(Some(&json!("a\\b\rc\td"))),
+            "\"a\\\\b\\rc\\td\"",
+            "the backslash, carriage-return and tab arms"
+        );
     }
 
     #[test]
@@ -721,7 +726,15 @@ mod tests {
     }
 
     #[test]
-    fn a_non_broken_pipe_write_error_is_an_api_failure() {
+    fn write_failure_maps_broken_pipe_and_everything_else() {
+        assert!(matches!(
+            write_failure(std::io::Error::new(
+                std::io::ErrorKind::BrokenPipe,
+                "closed"
+            )),
+            Failure::BrokenPipe
+        ));
+
         match write_failure(std::io::Error::new(
             std::io::ErrorKind::PermissionDenied,
             "denied",
