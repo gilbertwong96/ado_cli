@@ -400,8 +400,8 @@ function findAdoWrapper() {
   //      -> bin/ado is at npm/@gilbertwong1996-ado/bin/ado
   //
   // 3. For end-to-end testing, callers can set ADO_BIN env var
-  //    to point at a real binary (e.g. the dev escript at ./ado)
-  //    to bypass the wrapper entirely.
+  //    to point at a real binary (e.g. the locally built
+  //    target/release/ado) to bypass the wrapper entirely.
 
   if (process.env.ADO_BIN && fs.existsSync(process.env.ADO_BIN)) {
     return process.env.ADO_BIN;

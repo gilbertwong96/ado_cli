@@ -137,29 +137,26 @@ for entry in "${PLATFORM_MAP[@]}"; do
     fi
 done
 
-# ── step 2.5: copy the postinstall hook into the main package ────────
+# ── step 2.5: assert the shipped postinstall hook is present ───────────
 # The main @gilbertwong1996/ado package's package.json declares
 # `"scripts": { "postinstall": "node scripts/postinstall.js" }` and
 # lists `scripts/postinstall.js` in its `files` array. If the file
 # isn't actually present in the package dir at publish time, npm
 # silently omits it from the tarball (it doesn't error — it just
 # packs what's there), and users on `npm install -g` get no shell
-# completion auto-install. This step was the second bug fixed in
+# completion auto-install. This was the second bug fixed in
 # v0.2.1 (the v0.2.0 main-package tarball was published without
-# scripts/postinstall.js inside).
+# scripts/postinstall.js inside). The hook lives in the package
+# itself now, so there is nothing to copy — fail loudly if it is
+# missing or empty.
 main_pkg_dir="$NPM_DIR/@gilbertwong1996-ado"
-if [[ -d "$main_pkg_dir" ]]; then
-    mkdir -p "$main_pkg_dir/scripts"
-    if [[ -f "$ROOT_DIR/scripts/postinstall.js" ]]; then
-        cp "$ROOT_DIR/scripts/postinstall.js" "$main_pkg_dir/scripts/postinstall.js"
-        chmod +x "$main_pkg_dir/scripts/postinstall.js"
-        echo "    copied scripts/postinstall.js → $main_pkg_dir/scripts/postinstall.js"
-    else
-        echo "ERROR: $ROOT_DIR/scripts/postinstall.js not found in the repo" >&2
-        echo "       The main package's postinstall hook can't be installed without it." >&2
-        exit 1
-    fi
+postinstall="$main_pkg_dir/scripts/postinstall.js"
+if [[ ! -s "$postinstall" ]]; then
+    echo "ERROR: $postinstall is missing or empty" >&2
+    echo "       The main package's postinstall hook can't ship without it." >&2
+    exit 1
 fi
+echo "    found $postinstall ($(wc -c < "$postinstall" | tr -d ' ') bytes)"
 
 # ── step 3: update version in all package.json files ────────────────
 # We bump TWO fields, not one:

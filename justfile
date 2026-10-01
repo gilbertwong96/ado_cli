@@ -102,8 +102,9 @@ budget: build-release
     exit "$failed"
 
 # Run the npm package's release-artifact suite (node --test): the postinstall
-# downloader and the archive resolution that fetch the dist archives.
-npm-test:
+# downloader and the archive resolution that fetch the dist archives, plus
+# the shell-completion install, which runs the release binary built here.
+npm-test: build-release
     node --test npm/@gilbertwong1996-ado/test
 
 # ── Development ────────────────────────────────────────────────────────
@@ -278,9 +279,11 @@ all: ci elixir-ci release
 #   * crates/ado/tests/snapshots/
 #       cli_schema__schema_version_target_shape_matches_oracle.snap
 #                              — the schema snapshot's version line
-#   * github-page/index.html   — an `ado-<version>-macos-aarch64` archive
-#                                 literal; the step fails if a stale
-#                                 version-bearing literal remains
+#   * github-page/index.html   — guards the class of version-bearing
+#                                 archive literals: an
+#                                 `ado-<version>-macos-aarch64` literal is
+#                                 rewritten when present, and the step fails
+#                                 if any stale version-bearing literal remains
 #   * README.md                — every occurrence of the old version
 #
 # Does NOT auto-update (needs human input):

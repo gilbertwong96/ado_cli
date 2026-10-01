@@ -1,6 +1,7 @@
 'use strict';
 
-// Tests for the release-artifact resolution in scripts/postinstall.js.
+// Tests for the release-artifact resolution in the shipped postinstall
+// (../scripts/postinstall.js).
 //
 // Run from npm/@gilbertwong1996-ado:  node --test
 //
@@ -424,53 +425,13 @@ test(
 
 // ── install-path guards ──────────────────────────────────────────────
 
-function rootCopyPath() {
-  const rootCopy = path.join(
-    __dirname,
-    '..',
-    '..',
-    '..',
-    'scripts',
-    'postinstall.js'
-  );
-  return fs.existsSync(rootCopy) ? rootCopy : null;
-}
-
-test('the repo-root copy resolves the same artifact and never fetches', (t) => {
-  const rootCopy = rootCopyPath();
-  if (!rootCopy) {
-    t.skip('not running from the repo checkout');
-    return;
-  }
-
-  const stdout = execFileSync(process.execPath, [rootCopy, '--dry-run'], {
-    encoding: 'utf8',
-    // The flag must not be what stops the fetch.
-    env: { ...process.env, ADO_NO_DOWNLOAD: '' }
-  });
-
-  const { file, target } = artifactFor(process.platform, process.arch);
-  assert.ok(stdout.includes(file), `expected ${file} in:\n${stdout}`);
-  assert.ok(stdout.includes(target), `expected ${target} in:\n${stdout}`);
-  assert.ok(
-    stdout.includes(platformBinaryPath(process.platform, process.arch)),
-    `expected the npm staging path in:\n${stdout}`
-  );
-  assert.doesNotMatch(stdout, /^ado: downloaded /m);
-});
-
-test('the repo copies skip the fetch in place, staged binary or not', (t) => {
-  const rootCopy = rootCopyPath();
-  if (!rootCopy) {
-    t.skip('not running from the repo checkout');
-    return;
-  }
-
-  // Both repo copies stage their platform packages in npm/ and must never
-  // reach the network, with or without ADO_NO_DOWNLOAD. The contract is the
-  // missing fetch, not a message: with no staged binary the source-tree
-  // branch logs its skip, and with one the launcher's presence guard returns
-  // early and silently. Both outcomes are complete installs.
+test('the source-tree copy skips the fetch in place, staged binary or not', () => {
+  // The package copy in the repo is not an npm install: it stages its
+  // platform packages in npm/ and must never reach the network, with or
+  // without ADO_NO_DOWNLOAD. The contract is the missing fetch, not a
+  // message: with no staged binary the source-tree branch logs its skip,
+  // and with one the launcher's presence guard returns early and silently.
+  // Both outcomes are complete installs.
   const assertNoFetch = (label, status, stdout, stderr) => {
     const output = `${stdout}\n${stderr}`;
     assert.equal(status, 0, `${label} exited ${status}:\n${output}`);
@@ -503,12 +464,10 @@ test('the repo copies skip the fetch in place, staged binary or not', (t) => {
       }
     });
 
-  for (const copy of [rootCopy, POSTINSTALL]) {
-    const { status, stdout, stderr } = run(copy);
+  const { status, stdout, stderr } = run(POSTINSTALL);
 
-    assertNoFetch(copy, status, stdout, stderr);
-    assertGuardReturned(copy, stdout);
-  }
+  assertNoFetch(POSTINSTALL, status, stdout, stderr);
+  assertGuardReturned(POSTINSTALL, stdout);
 
   // Pin the silent early return too: a temp copy of the repo layout whose
   // staging directory already holds the platform binary — the state of a
@@ -521,7 +480,7 @@ test('the repo copies skip the fetch in place, staged binary or not', (t) => {
     const packageDir = path.join(npmDir, '@gilbertwong1996-ado');
     fs.mkdirSync(scriptsDir, { recursive: true });
     fs.mkdirSync(packageDir, { recursive: true });
-    fs.copyFileSync(rootCopy, path.join(scriptsDir, 'postinstall.js'));
+    fs.copyFileSync(POSTINSTALL, path.join(scriptsDir, 'postinstall.js'));
     fs.copyFileSync(
       path.join(POSTINSTALL, '..', '..', 'package.json'),
       path.join(packageDir, 'package.json')
@@ -702,19 +661,3 @@ test(
     }
   }
 );
-
-// ── repo invariant ───────────────────────────────────────────────────
-
-test('the repo-root postinstall copy matches the published one', (t) => {
-  const rootCopy = rootCopyPath();
-  if (!rootCopy) {
-    t.skip('not running from the repo checkout');
-    return;
-  }
-  // scripts/npm-publish.sh copies the repo-root script into this package
-  // before publishing, so the two files must stay identical.
-  assert.equal(
-    fs.readFileSync(rootCopy, 'utf8'),
-    fs.readFileSync(POSTINSTALL, 'utf8')
-  );
-});
