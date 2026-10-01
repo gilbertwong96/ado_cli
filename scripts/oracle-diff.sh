@@ -4739,6 +4739,254 @@ run_mock_cases() {
     mock_case ci-watch-no-project "ci watch (no project)" \
         ci watch --json
 
+    # ── Task 9: the embedded skills surface ─────────────────────────────
+    #
+    # `skills` is the wave's only area that makes no HTTP request at all, so every
+    # case asserts the direction the other way: both sides' request slices must be
+    # empty. The five bespoke envelopes (and the sixth, `list <path>`) are compared
+    # by the `json` mode; the human forms by `text`; the install cases write into a
+    # target shared by both sides (`../install-*` resolves to the same $work/run
+    # path for either cwd) with `--force`, so their documents match byte for byte
+    # instead of naming the harness's per-side HOME. The `--json` error envelope
+    # the frozen emits for an unresolved target is the area's one MATCH among the
+    # refusals; the rest are D4 (the frozen's `xx  …` on stdout, no envelope) and
+    # D5 (its help screen before the usage line).
+
+    expect_statuses='0 0'
+    expect_oracle_requests='length == 0'
+    expect_rust_requests='length == 0'
+    mock_case skills-list-json "skills list --json" \
+        skills list --json
+
+    expect_statuses='0 0'
+    expect_oracle_requests='length == 0'
+    expect_rust_requests='length == 0'
+    stdout_mode=text
+    mock_case skills-list "skills list" \
+        skills list
+
+    expect_statuses='0 0'
+    expect_oracle_requests='length == 0'
+    expect_rust_requests='length == 0'
+    stdout_mode=text
+    mock_case skills-list-skill "skills list <skill> (the ls-style entries)" \
+        skills list ado-cli
+
+    expect_statuses='0 0'
+    expect_oracle_requests='length == 0'
+    expect_rust_requests='length == 0'
+    mock_case skills-list-skill-json "skills list <skill> --json" \
+        skills list ado-cli --json
+
+    expect_statuses='0 0'
+    expect_oracle_requests='length == 0'
+    expect_rust_requests='length == 0'
+    mock_case skills-list-references-json "skills list <skill>/references --json" \
+        skills list ado-cli/references --json
+
+    envelope_rule='D4: the frozen prints its refusal on stdout and never an envelope, even under --json; this build writes the classified envelope'
+    expect_statuses='1 1'
+    expect_oracle_requests='length == 0'
+    expect_rust_requests='length == 0'
+    mock_case skills-list-unknown-json "skills list (unknown skill) --json" \
+        skills list no-such --json
+
+    envelope_rule='D4: the frozen prints its refusal on stdout; this build writes the labelled line to stderr'
+    expect_statuses='1 1'
+    expect_oracle_requests='length == 0'
+    expect_rust_requests='length == 0'
+    stdout_mode=text
+    mock_case skills-list-unknown "skills list (unknown skill)" \
+        skills list no-such
+
+    envelope_rule='D5: the oracle prints the command help on stdout before its usage error; this build writes clap’s message to stderr alone'
+    expect_statuses='1 1'
+    expect_oracle_requests='length == 0'
+    expect_rust_requests='length == 0'
+    stdout_mode=text
+    mock_case skills-list-extra "skills list (an extra positional)" \
+        skills list ado-cli extra
+
+    expect_statuses='0 0'
+    expect_oracle_requests='length == 0'
+    expect_rust_requests='length == 0'
+    stdout_mode=text
+    mock_case skills-describe "skills describe" \
+        skills describe ado-cli
+
+    expect_statuses='0 0'
+    expect_oracle_requests='length == 0'
+    expect_rust_requests='length == 0'
+    mock_case skills-describe-json "skills describe --json" \
+        skills describe ado-cli --json
+
+    envelope_rule='D4: the frozen prints its refusal on stdout and never an envelope, even under --json; this build writes the classified envelope'
+    expect_statuses='1 1'
+    expect_oracle_requests='length == 0'
+    expect_rust_requests='length == 0'
+    mock_case skills-describe-unknown-json "skills describe (unknown skill) --json" \
+        skills describe no-such --json
+
+    envelope_rule='D5: the oracle prints the command help on stdout before its usage error; this build writes clap’s message to stderr alone'
+    expect_statuses='1 1'
+    expect_oracle_requests='length == 0'
+    expect_rust_requests='length == 0'
+    stdout_mode=text
+    mock_case skills-describe-missing "skills describe (no name)" \
+        skills describe
+
+    expect_statuses='0 0'
+    expect_oracle_requests='length == 0'
+    expect_rust_requests='length == 0'
+    stdout_mode=text
+    mock_case skills-read "skills read (the stripped body)" \
+        skills read ado-cli
+
+    expect_statuses='0 0'
+    expect_oracle_requests='length == 0'
+    expect_rust_requests='length == 0'
+    mock_case skills-read-json "skills read --json" \
+        skills read ado-cli --json
+
+    expect_statuses='0 0'
+    expect_oracle_requests='length == 0'
+    expect_rust_requests='length == 0'
+    mock_case skills-read-reference-json "skills read <skill>/<file> --json (verbatim)" \
+        skills read ado-cli/references/prs.md --json
+
+    envelope_rule='D4: the frozen prints its file-not-found sentence on stdout; this build writes the labelled line to stderr'
+    expect_statuses='1 1'
+    expect_oracle_requests='length == 0'
+    expect_rust_requests='length == 0'
+    stdout_mode=text
+    mock_case skills-read-missing-file "skills read (a missing file)" \
+        skills read ado-cli/nope.md
+
+    envelope_rule='D5: the oracle prints the command help on stdout before its usage error; this build writes clap’s message to stderr alone'
+    expect_statuses='1 1'
+    expect_oracle_requests='length == 0'
+    expect_rust_requests='length == 0'
+    stdout_mode=text
+    mock_case skills-read-missing "skills read (no target)" \
+        skills read
+
+    expect_statuses='0 0'
+    expect_oracle_requests='length == 0'
+    expect_rust_requests='length == 0'
+    mock_case skills-search-json "skills search --json" \
+        skills search "create PR" --json
+
+    expect_statuses='0 0'
+    expect_oracle_requests='length == 0'
+    expect_rust_requests='length == 0'
+    mock_case skills-search-ci-json "skills search (priority across skills) --json" \
+        skills search ci --json
+
+    expect_statuses='0 0'
+    expect_oracle_requests='length == 0'
+    expect_rust_requests='length == 0'
+    stdout_mode=text
+    mock_case skills-search-ci "skills search (the group order is name-sorted)" \
+        skills search ci
+
+    expect_statuses='0 0'
+    expect_oracle_requests='length == 0'
+    expect_rust_requests='length == 0'
+    stdout_mode=text
+    mock_case skills-search-empty "skills search (no matches)" \
+        skills search zzz
+
+    envelope_rule='D5: the oracle prints the command help on stdout before its usage error; this build writes clap’s message to stderr alone'
+    expect_statuses='1 1'
+    expect_oracle_requests='length == 0'
+    expect_rust_requests='length == 0'
+    stdout_mode=text
+    mock_case skills-search-missing "skills search (no query)" \
+        skills search
+
+    # The shared-relative-target trick: `../install-force` resolves to the same
+    # $work/run/install-force for either side's cwd, and `--force` makes the second
+    # side (the candidate) overwrite rather than report a skip, so the two
+    # documents are the same bytes.
+    expect_statuses='0 0'
+    expect_oracle_requests='length == 0'
+    expect_rust_requests='length == 0'
+    mock_case skills-install-json "skills install --json (the install document)" \
+        skills install --target ../install-force --force --json
+
+    expect_statuses='0 0'
+    expect_oracle_requests='length == 0'
+    expect_rust_requests='length == 0'
+    stdout_mode=text
+    mock_case skills-install-human "skills install (the human summary)" \
+        skills install --target ../install-human --force
+
+    expect_statuses='0 0'
+    expect_oracle_requests='length == 0'
+    expect_rust_requests='length == 0'
+    mock_case skills-install-copilot-json "skills install --target copilot --repo .. --json" \
+        skills install --target copilot --repo .. --force --json
+
+    expect_statuses='0 0'
+    expect_oracle_requests='length == 0'
+    expect_rust_requests='length == 0'
+    mock_case skills-install-unknown-skill-json "skills install --skill (unknown) --json" \
+        skills install --target ../install-unknown --skill no-such --json
+
+    # The frozen's own validation_error document: both sides write the same
+    # envelope, and the repo path in it is the one the case passed (identical for
+    # both sides because it is relative to the shared parent).
+    expect_statuses='1 1'
+    expect_oracle_requests='length == 0'
+    expect_rust_requests='length == 0'
+    mock_case skills-install-copilot-missing-repo-json "skills install --repo (missing) --json" \
+        skills install --target copilot --repo ../nope --json
+
+    envelope_rule='D4: the frozen prints its target-resolution sentence on stdout; this build writes the labelled line to stderr'
+    expect_statuses='1 1'
+    expect_oracle_requests='length == 0'
+    expect_rust_requests='length == 0'
+    stdout_mode=text
+    mock_case skills-install-copilot-missing-repo "skills install --repo (missing)" \
+        skills install --target copilot --repo ../nope
+
+    # The per-user target resolves under each side's isolated HOME, so the two
+    # documents differ only in that path — the harness's isolation, not a contract
+    # difference. The tree itself is asserted by the integration suite.
+    envelope_rule='the pi target path names the harness’s per-side HOME; the layout is asserted by the integration suite'
+    expect_statuses='0 0'
+    expect_oracle_requests='length == 0'
+    expect_rust_requests='length == 0'
+    mock_case skills-install-per-user-json "skills install --target pi --json" \
+        skills install --target pi --json
+
+    envelope_rule='D5: the oracle prints the command help on stdout before its invalid-option line; this build writes clap’s message to stderr alone'
+    expect_statuses='1 1'
+    expect_oracle_requests='length == 0'
+    expect_rust_requests='length == 0'
+    stdout_mode=text
+    mock_case skills-install-missing-value "skills install (a valueless --target)" \
+        skills install --target
+
+    # D43's family: the frozen reads `--json=false` and prints its human form;
+    # this build's clap flag has one spelling, so the same invocation is refused.
+    status_rule='D43: the frozen accepts the `--flag=false` boolean spelling; this build accepts only the bare flag'
+    envelope_rule='D43: the oracle prints human output for --json=false; this build refuses the spelling (D5’s usage error)'
+    expect_statuses='0 1'
+    expect_oracle_requests='length == 0'
+    expect_rust_requests='length == 0'
+    stdout_mode=text
+    mock_case skills-list-json-eq-false "skills list --json=false (D43)" \
+        skills list --json=false
+
+    envelope_rule='D5: the oracle prints the command help on stdout before its usage error; this build writes clap’s message to stderr alone'
+    expect_statuses='1 1'
+    expect_oracle_requests='length == 0'
+    expect_rust_requests='length == 0'
+    stdout_mode=text
+    mock_case skills-no-subcommand "skills (no sub-command)" \
+        skills --json
+
     mock_scenario_check
 }
 
