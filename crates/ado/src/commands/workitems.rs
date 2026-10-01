@@ -18,8 +18,12 @@
 //! `workitems`. `attachments download` resolves its filename from `--output`, then
 //! the metadata's `attributes.name`, then `attachment_<id>`, and writes the raw
 //! body through the shared streamed write (D28) — the same path the artifact
-//! download uses. The work item `id` positional is declared but never read by the
-//! frozen flow (captured: the request chain names only the attachment id).
+//! download uses. The server-supplied name is reduced to its final path component
+//! and an unusable one is refused (Ruling A2); `--output` is never touched. The
+//! work item `id` positional is declared but never read by the frozen flow
+//! (captured: the request chain names only the attachment id).
+
+use std::path::Path;
 
 use ado_core::client::encode_path_segment;
 use ado_core::envelope::{ok_message, ok_value};
@@ -410,6 +414,13 @@ fn attachments_text(attachments: &Value) -> Report {
 /// success line is the module's, with the number of bytes written; there is no
 /// envelope, under `--json` or otherwise — the frozen CLI prints the same line.
 ///
+/// A server-supplied `attributes.name` is reduced to its final path component and
+/// a name that is empty, `.` or `..` (or ends in one) is refused (Ruling A2): the
+/// frozen CLI hands the name to `File.write!/2` verbatim, so `../evil.bin` writes
+/// outside the working directory (captured). `--output` is the caller's own path
+/// and is never reduced or refused; a name without a separator (a real filename)
+/// is returned unchanged, so no legitimate server name is touched.
+///
 /// The work item `id` positional is not a parameter here because the frozen flow
 /// never reads it (captured): the request chain names only the attachment id.
 ///
@@ -430,9 +441,14 @@ pub fn attachments_download(
         encode_path_segment(attachment_id)
     );
     let metadata = context.client()?.get(&path, &[])?;
-    let target = output
-        .or_else(|| attachment_name(&metadata))
-        .unwrap_or_else(|| format!("attachment_{attachment_id}"));
+    let target = match output {
+        Some(output) => output,
+        None => match attachment_name(&metadata) {
+            Some(name) => safe_attachment_name(&name)
+                .ok_or_else(|| unusable_attachment_name(attachment_id, &name))?,
+            None => format!("attachment_{attachment_id}"),
+        },
+    };
 
     let url = context
         .client()?
@@ -455,6 +471,28 @@ fn attachment_name(metadata: &Value) -> Option<String> {
         .and_then(|attributes| attributes.get("name"))
         .and_then(Value::as_str)
         .map(str::to_owned)
+}
+
+/// The server-supplied name reduced to the one path component it may write
+/// (Ruling A2): `file_name/1` drops every separator and a trailing one, and a
+/// name that is empty, `.` or `..` — or terminates in one — has no component at
+/// all. A name without a separator is returned unchanged, so a real filename
+/// never moves; the reduction only matters when the name carries path structure.
+fn safe_attachment_name(name: &str) -> Option<String> {
+    Path::new(name)
+        .file_name()
+        .and_then(|component| component.to_str())
+        .filter(|component| !component.is_empty() && *component != "." && *component != "..")
+        .map(str::to_owned)
+}
+
+/// The refusal an unusable server name takes. The caller can always pass
+/// `--output`, which is why the wording names it, and the name is quoted so the
+/// surprising input is visible in the error.
+fn unusable_attachment_name(attachment_id: &str, name: &str) -> AdoError {
+    AdoError::validation(format!(
+        "Attachment '{attachment_id}' has an unusable server-supplied name '{name}'; pass --output to choose the file name"
+    ))
 }
 
 /// Elixir's truthiness for a decoded JSON value: only `null` and `false` are falsy.
@@ -1196,5 +1234,41 @@ mod tests {
                 "only a string name is usable: {metadata}"
             );
         }
+    }
+
+    /// Ruling A2: the server name is reduced to its final path component, and a
+    /// name with no component — empty, `.`, `..`, or a path that terminates in
+    /// one — is refused. A real filename (no separator) passes through untouched.
+    #[test]
+    fn the_attachment_name_is_reduced_to_its_final_component() {
+        for (name, expected) in [
+            ("report.pdf", Some("report.pdf")),
+            ("My Report v2.pdf", Some("My Report v2.pdf")),
+            ("nested/report.pdf", Some("report.pdf")),
+            ("../evil.bin", Some("evil.bin")),
+            ("a/b/../c.bin", Some("c.bin")),
+            ("nested/", Some("nested")),
+        ] {
+            assert_eq!(safe_attachment_name(name).as_deref(), expected, "{name:?}");
+        }
+
+        for refused in ["", ".", "..", "nested/..", "a/b/..", "../", "./"] {
+            assert_eq!(
+                safe_attachment_name(refused),
+                None,
+                "{refused:?} has no usable final component"
+            );
+        }
+    }
+
+    #[test]
+    fn an_unusable_name_names_the_flag_that_bypasses_it() {
+        let error = unusable_attachment_name("att-up", "..");
+
+        assert_eq!(error.code, ado_core::error::ErrorCode::ValidationError);
+        assert_eq!(
+            error.message,
+            "Attachment 'att-up' has an unusable server-supplied name '..'; pass --output to choose the file name"
+        );
     }
 }

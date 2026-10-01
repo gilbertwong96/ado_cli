@@ -2739,6 +2739,138 @@ fn attachments_download_defaults_to_the_id_name_without_an_attribute_name() {
     );
 }
 
+/// A missing or unusable server-supplied name is refused before the raw GET, and
+/// the refusal names the `--output` the caller can use instead (Ruling A2): the
+/// frozen CLI hands the name to `File.write!/2` verbatim, so `..` is an empty
+/// stream and exit 1 there (captured `task11/oracle-a2.log`).
+#[test]
+fn attachments_download_refuses_a_dotdot_name() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    expect_download(
+        &server,
+        ATTACHMENT_1_PATH,
+        attachment_metadata("att-1", Some("..")),
+        b"bytes".to_vec(),
+    );
+
+    let output = run(
+        &home,
+        &server,
+        &[
+            "workitems",
+            "attachments",
+            "download",
+            "42",
+            "att-1",
+            "--json",
+        ],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    let envelope: Value =
+        serde_json::from_str(&stdout_of(&output)).expect("stdout is one JSON document");
+    assert_eq!(envelope["error"]["code"], json!("validation_error"));
+    assert_eq!(
+        envelope["error"]["message"],
+        json!(
+            "Attachment 'att-1' has an unusable server-supplied name '..'; pass --output to choose the file name"
+        )
+    );
+
+    let received = server.received();
+    assert_eq!(
+        received.len(),
+        1,
+        "only the metadata GET goes out; the raw GET never starts"
+    );
+    assert_eq!(received[0].path, ATTACHMENT_1_PATH);
+}
+
+/// The reduction is the security half of Ruling A2: the frozen CLI wrote
+/// `../evil.bin` outside the working directory (captured), and this build writes
+/// `evil.bin` inside it — the file one level up is untouched.
+#[test]
+fn attachments_download_cannot_escape_the_working_directory() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    let cwd = home.path().join("work");
+    fs::create_dir_all(&cwd).expect("the working directory");
+    let sentinel = home.path().join("evil.bin");
+    fs::write(&sentinel, b"keep me").expect("the sentinel");
+    expect_download(
+        &server,
+        ATTACHMENT_1_PATH,
+        attachment_metadata("att-1", Some("../evil.bin")),
+        b"bytes".to_vec(),
+    );
+
+    let output = run_in(
+        &home,
+        &server,
+        &cwd,
+        &["workitems", "attachments", "download", "42", "att-1"],
+    );
+
+    assert_success(&output);
+    assert_eq!(
+        stdout_of(&output),
+        "Downloaded 5 bytes to evil.bin\n",
+        "the success line names the reduced name"
+    );
+    assert_eq!(
+        fs::read(cwd.join("evil.bin")).expect("the downloaded file"),
+        b"bytes"
+    );
+    assert_eq!(
+        fs::read(&sentinel).expect("the sentinel"),
+        b"keep me",
+        "`../evil.bin` could not reach the parent directory"
+    );
+
+    let received = server.received();
+    assert_eq!(received.len(), 2);
+    assert_eq!(
+        received[1].query_pairs(),
+        vec![api_version(), pair("fileName", "evil.bin")],
+        "the raw GET carries the reduced name"
+    );
+}
+
+/// A name with a separator but no escape is reduced the same way: `nested/x.bin`
+/// writes `x.bin` in the working directory rather than failing on the missing
+/// `nested/` (the frozen CLI's `File.write!` raises there and exits 1 silently —
+/// captured).
+#[test]
+fn attachments_download_reduces_a_separator_name() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+    expect_download(
+        &server,
+        ATTACHMENT_1_PATH,
+        attachment_metadata("att-1", Some("nested/evil.bin")),
+        b"bytes".to_vec(),
+    );
+
+    let output = run_in(
+        &home,
+        &server,
+        home.path(),
+        &["workitems", "attachments", "download", "42", "att-1"],
+    );
+
+    assert_success(&output);
+    assert_eq!(stdout_of(&output), "Downloaded 5 bytes to evil.bin\n");
+    assert_eq!(
+        fs::read(home.path().join("evil.bin")).expect("the file"),
+        b"bytes"
+    );
+    assert!(
+        !home.path().join("nested").exists(),
+        "no directory is invented for the server's path"
+    );
+}
+
 /// The work item `id` positional is declared but never read by the frozen flow:
 /// the requests name only the attachment id, and two work item ids produce the
 /// same chain.
