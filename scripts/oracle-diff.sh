@@ -518,6 +518,10 @@ requests_filter="map({
 # — so its one pair's value swallows the version, where this build sends the two
 # pairs. Splitting that pair reproduces this build's spelling; a case that sets
 # `rest_norm=$d25_query_norm` still fails on any other request difference.
+# The tail is what a value with a second `?api-version=` occurrence keeps:
+# `$parts[1:] | join("?api-version=")` rather than `$parts[1]`, so the normaliser
+# cannot silently drop it (W2's C10; unreachable in today's scenarios, hardened
+# anyway — a normaliser that loses bytes it does not name is a blind spot).
 # D22's `+` spelling, mechanically: the frozen `URI.encode/1` leaves `+` raw in a
 # path segment and this build escapes it `%2B`, so unescaping it on both sides
 # reproduces one spelling; a case that sets `rest_norm=$d22_plus_norm` still fails
@@ -528,7 +532,7 @@ d22_plus_norm='map(.path |= gsub("%2B"; "+"))'
 d25_query_norm='map(.query |= ([.[] | if (index("?api-version=") != null)
     then (. | split("?api-version=")) as $parts
        | ($parts[0] | split("=")) as $kv
-       | (($kv[0]) + "=" + ($kv[1:] | join("="))), ("api-version=" + ($parts[1]))
+       | (($kv[0]) + "=" + ($kv[1:] | join("="))), ("api-version=" + ($parts[1:] | join("?api-version=")))
     else . end] | sort))'
 
 mock_requests_check() {
