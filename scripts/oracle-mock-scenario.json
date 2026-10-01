@@ -1229,6 +1229,72 @@
     {"method": "POST", "path": "/sec-bad/_apis/accesscontrolentries/b7e84409-6553-448a-bbb2-af228e07cbeb", "request_body": {"token": "11111111-2222-3333-4444-555555555555", "merge": true, "accessControlEntries": [{"descriptor": "aad.QwErTyUiOpAsDfGhJkLzXcVbNm", "allow": 8, "deny": 0, "extendedInfo": {}}]}, "status": 400, "json": {"message": "The descriptor is not valid."}},
 
     {"method": "GET", "path": "/sec-acl-broken/_apis/connectionData", "json": {"authenticatedUser": {"id": "c1d2e3f4-0002-0002-0002-000000000002", "subjectDescriptor": "aad.QwErTyUiOpAsDfGhJkLzXcVbNm"}}},
-    {"method": "POST", "path": "/sec-acl-broken/_apis/accesscontrolentries/b7e84409-6553-448a-bbb2-af228e07cbeb", "request_body": {"token": "11111111-2222-3333-4444-555555555555", "merge": true, "accessControlEntries": [{"descriptor": "aad.QwErTyUiOpAsDfGhJkLzXcVbNm", "allow": 8, "deny": 0, "extendedInfo": {}}]}, "status": 500, "json": {"message": "TF400813: The server is unavailable."}}
+    {"method": "POST", "path": "/sec-acl-broken/_apis/accesscontrolentries/b7e84409-6553-448a-bbb2-af228e07cbeb", "request_body": {"token": "11111111-2222-3333-4444-555555555555", "merge": true, "accessControlEntries": [{"descriptor": "aad.QwErTyUiOpAsDfGhJkLzXcVbNm", "allow": 8, "deny": 0, "extendedInfo": {}}]}, "status": 500, "json": {"message": "TF400813: The server is unavailable."}},
+
+    {"method": "GET", "path": "/ado-harness/Watch/_apis/build/builds/201",
+     "sequence": [{"json": {"id": 201, "status": "completed", "result": "succeeded", "sourceBranch": "refs/heads/main", "definition": {"name": "Watch CI"}}}]},
+    {"method": "GET", "path": "/ado-harness/Watch/_apis/build/builds/201/timeline",
+     "json": {"records": [
+        {"id": "rec-1", "state": "completed", "type": "Job", "name": "Compile"},
+        {"id": "rec-2", "state": "weirdState", "type": "Task"},
+        {"id": "rec-3", "state": "skipped"},
+        {"id": "rec-4", "state": "failed", "name": "Test"}
+     ]}},
+
+    {"method": "GET", "path": "/ado-harness/Watch/_apis/build/builds/202",
+     "sequence": [
+        {"json": {"id": 202, "status": "inProgress", "result": null, "sourceBranch": "refs/heads/release", "definition": {"name": "Watch CI"}}},
+        {"json": {"id": 202, "status": "completed", "result": "succeeded", "sourceBranch": "refs/heads/release", "definition": {"name": "Watch CI"}}},
+        {"json": {"id": 202, "status": "inProgress", "result": null, "sourceBranch": "refs/heads/release", "definition": {"name": "Watch CI"}}},
+        {"json": {"id": 202, "status": "completed", "result": "succeeded", "sourceBranch": "refs/heads/release", "definition": {"name": "Watch CI"}}}
+     ]},
+    {"method": "GET", "path": "/ado-harness/Watch/_apis/build/builds/202/timeline",
+     "json": {"records": [{"id": "rec-1", "state": "inProgress", "type": "Job", "name": "Compile"}]}},
+
+    {"method": "GET", "path": "/ado-harness/Watch/_apis/build/builds/203",
+     "sequence": [{"json": {"id": 203, "status": "completed", "result": "failed", "sourceBranch": "refs/heads/main", "definition": {"name": "Watch CI"}}}]},
+    {"method": "GET", "path": "/ado-harness/Watch/_apis/build/builds/203/timeline", "json": {"records": []}},
+
+    {"method": "GET", "path": "/ado-harness/Watch/_apis/build/builds/204",
+     "sequence": [{"json": {"id": 204, "status": "completed", "result": "canceled", "sourceBranch": "refs/heads/main", "definition": {"name": "Watch CI"}}}]},
+    {"method": "GET", "path": "/ado-harness/Watch/_apis/build/builds/204/timeline", "json": {"records": []}},
+
+    {"method": "GET", "path": "/ado-harness/Watch/_apis/build/builds/205",
+     "sequence": [{"json": {"id": 205, "status": "completed", "result": "partiallySucceeded", "sourceBranch": "refs/heads/main", "definition": {"name": "Watch CI"}}}]},
+    {"method": "GET", "path": "/ado-harness/Watch/_apis/build/builds/205/timeline", "json": {"records": []}},
+
+    {"method": "GET", "path": "/ado-harness/Watch/_apis/build/builds/206",
+     "sequence": [{"json": {"id": 206, "status": "cancelling", "sourceBranch": "refs/heads/main", "definition": {"name": "Watch CI"}}}]},
+    {"method": "GET", "path": "/ado-harness/Watch/_apis/build/builds/206/timeline", "json": {"records": []}},
+
+    {"method": "GET", "path": "/ado-harness/Watch/_apis/build/builds/207",
+     "sequence": [
+        {"json": {"id": 207, "status": "inProgress", "result": null, "sourceBranch": "refs/heads/main", "definition": {"name": "Watch CI"}}},
+        {"json": {"id": 207, "status": "inProgress", "result": null, "sourceBranch": "refs/heads/main", "definition": {"name": "Watch CI"}}},
+        {"json": {"id": 207, "status": "completed", "result": "failed", "sourceBranch": "refs/heads/main", "definition": {"name": "Watch CI"}}},
+        {"json": {"id": 207, "status": "inProgress", "result": null, "sourceBranch": "refs/heads/main", "definition": {"name": "Watch CI"}}},
+        {"json": {"id": 207, "status": "inProgress", "result": null, "sourceBranch": "refs/heads/main", "definition": {"name": "Watch CI"}}},
+        {"json": {"id": 207, "status": "completed", "result": "failed", "sourceBranch": "refs/heads/main", "definition": {"name": "Watch CI"}}}
+     ]},
+    {"method": "GET", "path": "/ado-harness/Watch/_apis/build/builds/207/timeline",
+     "json": {"records": [
+        {"id": "job-1", "state": "inProgress", "type": "Job", "name": "Build", "log": {"id": 7}},
+        {"id": "job-2", "state": "completed", "type": "Job", "name": "Setup"}
+     ]}},
+    {"method": "GET", "path": "/ado-harness/Watch/_apis/build/builds/207/logs/7",
+     "sequence": [
+        {"fixture": "build_log_part_one.txt"},
+        {"fixture": "build_log_part_two.txt"},
+        {"fixture": "build_log_part_one.txt"},
+        {"fixture": "build_log_part_two.txt"}
+     ]},
+
+    {"method": "GET", "path": "/ado-harness/Watch/_apis/build/builds/404",
+     "status": 404, "json": {"message": "Build 404 does not exist."}},
+
+    {"method": "GET", "path": "/ado-harness/Watch/_apis/build/builds",
+     "json": {"count": 1, "value": [{"id": 201, "status": "completed", "result": "succeeded"}]}},
+    {"method": "GET", "path": "/ado-harness/EmptyWatch/_apis/build/builds",
+     "json": {"count": 0, "value": []}}
   ]
 }

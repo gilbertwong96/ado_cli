@@ -4589,6 +4589,156 @@ run_mock_cases() {
     mock_case security-grant-permission-valueless "security grant (a valueless --permission)" \
         security grant Alpha --yes-this-mutates-secret-read --permission
 
+    # ── Task 8: the ci watcher ──────────────────────────────────────────
+    #
+    # `ci watch` is the wave's only command whose product is a stream, and the
+    # only one the harness drives with a `sequence`: the build route answers each
+    # poll in turn, so both sides walk the same chain whatever their poll cadence
+    # (the oracle's fixed 2000 ms; ours as documented). The stdout cases run in
+    # `text` mode — the human stream after §8's colour strip — and the
+    # load-bearing request chain is asserted by the direction filters. Five cases
+    # carry the repaired pair (Ruling 3): failed 0/1, canceled 0/2, cancelling
+    # 0/2, the log stream's terminal failure 0/1, and the `--poll-interval`
+    # repair (Ruling 4(a))'s oracle 1 / rust 0.
+
+    expect_statuses='0 0'
+    expect_oracle_requests='length == 2 and (.[0].path == "/ado-harness/Watch/_apis/build/builds/201") and qpair("api-version=7.1") and (.[1].path == "/ado-harness/Watch/_apis/build/builds/201/timeline")'
+    expect_rust_requests='length == 2 and (.[0].path == "/ado-harness/Watch/_apis/build/builds/201") and qpair("api-version=7.1") and (.[1].path == "/ado-harness/Watch/_apis/build/builds/201/timeline")'
+    stdout_mode=text
+    mock_case ci-watch-completed "ci watch (a completed build)" \
+        ci watch Watch 201
+
+    expect_statuses='0 0'
+    expect_oracle_requests='length == 5 and ([.[] | select(.path == "/ado-harness/Watch/_apis/build/builds/202")] | length) == 2 and ([.[] | select(.path == "/ado-harness/Watch/_apis/build/builds/202/timeline")] | length) == 3'
+    expect_rust_requests='length == 5 and ([.[] | select(.path == "/ado-harness/Watch/_apis/build/builds/202")] | length) == 2 and ([.[] | select(.path == "/ado-harness/Watch/_apis/build/builds/202/timeline")] | length) == 3'
+    stdout_mode=text
+    mock_case ci-watch-two-tick "ci watch (inProgress → succeeded)" \
+        ci watch Watch 202
+
+    status_rule='Ruling 3: the frozen watcher returns :ok for every terminal state, so a failed build exits 0; this build exits 1'
+    expect_statuses='0 1'
+    envelope_rule='Ruling 3: the final line is ✗ Build 203 failed. here, where the oracle prints ✓ Build 203 completed. after its own Build failed.'
+    expect_oracle_requests='length == 2 and (.[0].path == "/ado-harness/Watch/_apis/build/builds/203") and (.[1].path == "/ado-harness/Watch/_apis/build/builds/203/timeline")'
+    expect_rust_requests='length == 2 and (.[0].path == "/ado-harness/Watch/_apis/build/builds/203") and (.[1].path == "/ado-harness/Watch/_apis/build/builds/203/timeline")'
+    stdout_mode=text
+    mock_case ci-watch-failed "ci watch (a failed build)" \
+        ci watch Watch 203
+
+    status_rule='Ruling 3: a canceled build is the doc’s cancellation; the frozen exits 0, this build exits 2'
+    expect_statuses='0 2'
+    envelope_rule='Ruling 3: the final line is ✗ Build 204 canceled. here, where the oracle prints ✓ Build 204 completed.'
+    expect_oracle_requests='length == 2 and (.[0].path == "/ado-harness/Watch/_apis/build/builds/204") and (.[1].path == "/ado-harness/Watch/_apis/build/builds/204/timeline")'
+    expect_rust_requests='length == 2 and (.[0].path == "/ado-harness/Watch/_apis/build/builds/204") and (.[1].path == "/ado-harness/Watch/_apis/build/builds/204/timeline")'
+    stdout_mode=text
+    mock_case ci-watch-canceled "ci watch (a canceled build)" \
+        ci watch Watch 204
+
+    expect_statuses='0 0'
+    expect_oracle_requests='length == 2 and (.[0].path == "/ado-harness/Watch/_apis/build/builds/205") and (.[1].path == "/ado-harness/Watch/_apis/build/builds/205/timeline")'
+    expect_rust_requests='length == 2 and (.[0].path == "/ado-harness/Watch/_apis/build/builds/205") and (.[1].path == "/ado-harness/Watch/_apis/build/builds/205/timeline")'
+    stdout_mode=text
+    mock_case ci-watch-partial "ci watch (a partially succeeded build)" \
+        ci watch Watch 205
+
+    status_rule='Ruling 3: the frozen terminal `cancelling` state exits 0; this build reads a cancellation in flight as 2'
+    expect_statuses='0 2'
+    envelope_rule='Ruling 3: the final line is ✗ Build 206 canceled. here, where the oracle prints ✓ Build 206 completed.'
+    expect_oracle_requests='length == 2 and (.[0].path == "/ado-harness/Watch/_apis/build/builds/206") and (.[1].path == "/ado-harness/Watch/_apis/build/builds/206/timeline")'
+    expect_rust_requests='length == 2 and (.[0].path == "/ado-harness/Watch/_apis/build/builds/206") and (.[1].path == "/ado-harness/Watch/_apis/build/builds/206/timeline")'
+    stdout_mode=text
+    mock_case ci-watch-cancelling "ci watch (a cancelling build)" \
+        ci watch Watch 206
+
+    # The log stream's own contract is the `?id=N` progression: `?id=1`, then
+    # `?id=3` after the two CRLF lines — only the request log can see it, and the
+    # filter names both indices, both exact pairs and the five timeline fetches.
+    status_rule='Ruling 3: the frozen watcher returns :ok on the terminal failed tick, so it exits 0; this build exits 1'
+    expect_statuses='0 1'
+    envelope_rule='Ruling 3: the final line is ✗ Build 207 failed. here, where the oracle prints ✓ Build 207 completed.'
+    expect_oracle_requests='length == 10 and ([.[] | select(.path | endswith("/timeline"))] | length) == 5 and (.[3].path == "/ado-harness/Watch/_apis/build/builds/207/logs/7") and (.[3].query | split("&") | index("id=1")) != null and (.[7].path == "/ado-harness/Watch/_apis/build/builds/207/logs/7") and (.[7].query | split("&") | index("id=3")) != null'
+    expect_rust_requests='length == 10 and ([.[] | select(.path | endswith("/timeline"))] | length) == 5 and (.[3].path == "/ado-harness/Watch/_apis/build/builds/207/logs/7") and (.[3].query | split("&") | index("id=1")) != null and (.[7].path == "/ado-harness/Watch/_apis/build/builds/207/logs/7") and (.[7].query | split("&") | index("id=3")) != null'
+    stdout_mode=text
+    mock_case ci-watch-logs "ci watch (the log stream)" \
+        ci watch Watch 207
+
+    expect_statuses='0 0'
+    expect_oracle_requests='length == 3 and (.[0].path == "/ado-harness/Watch/_apis/build/builds") and qpair("%24top=1") and (.[1].path == "/ado-harness/Watch/_apis/build/builds/201") and (.[2].path == "/ado-harness/Watch/_apis/build/builds/201/timeline")'
+    expect_rust_requests='length == 3 and (.[0].path == "/ado-harness/Watch/_apis/build/builds") and qpair("%24top=1") and (.[1].path == "/ado-harness/Watch/_apis/build/builds/201") and (.[2].path == "/ado-harness/Watch/_apis/build/builds/201/timeline")'
+    stdout_mode=text
+    mock_case ci-watch-latest "ci watch --latest" \
+        ci watch Watch --latest
+
+    expect_statuses='0 0'
+    expect_oracle_requests='length == 3 and qpair("%24top=1") and qpair("definitions=7") and qpair("branchName=refs%2Fheads%2Fmain") and (.[1].path == "/ado-harness/Watch/_apis/build/builds/201")'
+    expect_rust_requests='length == 3 and qpair("%24top=1") and qpair("definitions=7") and qpair("branchName=refs%2Fheads%2Fmain") and (.[1].path == "/ado-harness/Watch/_apis/build/builds/201")'
+    stdout_mode=text
+    mock_case ci-watch-latest-filters "ci watch --latest --definition/--branch" \
+        ci watch Watch --latest --definition 7 --branch refs/heads/main
+
+    envelope_rule='D4: the oracle prints its resolve error sentence on stdout; this build writes the classified error to stderr'
+    expect_statuses='1 1'
+    expect_oracle_requests='length == 1 and (.[0].path == "/ado-harness/EmptyWatch/_apis/build/builds")'
+    expect_rust_requests='length == 1 and (.[0].path == "/ado-harness/EmptyWatch/_apis/build/builds")'
+    stdout_mode=text
+    mock_case ci-watch-latest-empty "ci watch --latest (no builds)" \
+        ci watch EmptyWatch --latest
+
+    envelope_rule='D4: the oracle prints its resolve error sentence on stdout; this build writes the classified error to stderr'
+    expect_statuses='1 1'
+    expect_oracle_requests='length == 0'
+    expect_rust_requests='length == 0'
+    stdout_mode=text
+    mock_case ci-watch-no-id "ci watch (no build id)" \
+        ci watch Watch
+
+    # Ruling 4(a): the frozen option is a hyphen-declared key no spelling can
+    # match, so the oracle refuses it and sends nothing; this build accepts the
+    # advertised spelling and walks the whole chain. The direction is the case's
+    # point: the oracle side must stay empty, the rust side must fetch.
+    status_rule='Ruling 4(a): the frozen --poll-interval is unreachable and exits 1; this build accepts it as documented'
+    rest_rule='Ruling 4(a): the oracle refuses the hyphen-declared option and sends nothing; this build walks the watch chain'
+    envelope_rule='D5/D48: the oracle prints the command help on stdout before its invalid-option line; this build runs the watch'
+    expect_statuses='1 0'
+    expect_oracle_requests='length == 0'
+    expect_rust_requests='length == 2 and (.[0].path == "/ado-harness/Watch/_apis/build/builds/201") and (.[1].path == "/ado-harness/Watch/_apis/build/builds/201/timeline")'
+    stdout_mode=text
+    mock_case ci-watch-poll-interval "ci watch --poll-interval 250 (the repair)" \
+        ci watch Watch 201 --poll-interval 250
+
+    envelope_rule='D24: the error body stays the upstream bytes here, where the oracle re-renders the decoded map with its step name'
+    expect_statuses='1 1'
+    expect_oracle_requests='length == 1 and (.[0].path == "/ado-harness/Watch/_apis/build/builds/404")'
+    expect_rust_requests='length == 1 and (.[0].path == "/ado-harness/Watch/_apis/build/builds/404")'
+    stdout_mode=text
+    mock_case ci-watch-missing-build "ci watch (a 404 build)" \
+        ci watch Watch 404
+
+    # D33/D47: the oracle streams its human lines and its final sentence under
+    # --json; this build suppresses the stream so stdout is one document.
+    expect_statuses='0 0'
+    envelope_rule='D33: the oracle prints the human stream under --json; this build keeps stdout one message envelope'
+    expect_oracle_requests='length == 2 and (.[0].path == "/ado-harness/Watch/_apis/build/builds/201") and (.[1].path == "/ado-harness/Watch/_apis/build/builds/201/timeline")'
+    expect_rust_requests='length == 2 and (.[0].path == "/ado-harness/Watch/_apis/build/builds/201") and (.[1].path == "/ado-harness/Watch/_apis/build/builds/201/timeline")'
+    stdout_mode=text
+    mock_case ci-watch-json "ci watch --json" \
+        ci watch Watch 201 --json
+
+    envelope_rule='D5: the oracle prints the command help on stdout before its usage error; this build writes clap’s message to stderr alone'
+    expect_statuses='1 1'
+    expect_oracle_requests='length == 0'
+    expect_rust_requests='length == 0'
+    stdout_mode=text
+    mock_case ci-no-subcommand "ci (no sub-command)" \
+        ci --json
+
+    envelope_rule='D5: the oracle prints the command help on stdout before its usage error; this build writes clap’s message to stderr alone'
+    expect_statuses='1 1'
+    expect_oracle_requests='length == 0'
+    expect_rust_requests='length == 0'
+    stdout_mode=text
+    mock_case ci-watch-no-project "ci watch (no project)" \
+        ci watch --json
+
     mock_scenario_check
 }
 
