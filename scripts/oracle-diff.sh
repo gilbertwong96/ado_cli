@@ -5,8 +5,10 @@
 #
 # ── RETIRED ─────────────────────────────────────────────────────────────────
 # This harness is RETIRED. Its final runs are the two recorded in
-# `docs/rust-rewrite/w4-task-5-report.md` (Wave 0 mode and `--mock` mode), at
-# `7c690de`, on the revision the Wave 4 record tags (`v1.0.0-rc.1`). The script
+# `docs/rust-rewrite/w4-task-5b-report.md` (Wave 0 mode and `--mock` mode), on
+# the revision the Wave 4 record tags (`v1.0.0-rc.1`) — both exit 0, every
+# difference on a row. That report supersedes Task 5's run, whose seven skills
+# differences were unrecorded (`w4-task-5-report.md` §2.2). The script
 # and the scenario stay in the tree as history; the rules in
 # `contract-inventory.md` §10 describe the comparison those runs performed, and
 # are no longer a live check. After Task 6 (the deletion) the integration suites
@@ -4930,13 +4932,25 @@ run_mock_cases() {
     # the frozen emits for an unresolved target is the area's one MATCH among the
     # refusals; the rest are D4 (the frozen's `xx  …` on stdout, no envelope) and
     # D5 (its help screen before the usage line).
+    #
+    # Seven of the cases this block rules print the embedded assets themselves,
+    # so Task 3's rewrite of the `SKILL.md` bodies (`e69e866`) and Task 4's
+    # `1.0.0-rc.1` bump (`252142c`) moved them from MATCH to EXPECTED-DIFF at the
+    # wave's freeze. The difference is that sanctioned edit, not drift; the seven
+    # are diagnosed one by one in `w4-task-5-report.md` §2.3.
 
+    skills_version_rule='§1/D49 (T4): the version each row and line reports is the embedded asset frontmatter, which this build bumped to 1.0.0-rc.1; the frozen binary embeds the 0.5.0 it shipped with'
+    skills_content_rule='§1/D49 (T3): the body is the rewritten asset this build ships — cargo-dist, the five release archives, the `crates/ado-skills/assets` path, the `az` and exit-code text — where the frozen embeds Burrito, `mix escript.build` and `priv/skills`'
+    skills_content_json_rule='§1/D49 (T3/T4): the content field is the rewritten asset body (T3: cargo-dist, the release archives, the crates path) and metadata.version the bumped frontmatter (T4: 1.0.0-rc.1 vs the frozen 0.5.0)'
+
+    envelope_rule=$skills_version_rule
     expect_statuses='0 0'
     expect_oracle_requests='length == 0'
     expect_rust_requests='length == 0'
     mock_case skills-list-json "skills list --json" \
         skills list --json
 
+    envelope_rule=$skills_version_rule
     expect_statuses='0 0'
     expect_oracle_requests='length == 0'
     expect_rust_requests='length == 0'
@@ -4986,6 +5000,7 @@ run_mock_cases() {
     mock_case skills-list-extra "skills list (an extra positional)" \
         skills list ado-cli extra
 
+    envelope_rule=$skills_version_rule
     expect_statuses='0 0'
     expect_oracle_requests='length == 0'
     expect_rust_requests='length == 0'
@@ -4993,6 +5008,7 @@ run_mock_cases() {
     mock_case skills-describe "skills describe" \
         skills describe ado-cli
 
+    envelope_rule=$skills_version_rule
     expect_statuses='0 0'
     expect_oracle_requests='length == 0'
     expect_rust_requests='length == 0'
@@ -5014,6 +5030,7 @@ run_mock_cases() {
     mock_case skills-describe-missing "skills describe (no name)" \
         skills describe
 
+    envelope_rule=$skills_content_rule
     expect_statuses='0 0'
     expect_oracle_requests='length == 0'
     expect_rust_requests='length == 0'
@@ -5021,12 +5038,14 @@ run_mock_cases() {
     mock_case skills-read "skills read (the stripped body)" \
         skills read ado-cli
 
+    envelope_rule=$skills_content_json_rule
     expect_statuses='0 0'
     expect_oracle_requests='length == 0'
     expect_rust_requests='length == 0'
     mock_case skills-read-json "skills read --json" \
         skills read ado-cli --json
 
+    envelope_rule=$skills_version_rule
     expect_statuses='0 0'
     expect_oracle_requests='length == 0'
     expect_rust_requests='length == 0'
