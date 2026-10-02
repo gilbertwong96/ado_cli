@@ -1,6 +1,11 @@
 //! `ado users list|show|add|remove` — the entitlement half of
-//! `lib/ado_cli/cli/users.ex`: the organization-scoped `_apis/userentitlements`
-//! surface, the table and detail views, and the module's own 404 wording.
+//! `lib/ado_cli/cli/users.ex`: the organization-scoped `_apis/userentitlements`,
+//! the table and detail views, and the module's own 404 wording.
+//!
+//! The surface lives on Azure's `vsaex` hub, so a cloud request is addressed to
+//! `{org}.vsaex.visualstudio.com` — the frozen CLI sent it to the org host and
+//! every command answered 404 against a live organization
+//! (`w4-live-org-findings.md` F3, the divergence D57).
 //!
 //! `remove` asks the confirmation the module's own doc promises, with `--force`
 //! as its bypass (Ruling A1): the frozen CLI declares no `--force` and never
@@ -14,7 +19,7 @@
 //! ported: its header advertises an `[--search SEARCH]` on `list` that the
 //! module's option table never declares (the frozen parser rejects the flag).
 
-use ado_core::client::encode_path_segment;
+use ado_core::client::{Hub, encode_path_segment};
 use ado_core::envelope::{ok_message, ok_value};
 use ado_core::error::{AdoError, ErrorCode};
 use serde_json::{Value, json};
@@ -32,7 +37,12 @@ const DEFAULT_LICENSE: &str = "express";
 /// three-column table.
 pub fn list(context: &mut Context, top: Option<i64>) -> Result<Report, AdoError> {
     let params = top_params(top);
-    let users = items(context.client()?.list(USERENTITLEMENTS, &params)?);
+    let users = items(
+        context
+            .client()?
+            .hub(Hub::Entitlements)
+            .list(USERENTITLEMENTS, &params)?,
+    );
 
     Ok(
         context.json_or_report(ok_value(Value::Array(users.clone())), || {
@@ -46,7 +56,7 @@ pub fn list(context: &mut Context, top: Option<i64>) -> Result<Report, AdoError>
 pub fn show(context: &mut Context, user_id: &str) -> Result<Report, AdoError> {
     let path = user_path(user_id);
 
-    match context.client()?.get(&path, &[]) {
+    match context.client()?.hub(Hub::Entitlements).get(&path, &[]) {
         Ok(user) => {
             Ok(context.json_or_report(ok_value(user.clone()), || Report::Text(user_detail(&user))))
         }
@@ -67,9 +77,11 @@ pub fn add(
     license: Option<String>,
 ) -> Result<Report, AdoError> {
     let license = license.as_deref().unwrap_or(DEFAULT_LICENSE);
-    let user = context
-        .client()?
-        .post(USERENTITLEMENTS, &add_body(email, license), &[])?;
+    let user = context.client()?.hub(Hub::Entitlements).post(
+        USERENTITLEMENTS,
+        &add_body(email, license),
+        &[],
+    )?;
 
     Ok(context.json_or_report(ok_value(user.clone()), || {
         Report::Text(format!(
@@ -88,7 +100,7 @@ pub fn remove(context: &mut Context, user_id: &str, force: bool) -> Result<Repor
 
     let path = user_path(user_id);
 
-    match context.client()?.delete(&path, &[]) {
+    match context.client()?.hub(Hub::Entitlements).delete(&path, &[]) {
         Ok(()) => {
             let message = format!("User '{user_id}' removed.");
 

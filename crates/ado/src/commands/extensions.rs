@@ -3,6 +3,13 @@
 //! `_apis/extensionmanagement/installedextensions` surface, the client-side
 //! `--search` filter, the four writes' bodies and the two views.
 //!
+//! The surface lives on Azure's `extmgmt` hub, so a cloud request is addressed to
+//! `{org}.extmgmt.visualstudio.com` — the frozen CLI sent it to the org host and
+//! every command answered 404 against a live organization
+//! (`w4-live-org-findings.md` F4, the divergence D57). The surface is also
+//! preview-only: the API answers 400 `VssInvalidPreviewVersionException` for
+//! `api-version=7.1`, so F4's second half is still open.
+//!
 //! Four captured shapes decide the code:
 //!
 //!   * `--search` filters **client-side** on `extensionName` alone, as a
@@ -29,7 +36,7 @@
 //! `enabled` (the defensive style `test_coverage`'s `coverageData` read records;
 //! no capture covers it).
 
-use ado_core::client::encode_path_segment;
+use ado_core::client::{Hub, encode_path_segment};
 use ado_core::envelope::{ok_message, ok_value};
 use ado_core::error::{AdoError, ErrorCode};
 use serde_json::{Value, json};
@@ -46,7 +53,12 @@ const EXTENSIONS_PATH: &str = "/_apis/extensionmanagement/installedextensions";
 /// value array unwraps to the value envelope after the module's client-side
 /// filter; the human path is the module's three columns.
 pub fn list(context: &mut Context, search: Option<String>) -> Result<Report, AdoError> {
-    let extensions = items(context.client()?.list(EXTENSIONS_PATH, &[])?);
+    let extensions = items(
+        context
+            .client()?
+            .hub(Hub::Extensions)
+            .list(EXTENSIONS_PATH, &[])?,
+    );
     let filtered = filter_by_search(extensions, search.as_deref());
 
     Ok(
@@ -60,7 +72,11 @@ pub fn list(context: &mut Context, search: Option<String>) -> Result<Report, Ado
 /// takes the module's own wording ([`ErrorCode::NotFound`]'s class), which the
 /// frozen CLI writes to stderr with no envelope even under `--json` (D4).
 pub fn show(context: &mut Context, extension_id: &str) -> Result<Report, AdoError> {
-    match context.client()?.get(&extension_path(extension_id), &[]) {
+    match context
+        .client()?
+        .hub(Hub::Extensions)
+        .get(&extension_path(extension_id), &[])
+    {
         Ok(extension) => Ok(context.json_or_report(ok_value(extension.clone()), || {
             Report::Text(extension_detail(&extension))
         })),
@@ -75,9 +91,11 @@ pub fn show(context: &mut Context, extension_id: &str) -> Result<Report, AdoErro
 /// `ado extensions install --publisher P --name N`: `POST …/installedextensions`
 /// with the module's two-field body, then its success line.
 pub fn install(context: &mut Context, publisher: &str, name: &str) -> Result<Report, AdoError> {
-    context
-        .client()?
-        .post(EXTENSIONS_PATH, &install_body(publisher, name), &[])?;
+    context.client()?.hub(Hub::Extensions).post(
+        EXTENSIONS_PATH,
+        &install_body(publisher, name),
+        &[],
+    )?;
 
     Ok(success_line(
         context,
@@ -91,7 +109,11 @@ pub fn install(context: &mut Context, publisher: &str, name: &str) -> Result<Rep
 pub fn uninstall(context: &mut Context, publisher: &str, name: &str) -> Result<Report, AdoError> {
     let id = dotted_id(publisher, name);
 
-    match context.client()?.delete(&dotted_path(publisher, name), &[]) {
+    match context
+        .client()?
+        .hub(Hub::Extensions)
+        .delete(&dotted_path(publisher, name), &[])
+    {
         Ok(()) => Ok(success_line(
             context,
             format!("Extension '{id}' uninstalled."),
@@ -125,7 +147,7 @@ fn patch_install_state(
     flags: &str,
     verb: &str,
 ) -> Result<Report, AdoError> {
-    context.client()?.patch(
+    context.client()?.hub(Hub::Extensions).patch(
         &dotted_path(publisher, name),
         &install_state_body(publisher, name, flags),
         &[],

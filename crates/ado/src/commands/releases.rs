@@ -2,12 +2,17 @@
 //! classic-release surface under `/{project}/_apis/release/releases`, the
 //! table and detail views, and the three list filters.
 //!
+//! The surface lives on Azure's `vsrm` hub, so a cloud request is addressed to
+//! `{org}.vsrm.visualstudio.com` — the frozen CLI sent it to the org host and
+//! every command answered 404 against a live organization
+//! (`w4-live-org-findings.md` F2, the divergence D57).
+//!
 //! The detail view is byte-for-byte the module's (its box-drawing rules, its
 //! `Status:`/`Definition:`/`Created By:`/`Environments:` blocks, and the
 //! `definitionEnvironmentId`/`unknown` fallbacks); the list table is this build's
 //! style (D37's precedent) over the module's four columns.
 
-use ado_core::client::encode_path_segment;
+use ado_core::client::{Hub, encode_path_segment};
 use ado_core::envelope::ok_value;
 use ado_core::error::{AdoError, ErrorCode};
 use serde_json::Value;
@@ -26,7 +31,7 @@ pub fn list(
     definition_id: Option<i64>,
     status: Option<String>,
 ) -> Result<Report, AdoError> {
-    let releases = items(context.client()?.list(
+    let releases = items(context.client()?.hub(Hub::Releases).list(
         &releases_path(project),
         &list_params(top, definition_id, status),
     )?);
@@ -43,7 +48,7 @@ pub fn list(
 pub fn show(context: &mut Context, project: &str, release_id: i64) -> Result<Report, AdoError> {
     let path = format!("{}/{release_id}", releases_path(project));
 
-    match context.client()?.get(&path, &[]) {
+    match context.client()?.hub(Hub::Releases).get(&path, &[]) {
         Ok(release) => Ok(context.json_or_report(ok_value(release.clone()), || {
             Report::Text(release_detail(&release))
         })),

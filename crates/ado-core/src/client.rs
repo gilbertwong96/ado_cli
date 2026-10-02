@@ -35,12 +35,12 @@ pub struct Client {
     base: Base,
     org: String,
     auth: (String, String),
-    origin: Option<Origin>,
+    origins: Vec<Origin>,
 }
 
-/// The origin the client's credential belongs to (Ruling A3): scheme, host
-/// (lowercased) and the explicit port. A URL outside it is fetched without the
-/// `Authorization` header.
+/// An origin the client's credential belongs to (Ruling A3): scheme, host
+/// (lowercased) and the explicit port. A URL outside every origin is fetched
+/// without the `Authorization` header.
 struct Origin {
     scheme: String,
     host: String,
@@ -54,6 +54,118 @@ enum Base {
     Cloud,
     /// A self-hosted server, with its trailing slashes trimmed.
     Server(String),
+}
+
+/// An Azure DevOps hub: a REST surface that lives on its own host rather than on
+/// the organization's.
+///
+/// Azure serves the classic Release API from `vsrm`, entitlements from `vsaex`
+/// and extension management from `extmgmt`, at `{org}.vsrm.visualstudio.com`,
+/// `{org}.vsaex.visualstudio.com` and `{org}.extmgmt.visualstudio.com`. The
+/// frozen CLI addressed all three on the organization's own host and every one
+/// of them answers 404 against a live organization (`w4-live-org-findings.md`
+/// F2-F4), so a cloud request for one of those surfaces goes to the hub's host
+/// instead — the deliberate divergence D57. Azure DevOps Server has no hub
+/// hosts: a self-hosted base keeps every surface on its own server.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Hub {
+    /// Classic releases.
+    Releases,
+    /// User entitlements.
+    Entitlements,
+    /// Extension management.
+    Extensions,
+}
+
+impl Hub {
+    /// The subdomain label: the `vsrm` of `{org}.vsrm.visualstudio.com`.
+    fn label(self) -> &'static str {
+        match self {
+            Hub::Releases => "vsrm",
+            Hub::Entitlements => "vsaex",
+            Hub::Extensions => "extmgmt",
+        }
+    }
+}
+
+/// The cloud origin for `org`, on the organization's own host or on one of its
+/// hubs.
+fn cloud_origin(org: &str, hub: Option<Hub>) -> Origin {
+    let host = match hub {
+        Some(hub) => format!("{org}.{}.visualstudio.com", hub.label()),
+        None => format!("{org}.visualstudio.com"),
+    };
+
+    Origin {
+        scheme: "https".to_owned(),
+        host,
+        port: None,
+    }
+}
+
+/// The hub surfaces of one client: [`Client::hub`]'s view, whose verbs address
+/// the hub's host instead of the organization's.
+pub struct HubClient<'a> {
+    client: &'a Client,
+    hub: Hub,
+}
+
+/// The list unwrap both [`Client::list`] and [`HubClient::list`] use:
+/// `{"value": [...]}` becomes the array, and a bare array passes through.
+fn unwrap_value(value: Value) -> Value {
+    match value {
+        Value::Object(mut object) => match object.remove("value") {
+            Some(value) => value,
+            None => Value::Object(object),
+        },
+        other => other,
+    }
+}
+
+impl HubClient<'_> {
+    /// `GET` on the hub with the JSON body decoded.
+    pub fn get(&self, path: &str, params: &[(String, String)]) -> Result<Value, AdoError> {
+        self.client
+            .send(Some(self.hub), "GET", path, params, None)?
+            .json()
+    }
+
+    /// `GET` for a list endpoint on the hub, with the same unwrap
+    /// [`Client::list`] applies.
+    pub fn list(&self, path: &str, params: &[(String, String)]) -> Result<Value, AdoError> {
+        Ok(unwrap_value(self.get(path, params)?))
+    }
+
+    /// `POST` with a JSON body on the hub.
+    pub fn post(
+        &self,
+        path: &str,
+        body: &Value,
+        params: &[(String, String)],
+    ) -> Result<Value, AdoError> {
+        self.client
+            .send(Some(self.hub), "POST", path, params, Some(body))?
+            .json()
+    }
+
+    /// `PATCH` with a JSON body on the hub.
+    pub fn patch(
+        &self,
+        path: &str,
+        body: &Value,
+        params: &[(String, String)],
+    ) -> Result<Value, AdoError> {
+        self.client
+            .send(Some(self.hub), "PATCH", path, params, Some(body))?
+            .json()
+    }
+
+    /// `DELETE` on the hub.
+    pub fn delete(&self, path: &str, params: &[(String, String)]) -> Result<(), AdoError> {
+        self.client
+            .send(Some(self.hub), "DELETE", path, params, None)?
+            .accepted()
+    }
 }
 
 impl Client {
@@ -87,23 +199,34 @@ impl Client {
             .build()
             .new_agent();
 
-        // Ruling A3: the origin the credential may go to. The cloud base is the
-        // org host; a self-hosted base is parsed for its scheme/host/port, and a
-        // base that does not parse matches no URL at all (the request would fail
-        // at build time anyway, so the credential is never the risk).
-        let origin = match &base {
-            Base::Cloud => Some(Origin {
-                scheme: "https".to_owned(),
-                host: format!("{}.visualstudio.com", credentials.org),
-                port: None,
-            }),
-            Base::Server(server) => server.parse::<http::Uri>().ok().and_then(|uri| {
-                Some(Origin {
-                    scheme: uri.scheme_str()?.to_owned(),
-                    host: uri.host()?.to_ascii_lowercase(),
-                    port: uri.port_u16(),
+        // Ruling A3: the origins the credential may go to. The cloud base is the
+        // organization's host plus its three hubs (D57); a self-hosted base is
+        // parsed for its scheme/host/port, and a base that does not parse matches
+        // no URL at all (the request would fail at build time anyway, so the
+        // credential is never the risk).
+        let origins: Vec<Origin> = match &base {
+            Base::Cloud => {
+                let mut origins = vec![cloud_origin(&credentials.org, None)];
+
+                origins.extend(
+                    [Hub::Releases, Hub::Entitlements, Hub::Extensions]
+                        .map(|hub| cloud_origin(&credentials.org, Some(hub))),
+                );
+
+                origins
+            }
+            Base::Server(server) => server
+                .parse::<http::Uri>()
+                .ok()
+                .and_then(|uri| {
+                    Some(Origin {
+                        scheme: uri.scheme_str()?.to_owned(),
+                        host: uri.host()?.to_ascii_lowercase(),
+                        port: uri.port_u16(),
+                    })
                 })
-            }),
+                .into_iter()
+                .collect(),
         };
 
         Ok(Client {
@@ -111,35 +234,54 @@ impl Client {
             base,
             org: credentials.org.clone(),
             auth: auth_header(credentials),
-            origin,
+            origins,
         })
     }
 
     /// The absolute URL for `path` and `params`, with `api-version={API_VERSION}`
     /// merged first so a caller's own `api-version` wins.
     pub fn url_for(&self, path: &str, params: &[(String, String)]) -> String {
+        self.url_for_on(None, path, params)
+    }
+
+    /// The absolute URL for `path` on `hub`: the same `api-version` merge
+    /// [`Client::url_for`] does, addressed to the hub's own host on a cloud base
+    /// and to the caller's server on a self-hosted one.
+    pub fn url_for_hub(&self, hub: Hub, path: &str, params: &[(String, String)]) -> String {
+        self.url_for_on(Some(hub), path, params)
+    }
+
+    /// This client's `hub` surface: the same credential and the same agent, with
+    /// the verbs addressed to the hub's host.
+    pub fn hub(&self, hub: Hub) -> HubClient<'_> {
+        HubClient { client: self, hub }
+    }
+
+    fn url_for_on(&self, hub: Option<Hub>, path: &str, params: &[(String, String)]) -> String {
         let path = path.trim_start_matches('/');
         let query = encode_query(&with_api_version(params));
 
-        self.absolute_url(path, &query)
+        self.absolute_url(hub, path, &query)
     }
 
-    /// Whether `url`'s origin — scheme, host and explicit port — is the client's
-    /// own (Ruling A3). A relative or unparseable URL, and a client whose base did
-    /// not parse, match nothing: the credential goes out only on a positive match.
-    /// `http://host` and `http://host:80` are different origins here, which is the
-    /// conservative direction for a credential.
+    /// Whether `url`'s origin — scheme, host and explicit port — is one of the
+    /// client's own (Ruling A3, D57). A relative or unparseable URL, and a client
+    /// whose base did not parse, match nothing: the credential goes out only on a
+    /// positive match. `http://host` and `http://host:80` are different origins
+    /// here, which is the conservative direction for a credential.
     fn same_origin(&self, url: &str) -> bool {
-        let (Some(origin), Ok(uri)) = (&self.origin, url.parse::<http::Uri>()) else {
+        let Ok(uri) = url.parse::<http::Uri>() else {
             return false;
         };
         let (Some(scheme), Some(host)) = (uri.scheme_str(), uri.host()) else {
             return false;
         };
 
-        scheme.eq_ignore_ascii_case(&origin.scheme)
-            && host.eq_ignore_ascii_case(&origin.host)
-            && uri.port_u16() == origin.port
+        self.origins.iter().any(|origin| {
+            scheme.eq_ignore_ascii_case(&origin.scheme)
+                && host.eq_ignore_ascii_case(&origin.host)
+                && uri.port_u16() == origin.port
+        })
     }
 
     /// The absolute URL for `path` with no query string at all: the connectionData
@@ -147,10 +289,10 @@ impl Client {
     /// (`Client.get_raw_no_version/1`, `lib/ado_cli/client.ex:102-116`), so it must
     /// not reuse [`Client::url_for`]'s merge.
     fn url_for_unversioned(&self, path: &str) -> String {
-        self.absolute_url(path.trim_start_matches('/'), "")
+        self.absolute_url(None, path.trim_start_matches('/'), "")
     }
 
-    fn absolute_url(&self, path: &str, query: &str) -> String {
+    fn absolute_url(&self, hub: Option<Hub>, path: &str, query: &str) -> String {
         match &self.base {
             Base::Cloud => {
                 let suffix = if query.is_empty() {
@@ -159,7 +301,10 @@ impl Client {
                     format!("?{query}")
                 };
 
-                format!("https://{}.visualstudio.com/{path}{suffix}", self.org)
+                format!(
+                    "https://{}/{path}{suffix}",
+                    cloud_origin(&self.org, hub).host
+                )
             }
             Base::Server(server) => with_org(server, &self.org, path, query),
         }
@@ -167,7 +312,7 @@ impl Client {
 
     /// `GET` with the JSON body decoded.
     pub fn get(&self, path: &str, params: &[(String, String)]) -> Result<Value, AdoError> {
-        self.send("GET", path, params, None)?.json()
+        self.send(None, "GET", path, params, None)?.json()
     }
 
     /// `GET` a path with no `api-version` query parameter (and no other params).
@@ -203,13 +348,7 @@ impl Client {
     /// `GET` for the list endpoints: `{"value": [...]}` unwraps to the array, and a
     /// bare array passes through untouched.
     pub fn list(&self, path: &str, params: &[(String, String)]) -> Result<Value, AdoError> {
-        Ok(match self.get(path, params)? {
-            Value::Object(mut object) => match object.remove("value") {
-                Some(value) => value,
-                None => Value::Object(object),
-            },
-            other => other,
-        })
+        Ok(unwrap_value(self.get(path, params)?))
     }
 
     /// `GET` a download URL for its raw body. `url` is used **verbatim**: an
@@ -271,7 +410,7 @@ impl Client {
         body: &Value,
         params: &[(String, String)],
     ) -> Result<Value, AdoError> {
-        self.send("POST", path, params, Some(body))?.json()
+        self.send(None, "POST", path, params, Some(body))?.json()
     }
 
     /// `PATCH` with a JSON body, returning the decoded response body.
@@ -281,7 +420,7 @@ impl Client {
         body: &Value,
         params: &[(String, String)],
     ) -> Result<Value, AdoError> {
-        self.send("PATCH", path, params, Some(body))?.json()
+        self.send(None, "PATCH", path, params, Some(body))?.json()
     }
 
     /// `PUT` with a JSON body, returning the decoded response body.
@@ -291,7 +430,7 @@ impl Client {
         body: &Value,
         params: &[(String, String)],
     ) -> Result<Value, AdoError> {
-        self.send("PUT", path, params, Some(body))?.json()
+        self.send(None, "PUT", path, params, Some(body))?.json()
     }
 
     /// `PUT` with one caller-supplied header — the frozen `Client.put/4`'s
@@ -307,6 +446,7 @@ impl Client {
         let payload = serde_json::to_vec(body).map_err(|error| encode_failed(&error))?;
 
         self.dispatch_with_headers(
+            None,
             "PUT",
             path,
             params,
@@ -318,7 +458,7 @@ impl Client {
 
     /// `DELETE`: Azure answers 204 with no body, so a 2xx is the whole result.
     pub fn delete(&self, path: &str, params: &[(String, String)]) -> Result<(), AdoError> {
-        self.send("DELETE", path, params, None)?.accepted()
+        self.send(None, "DELETE", path, params, None)?.accepted()
     }
 
     /// `POST` with a raw binary body and `application/octet-stream`, the frozen
@@ -332,6 +472,7 @@ impl Client {
         params: &[(String, String)],
     ) -> Result<Value, AdoError> {
         self.dispatch(
+            None,
             "POST",
             path,
             params,
@@ -373,6 +514,7 @@ impl Client {
         let payload = serde_json::to_vec(body).map_err(|error| encode_failed(&error))?;
 
         self.dispatch(
+            None,
             method,
             path,
             params,
@@ -382,6 +524,7 @@ impl Client {
 
     fn send(
         &self,
+        hub: Option<Hub>,
         method: &str,
         path: &str,
         params: &[(String, String)],
@@ -391,34 +534,42 @@ impl Client {
             Some(value) => {
                 let payload = serde_json::to_vec(value).map_err(|error| encode_failed(&error))?;
 
-                self.dispatch(method, path, params, Some(("application/json", payload)))
+                self.dispatch(
+                    hub,
+                    method,
+                    path,
+                    params,
+                    Some(("application/json", payload)),
+                )
             }
-            None => self.dispatch(method, path, params, None),
+            None => self.dispatch(hub, method, path, params, None),
         }
     }
 
     /// One request and its response, before the status is classified.
     fn dispatch(
         &self,
+        hub: Option<Hub>,
         method: &str,
         path: &str,
         params: &[(String, String)],
         body: Option<(&str, Vec<u8>)>,
     ) -> Result<Reply, AdoError> {
-        self.dispatch_with_headers(method, path, params, body, &[])
+        self.dispatch_with_headers(hub, method, path, params, body, &[])
     }
 
     /// The same request with caller-supplied headers appended after the auth and
     /// content-type ones; only [`Client::put_with_headers`] passes any.
     fn dispatch_with_headers(
         &self,
+        hub: Option<Hub>,
         method: &str,
         path: &str,
         params: &[(String, String)],
         body: Option<(&str, Vec<u8>)>,
         extra_headers: &[(&str, &str)],
     ) -> Result<Reply, AdoError> {
-        let url = self.url_for(path, params);
+        let url = self.url_for_on(hub, path, params);
         let mut builder = http::Request::builder()
             .method(method)
             .uri(&url)
@@ -754,6 +905,78 @@ mod tests {
         let ported = client(Some("http://127.0.0.1:8080"));
         assert!(ported.same_origin("http://127.0.0.1:8080/blob/x"));
         assert!(!ported.same_origin("http://127.0.0.1:9090/blob/x"));
+    }
+
+    /// The hub surfaces live on their own host for a cloud organization: the
+    /// classic Release API on `vsrm`, entitlements on `vsaex`, extension
+    /// management on `extmgmt` (D57). The path stays the module's own — only the
+    /// host the request is addressed to changes.
+    #[test]
+    fn hub_urls_use_the_orgs_hub_host_on_the_cloud_base() {
+        let cloud = client(None);
+
+        assert_eq!(
+            cloud.url_for_hub(Hub::Releases, "/Alpha/_apis/release/releases", &[]),
+            "https://myorg.vsrm.visualstudio.com/Alpha/_apis/release/releases?api-version=7.1"
+        );
+        assert_eq!(
+            cloud.url_for_hub(Hub::Entitlements, "/_apis/userentitlements", &[]),
+            "https://myorg.vsaex.visualstudio.com/_apis/userentitlements?api-version=7.1"
+        );
+        assert_eq!(
+            cloud.url_for_hub(
+                Hub::Extensions,
+                "/_apis/extensionmanagement/installedextensions",
+                &[]
+            ),
+            "https://myorg.extmgmt.visualstudio.com/_apis/extensionmanagement/installedextensions?api-version=7.1"
+        );
+    }
+
+    /// Azure DevOps Server has no hub hosts: every surface stays on the
+    /// collection the caller gave, with the org segment where it already was.
+    #[test]
+    fn hub_urls_stay_on_a_self_hosted_server() {
+        assert_eq!(
+            client(Some("https://server.test/tfs")).url_for_hub(
+                Hub::Releases,
+                "/Alpha/_apis/release/releases",
+                &[("$top".to_owned(), "5".to_owned())]
+            ),
+            "https://server.test/myorg/tfs/Alpha/_apis/release/releases?api-version=7.1&%24top=5"
+        );
+    }
+
+    /// Ruling A3 with the hubs: the credential may go to this organization's
+    /// three hub hosts and nowhere else — not a sibling organization's hub, not
+    /// the bare hub host, and not any other subdomain.
+    #[test]
+    fn the_credential_may_reach_the_orgs_hub_hosts() {
+        let cloud = client(None);
+
+        for hub in ["vsrm", "vsaex", "extmgmt"] {
+            assert!(
+                cloud.same_origin(&format!("https://myorg.{hub}.visualstudio.com/x")),
+                "{hub} is one of this organization's hubs"
+            );
+        }
+        assert!(
+            !cloud.same_origin("https://myorg.notahub.visualstudio.com/x"),
+            "an unknown subdomain is not a hub"
+        );
+        assert!(
+            !cloud.same_origin("https://otherog.vsrm.visualstudio.com/x"),
+            "another organization's hub is not this one's"
+        );
+        assert!(
+            !cloud.same_origin("https://vsrm.dev.azure.com/myorg/x"),
+            "the cloud base is the org host, not a hub host"
+        );
+        assert!(
+            !client(Some("https://server.test/tfs"))
+                .same_origin("https://myorg.vsrm.visualstudio.com/x"),
+            "a self-hosted base has no cloud hubs"
+        );
     }
 
     #[test]
