@@ -10,41 +10,6 @@
 # cargo llvm-cov --codecov output, written to the repo root
 /codecov.json
 
-# The directory Mix will write compiled artifacts to.
-/_build/
-
-# If you run "mix test --cover", coverage assets end up here.
-/cover/
-
-# The directory Mix downloads your dependencies sources to.
-/deps/
-
-# Where third-party dependencies like ExDoc output generated docs.
-/doc/
-
-# Dialyzer PLT files
-/priv/plts/
-
-# Temporary files, for example, from tests.
-
-/tmp/
-/reach_report/
-
-# If the VM crashes, it generates a dump, let's ignore it too.
-erl_crash.dump
-
-# Also ignore archive artifacts (built via "mix archive.build").
-*.ez
-
-# Ignore package tarball (built via "mix hex.build").
-ado_cli-*.tar
-
-# Ignore the local escript binary
-/ado
-/ado_cli
-/burrito_out/
-burrito/
-ado.tgz
 # Git worktrees for parallel agent work
 .worktrees/
 node_modules/
