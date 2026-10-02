@@ -3,10 +3,34 @@
 # release binary, for every command Wave 0 ported: `version`, `whoami`, `schema`
 # and `completion`.
 #
-# The oracle is an **untracked, prebuilt artifact** (`./ado`, gitignored): the tree
-# at this head can no longer rebuild it — `mix escript.build` died with
-# `priv/skills` (D49) — so every run of this harness is one-way evidence from here
-# on (`w4-handoff.md` §5 records the recovery recipe and the artifact's hash).
+# ── RETIRED ─────────────────────────────────────────────────────────────────
+# This harness is RETIRED. Its final runs are the two recorded in
+# `docs/rust-rewrite/w4-task-5-report.md` (Wave 0 mode and `--mock` mode), at
+# `7c690de`, on the revision the Wave 4 record tags (`v1.0.0-rc.1`). The script
+# and the scenario stay in the tree as history; the rules in
+# `contract-inventory.md` §10 describe the comparison those runs performed, and
+# are no longer a live check. After Task 6 (the deletion) the integration suites
+# are the only pins on the recorded behaviour.
+#
+# The oracle is an **untracked, prebuilt artifact** (`./ado`, gitignored) at this
+# head — and gone, **after the deletion**. It is **always rebuildable from git**
+# via the worktree recipe (`w4-handoff.md` §5/§9; the partner's decision, recorded
+# verbatim): the worktree carries the complete Elixir tree, so no 7.2 MB artifact
+# needs keeping outside the repository.
+#
+#   # Build a fresh oracle from the frozen commit
+#   git worktree add /tmp/oracle 7a42dac          # 7a42dac = the frozen elixir commit
+#   (cd /tmp/oracle && mix escript.build)        # → ./ado (7,187,239 bytes)
+#
+#   # Point the harness at the rebuilt oracle (when no ./ado is present locally)
+#   ADO_ORACLE_ELIXIR=/tmp/oracle/ado ./scripts/oracle-diff.sh [--mock]
+#
+# The artefact measured throughout Wave 3 and re-measured at Task 5's freeze is
+# 7,187,239 bytes, `shasum -a 256` =
+# `fadea017becc11b845a84a8b1317105f4fcb090d50acc01a9e40b7e93f8b61ad`.
+# `git ls-tree -r 7a42dac --name-only | grep -c '^priv/skills'` is **10** (the
+# assets the move carried into `crates/ado-skills/assets/`).
+# ─────────────────────────────────────────────────────────────────────────────
 #
 # `--mock` is the read-and-mutation mode: every Wave 1 command and every Wave 2
 # mutation case, both binaries, one instance of the testkit's standalone mock with
@@ -56,7 +80,15 @@ esac
 for binary in "$elixir_bin" "$rust_bin"; do
     if [[ ! -x $binary ]]; then
         printf 'oracle-diff: %s is missing or not executable\n' "$binary" >&2
-        printf 'oracle-diff: build the oracle (`mix escript.build`) and the release binary (`cargo build --release`) first\n' >&2
+        if [[ "$binary" == "$elixir_bin" ]]; then
+            printf 'oracle-diff: the oracle is RETIRED with this tree (see the header).\n' >&2
+            printf 'oracle-diff: rebuild it from the frozen commit and point the harness at the result:\n' >&2
+            printf 'oracle-diff:   git worktree add /tmp/oracle 7a42dac\n' >&2
+            printf 'oracle-diff:   (cd /tmp/oracle && mix escript.build)\n' >&2
+            printf 'oracle-diff:   ADO_ORACLE_ELIXIR=/tmp/oracle/ado ./scripts/oracle-diff.sh [--mock]\n' >&2
+        else
+            printf 'oracle-diff: build the release binary (`cargo build --release --locked`) first\n' >&2
+        fi
         exit 2
     fi
 done
