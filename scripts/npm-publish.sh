@@ -112,7 +112,8 @@ fi
 #
 # Each entry is platform-arch:release-archive:directory-inside-the-archive.
 # The archive names are the cargo-dist target archives (five targets, one
-# archive each); the directory is always the archive name minus its suffix.
+# archive each); the tar archives carry a directory named after the archive,
+# while cargo-dist's Windows zip is flat (its entries sit at the root).
 PLATFORM_MAP=(
     "darwin-arm64:ado-aarch64-apple-darwin.tar.gz:ado-aarch64-apple-darwin"
     "darwin-x64:ado-x86_64-apple-darwin.tar.gz:ado-x86_64-apple-darwin"
@@ -155,8 +156,14 @@ for entry in "${PLATFORM_MAP[@]}"; do
         fi
         unpack="$TMP_DIR/unpacked-${platform_arch}"
         mkdir -p "$unpack"
-        tar -xf "$src" -C "$unpack"
-        cp "$unpack/${target}/${binary}" "$dest"
+        case "$archive" in
+            *.zip) unzip -q -o "$src" -d "$unpack" ;;
+            *)     tar -xf "$src" -C "$unpack" ;;
+        esac
+        # The tar archives carry the directory named after them; the zip is flat.
+        from="$unpack/${target}/${binary}"
+        [[ -f "$from" ]] || from="$unpack/${binary}"
+        cp "$from" "$dest"
         chmod +x "$dest"
         echo "    unpacked $archive → $dest"
     fi
