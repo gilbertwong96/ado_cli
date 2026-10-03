@@ -205,7 +205,10 @@ The release flow (the maintainer's):
 5. Once the release exists: `./scripts/npm-publish.sh <version> --dry-run`, then
    the real publish (packs the five platform packages, then the main one).
 
-`1.0.0` is gated on one real `ado login` followed by `ado whoami`: the browser
-flow's live path is the one thing the suite cannot verify
-(`docs/rust-rewrite/w4-handoff.md` §6). Until it passes, releases are
-prereleases (`v1.0.0-rc.N`).
+`1.0.0` is gated on one real `ado login` followed by `ado whoami`, with §6's
+observables itemized: the browser flow's live path is the one thing the suite
+cannot verify (`docs/rust-rewrite/w4-handoff.md` §6). The login has been run and
+the credential resolves, but the checklist is not itemized in the record, so the
+0.x line continues for now — the version is the maintainer's call, and only a
+prerelease publishes to npm's `next` dist-tag instead of `latest`
+(`scripts/npm-publish.sh`).

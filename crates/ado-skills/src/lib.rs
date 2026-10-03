@@ -293,9 +293,9 @@ mod tests {
         assert_eq!(
             counts,
             [
-                ("ado-auth", "1.0.0-rc.1", 8),
-                ("ado-ci", "1.0.0-rc.1", 15),
-                ("ado-cli", "1.0.0-rc.1", 87),
+                ("ado-auth", "0.6.0", 8),
+                ("ado-ci", "0.6.0", 15),
+                ("ado-cli", "0.6.0", 87),
             ],
             "Ruling 5: the stale version literal is carried verbatim"
         );
@@ -324,7 +324,7 @@ mod tests {
         let described = describe("ado-cli").expect("ado-cli");
 
         assert_eq!(described.name, "ado-cli");
-        assert_eq!(described.version, "1.0.0-rc.1");
+        assert_eq!(described.version, "0.6.0");
         assert_eq!(described.commands.len(), 87);
         assert_eq!(described.commands[0], "ado --version");
         assert_eq!(

@@ -6,7 +6,7 @@
 # ── RETIRED ─────────────────────────────────────────────────────────────────
 # This harness is RETIRED. Its final runs are the two recorded in
 # `docs/rust-rewrite/w4-task-5b-report.md` (Wave 0 mode and `--mock` mode), on
-# the revision the Wave 4 record tags (`v1.0.0-rc.1`) — both exit 0, every
+# the revision the Wave 4 record tags (`v0.6.0`) — both exit 0, every
 # difference on a row. That report supersedes Task 5's run, whose seven skills
 # differences were unrecorded (`w4-task-5-report.md` §2.2). The script
 # and the scenario stay in the tree as history; the rules in

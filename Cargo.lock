@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "ado"
-version = "1.0.0-rc.1"
+version = "0.6.0"
 dependencies = [
  "ado-core",
  "ado-skills",
@@ -22,7 +22,7 @@ dependencies = [
 
 [[package]]
 name = "ado-core"
-version = "1.0.0-rc.1"
+version = "0.6.0"
 dependencies = [
  "ado-testkit",
  "base64",
@@ -39,11 +39,11 @@ dependencies = [
 
 [[package]]
 name = "ado-skills"
-version = "1.0.0-rc.1"
+version = "0.6.0"
 
 [[package]]
 name = "ado-testkit"
-version = "1.0.0-rc.1"
+version = "0.6.0"
 dependencies = [
  "assert_cmd",
  "axum",

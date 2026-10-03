@@ -5,12 +5,14 @@ All notable changes to `ado` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.0.0-rc.1] - 2026-10-01
+## [0.6.0] - 2026-10-03
 
-The Rust rewrite. `ado` is still the same CLI — the same binary name, the same
-commands, and the same `--json` contract (the observable behaviour captured in
+The Rust rewrite, released as the next minor on the line 0.5.0 ended: `ado` is
+still the same CLI — the same binary name, the same commands, and the same
+`--json` contract (the observable behaviour captured in
 `docs/rust-rewrite/contract-inventory.md`, D1–D62) — rebuilt from the Elixir
-implementation that shipped through 0.5.0.
+implementation that shipped through 0.5.0. `1.0.0` stays a separate promise: it
+waits on `w4-handoff.md` §6's live-sign-in checklist, item by item.
 
 ### Added
 
@@ -20,7 +22,7 @@ implementation that shipped through 0.5.0.
   share). Edition 2024, `rust-version = 1.98`.
 - **`just` recipes for the whole gate** — `just ci` runs formatting, clippy with
   warnings as errors, a locked build, unused-dependency and advisory checks, the
-  test suite and an 85% line-coverage floor (currently 96.50% over 1,591 tests).
+  test suite and an 85% line-coverage floor (currently 96.51% over 1,591 tests).
   `just budget` measures startup (6.0 ms against a 50 ms limit) and the stripped
   release binary (3.15 MiB against an 8 MiB limit).
 - **Authentication through the OS credential store** — browser OAuth (PKCE,
@@ -37,7 +39,7 @@ implementation that shipped through 0.5.0.
 
 ### Changed
 
-- **`ado version` reports `1.0.0-rc.1`.** Everything else recorded in
+- **`ado version` reports `0.6.0`.** Everything else recorded in
   `contract-inventory.md` — the command surface, the `--json` envelopes, the
   exit codes, the help text — reproduces 0.5.0, apart from the deliberate
   differences the same record lists (D1–D62).

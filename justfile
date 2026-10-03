@@ -121,7 +121,7 @@ all: check build-release
 
 # ── Version Bumping ────────────────────────────────────────────────────
 # Bump the version across every live version source in the Rust tree.
-# Usage: just bump 1.0.0-rc.1
+# Usage: just bump 0.7.0
 #
 # Updates, asserting each target after the edit (a missing, unmatched or
 # stale target fails the run — no step may report success while changing
@@ -202,11 +202,11 @@ bump new_version:
     }
 
     if [[ -z "$NEW" ]]; then
-        die "Usage: just bump <new-version>  (e.g. just bump 1.0.0-rc.1)"
+        die "Usage: just bump <new-version>  (e.g. just bump 0.7.0)"
     fi
     # Loose semver check; it only needs to catch a typo before any edit.
     if ! [[ "$NEW" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.]+)?$ ]]; then
-        die "'$NEW' doesn't look like a semver version (e.g. 0.5.0 or 1.0.0-rc.1)"
+        die "'$NEW' doesn't look like a semver version (e.g. 0.5.0 or 1.0.0)"
     fi
 
     # 1. the current version: [workspace.package] version in Cargo.toml

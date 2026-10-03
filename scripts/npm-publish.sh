@@ -13,10 +13,10 @@
 #   2. Updates the version field in all 6 package.json files to <version>.
 #   3. Publishes the 5 platform packages first, then the main
 #      @gilbertwong1996/ado, with a dist-tag derived from the version:
-#      a prerelease (1.0.0-rc.1) goes to `next`, a stable version keeps
-#      npm's default `latest`. A version shape the derivation does not
-#      recognise fails before any pack — a prerelease must never be
-#      published to `latest` by accident.
+#      a prerelease (e.g. `1.0.0-rc.1`) goes to `next`, a stable version
+#      (e.g. `0.6.0`) keeps npm's default `latest`. A version shape the
+#      derivation does not recognise fails before any pack — a prerelease must
+#      never be published to `latest` by accident.
 #
 # Requirements:
 #   - gh (GitHub CLI, authenticated)

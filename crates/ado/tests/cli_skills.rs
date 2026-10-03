@@ -110,7 +110,7 @@ fn list_json_is_the_captured_skills_document() {
     let skills = document["skills"].as_array().expect("the skills array");
     assert_eq!(skills.len(), 3);
     assert_eq!(skills[0]["name"], json!("ado-auth"));
-    assert_eq!(skills[0]["version"], json!("1.0.0-rc.1"));
+    assert_eq!(skills[0]["version"], json!("0.6.0"));
     assert_eq!(skills[0]["command_count"], json!(8));
     assert_eq!(
         skills[0]["description"],
@@ -138,17 +138,17 @@ fn list_human_is_the_captured_blocks() {
             "\n",
             "  ado-auth\n",
             "    Authenticate ado: PAT (CI-friendly), browser OAuth (AAD + MSA), device code (headless), env vars, self-hosted server\n",
-            "    version: 1.0.0-rc.1  ·  commands: 8\n",
+            "    version: 0.6.0  ·  commands: 8\n",
             "    run: ado skills describe ado-auth     # see commands\n",
             "\n",
             "  ado-ci\n",
             "    Use ado in CI/CD: auth setup, pipeline triggers, PR automation, package publishing, work item creation on failure\n",
-            "    version: 1.0.0-rc.1  ·  commands: 15\n",
+            "    version: 0.6.0  ·  commands: 15\n",
             "    run: ado skills describe ado-ci     # see commands\n",
             "\n",
             "  ado-cli\n",
             "    Complete command reference for all 24 Azure DevOps service areas (projects, repos, workitems, pipelines, prs, releases, packages, and more)\n",
-            "    version: 1.0.0-rc.1  ·  commands: 87\n",
+            "    version: 0.6.0  ·  commands: 87\n",
             "    run: ado skills describe ado-cli     # see commands\n",
             "\n",
             "\n",
@@ -271,7 +271,7 @@ fn describe_json_is_the_captured_result_document() {
 
     let result = &document["result"];
     assert_eq!(result["name"], json!("ado-cli"));
-    assert_eq!(result["version"], json!("1.0.0-rc.1"));
+    assert_eq!(result["version"], json!("0.6.0"));
 
     let commands = result["commands"].as_array().expect("the commands array");
     assert_eq!(commands.len(), 87, "the frontmatter's command list");
@@ -301,7 +301,7 @@ fn describe_human_prints_the_command_index() {
         "\n",
         "  ado-cli\n",
         "    Complete command reference for all 24 Azure DevOps service areas (projects, repos, workitems, pipelines, prs, releases, packages, and more)\n",
-        "    version: 1.0.0-rc.1\n",
+        "    version: 0.6.0\n",
         "    commands: 87\n",
         "\n",
         "    Commands covered by this skill:\n",
@@ -370,7 +370,7 @@ fn read_json_carries_the_metadata_the_human_path_strips() {
             .expect("the content")
             .starts_with("# ado — Azure DevOps CLI\n")
     );
-    assert_eq!(document["metadata"]["version"], json!("1.0.0-rc.1"));
+    assert_eq!(document["metadata"]["version"], json!("0.6.0"));
     assert_eq!(
         document["metadata"]["commands"]
             .as_array()
