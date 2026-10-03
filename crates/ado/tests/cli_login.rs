@@ -577,10 +577,14 @@ impl Browser {
         let shim = home.path().join("bin");
         let url_file = home.path().join("authorize-url");
         fs::create_dir_all(&shim).expect("the shim directory");
-        let opener = shim.join("open");
-        fs::write(&opener, OPENER_SHIM).expect("the shim");
-        fs::set_permissions(&opener, fs::Permissions::from_mode(0o755))
-            .expect("the shim is runnable");
+        // `SystemOpener` picks per OS (`open` on macOS, `xdg-open` elsewhere on
+        // Unix), so the shim answers to both names.
+        for name in ["open", "xdg-open"] {
+            let opener = shim.join(name);
+            fs::write(&opener, OPENER_SHIM).expect("the shim");
+            fs::set_permissions(&opener, fs::Permissions::from_mode(0o755))
+                .expect("the shim is runnable");
+        }
 
         Browser {
             home,
