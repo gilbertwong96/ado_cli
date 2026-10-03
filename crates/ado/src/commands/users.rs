@@ -4,8 +4,7 @@
 //!
 //! The surface lives on Azure's `vsaex` hub, so a cloud request is addressed to
 //! `{org}.vsaex.visualstudio.com` — the frozen CLI sent it to the org host and
-//! every command answered 404 against a live organization
-//! (`w4-live-org-findings.md` F3, the divergence D57).
+//! every command answered 404 against a live organization (the divergence D57).
 //!
 //! `remove` asks the confirmation the module's own doc promises, with `--force`
 //! as its bypass (Ruling A1): the frozen CLI declares no `--force` and never
@@ -154,8 +153,7 @@ fn add_body(email: &str, license: &str) -> Value {
 /// `items` beside its `continuationToken`, while the frozen responses carry
 /// `{"value": […]}` — which `Client::list` has already unwrapped by this point.
 /// An object with an `items` array is that live shape; anything else goes
-/// through the shared `items` helper (`w4-live-org-findings.md` F3's display
-/// half, the divergence D59).
+/// through the shared `items` helper (the divergence D59's display half).
 fn entitlements(body: Value) -> Vec<Value> {
     match body.get("items") {
         Some(Value::Array(items)) => items.clone(),

@@ -9,14 +9,13 @@
 # the revision the Wave 4 record tags (`v0.6.0`) — both exit 0, every
 # difference on a row. They supersede the task's first run, whose seven skills
 # differences were unrecorded. The script
-# and the scenario stay in the tree as history; the rules in
-# `contract-inventory.md` §10 describe the comparison those runs performed, and
-# are no longer a live check. After Task 6 (the deletion) the integration suites
+# and the scenario stay in the tree as history; the rule set they applied is no
+# longer a live check. After Task 6 (the deletion) the integration suites
 # are the only pins on the recorded behaviour.
 #
 # The oracle is an **untracked, prebuilt artifact** (`./ado`, gitignored) at this
 # head — and gone, **after the deletion**. It is **always rebuildable from git**
-# via the worktree recipe (`w4-handoff.md` §5/§9; the partner's decision, recorded
+# via the worktree recipe (the partner's decision, recorded
 # verbatim): the worktree carries the complete Elixir tree, so no 7.2 MB artifact
 # needs keeping outside the repository.
 #
@@ -50,10 +49,10 @@
 # Each case prints one verdict line:
 #
 #   MATCH          the two projections are equal
-#   EXPECTED-DIFF  they differ, and contract-inventory §9/§10 records why
-#   DIFF           they differ for a reason nothing records
+#   EXPECTED-DIFF  they differ, and a ruled divergence explains why
+#   DIFF           they differ for a reason nothing explains
 #
-# Exit status: 0 when every difference is recorded, 1 when at least one is not,
+# Exit status: 0 when every difference is ruled, 1 when at least one is not,
 # 2 when the script cannot run (missing binary, mock or jq).
 #
 # Usage: scripts/oracle-diff.sh [--mock]
@@ -151,7 +150,7 @@ fail() {
     case_notes+=("$1")
 }
 
-# A difference contract-inventory §9/§10 records.
+# A difference a ruled divergence explains.
 ruled() {
     [[ $case_state == DIFF ]] || case_state=EXPECTED-DIFF
     case_notes+=("$1")
@@ -182,11 +181,11 @@ summary() {
         "$((matches + expected + differences))" "$matches" "$expected" "$differences"
 
     if (( differences > 0 )); then
-        printf 'oracle-diff: FAIL — %d unrecorded difference(s); update docs/rust-rewrite/contract-inventory.md or fix the drift\n' "$differences" >&2
+        printf 'oracle-diff: FAIL — %d unrecorded difference(s); fix the drift\n' "$differences" >&2
         exit 1
     fi
 
-    printf 'oracle-diff: OK — every difference is recorded in docs/rust-rewrite/contract-inventory.md §9/§10\n'
+    printf 'oracle-diff: OK — every difference is a ruled one\n'
 }
 
 # ── comparison helpers ───────────────────────────────────────────────────

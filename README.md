@@ -479,7 +479,6 @@ ado_cli/
 │   │       ├── ado-auth/SKILL.md     # Auth details
 │   │       └── ado-ci/SKILL.md       # CI/CD patterns
 │   └── ado-testkit/                  # Dev-only: the axum mock, TempHome and fixtures
-├── docs/rust-rewrite/                # The contract record and the wave records
 ├── npm/                              # The six npm packages
 ├── github-page/                      # The project site
 ├── scripts/npm-publish.sh            # The npm publish flow
@@ -554,8 +553,7 @@ Every commit must pass the full CI gate (`just ci`):
 | 6 | `cargo nextest run --workspace` |
 | 7 | `cargo llvm-cov --workspace --fail-under-lines 85` |
 
-See `AGENTS.md` for the full quality gate specification, and
-`docs/rust-rewrite/` for the contract record and the wave records.
+See `AGENTS.md` for the full quality gate specification.
 
 ---
 

@@ -109,7 +109,7 @@ fn import_path(project: &str, repository: &str, import_id: &str) -> String {
 
 /// The repository's own `importRequests` collection: the `list` target, and the
 /// base of `show` and `create`. Azure serves the imports surface per repository
-/// and never per project (`w4-live-org-findings.md` F6, the divergence D61);
+/// and never per project (the divergence D61);
 /// the frozen module interpolated the repo name raw (D22).
 fn repository_path(project: &str, repo_name: &str) -> String {
     format!(

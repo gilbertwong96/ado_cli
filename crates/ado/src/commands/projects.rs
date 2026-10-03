@@ -211,7 +211,7 @@ pub fn show(
 /// `--skip 0` and `--state ''` all reach the wire while an absent option does
 /// not. Its mapping table — and the help text — name `stateFilter`/`$top`/
 /// `$skip`; the lookup misses and the frozen CLI sends `state`/`top`/`skip`
-/// instead, which Azure ignores (D19 in `docs/rust-rewrite/contract-inventory.md`).
+/// instead, which Azure ignores (D19).
 fn list_params(
     state: Option<String>,
     top: Option<i64>,

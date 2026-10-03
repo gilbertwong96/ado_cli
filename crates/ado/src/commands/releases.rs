@@ -4,8 +4,7 @@
 //!
 //! The surface lives on Azure's `vsrm` hub, so a cloud request is addressed to
 //! `{org}.vsrm.visualstudio.com` — the frozen CLI sent it to the org host and
-//! every command answered 404 against a live organization
-//! (`w4-live-org-findings.md` F2, the divergence D57).
+//! every command answered 404 against a live organization (the divergence D57).
 //!
 //! The detail view is byte-for-byte the module's (its box-drawing rules, its
 //! `Status:`/`Definition:`/`Created By:`/`Environments:` blocks, and the

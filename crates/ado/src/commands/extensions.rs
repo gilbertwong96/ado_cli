@@ -5,10 +5,9 @@
 //!
 //! The surface lives on Azure's `extmgmt` hub, so a cloud request is addressed to
 //! `{org}.extmgmt.visualstudio.com` — the frozen CLI sent it to the org host and
-//! every command answered 404 against a live organization
-//! (`w4-live-org-findings.md` F4, the divergence D57). The surface is also
-//! preview-only: the API answers 400 `VssInvalidPreviewVersionException` for
-//! `api-version=7.1`, so F4's second half is still open.
+//! every command answered 404 against a live organization (the divergence D57).
+//! The surface is also preview-only: the API answers 400
+//! `VssInvalidPreviewVersionException` for `api-version=7.1` (D60).
 //!
 //! Four captured shapes decide the code:
 //!
@@ -48,8 +47,7 @@ use crate::output::Report;
 /// The organization-scoped collection every path here builds on; the client
 /// injects the organization ahead of it.
 /// The preview `api-version` this surface requires: it is preview-only and
-/// answers 400 `VssInvalidPreviewVersionException` for a plain `7.1`
-/// (`w4-live-org-findings.md` F4's second half).
+/// answers 400 `VssInvalidPreviewVersionException` for a plain `7.1` (D60).
 const PREVIEW_API_VERSION: &str = "7.1-preview.1";
 
 /// The preview pair each call below sends; the client merges a caller's

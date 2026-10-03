@@ -192,8 +192,8 @@ fn list_renders_the_module_columns() {
 /// The live service answers the list as an object carrying `items` beside a
 /// `continuationToken` — not as the `{"value": …}` the mock's fixture pins and
 /// the frozen CLI read. Both the table and the envelope have to see it, or the
-/// command renders a header with no rows against a real organization
-/// (`w4-live-org-findings.md` F3's display half, the divergence D59).
+/// command renders a header with no rows against a real organization (the
+/// divergence D59's display half).
 #[test]
 fn list_reads_the_live_items_shape() {
     let home = TempHome::new();

@@ -3,8 +3,8 @@
 ## What this is
 
 `ado` is a Rust CLI for Azure DevOps. Wave 4 (2026) retired the earlier Elixir
-implementation — its tree survives in git history — and the record under
-`docs/rust-rewrite/` is where its behaviour is documented.
+implementation — its tree survives in git history. The integration suites are
+where its behaviour is pinned.
 
 The workspace (`Cargo.toml`: edition 2024, `rust-version = "1.98"`, resolver 3)
 has four crates:
@@ -22,12 +22,11 @@ The toolchain is pinned by `rust-toolchain.toml` (stable plus `clippy`,
 build; `ado skills read ado-cli/references/prs.md` prints one from the embedded
 copy.
 
-**The contract record is `docs/rust-rewrite/contract-inventory.md`** — the
-observable behaviour captured from the reference CLI and every place this build
-deliberately differs (D1–D62), each with its citations. Read it before changing
-behaviour; do not re-derive the contract from this file. The per-wave gate
-numbers are in `CHANGELOG.md` and in `just ci`'s own output,
-and `docs/rust-rewrite/w3-rulings.md` carries the rulings that shaped them.
+**The observable contract is pinned by the integration suites** — the behaviour
+captured from the reference CLI and the deliberate divergences from it, which the
+code labels `D1`–`D62` at the call site. Read them before changing behaviour; do
+not re-derive the contract from this file. The gate's measured numbers are in
+`CHANGELOG.md` and in `just ci`'s own output.
 
 ## CI Quality Gate
 
@@ -97,9 +96,6 @@ figures. Keep it honest:
 
 - new behaviour comes with a per-area integration suite
   (`crates/ado/tests/cli_<area>.rs`, mock-backed via `ado-testkit`);
-- a change to a recorded contract value updates `contract-inventory.md` in the
-  same commit — its drift tests (`crates/ado*/tests/contract_inventory.rs`) fail
-  otherwise.
 
 ## Development Principles
 
@@ -127,8 +123,7 @@ figures. Keep it honest:
 9. **A scripted edit asserts that it matched.** A rewrite (a bump step, a
    migration) must fail loudly when its target is missing and must verify the
    file afterwards; a silent no-op that reports success is the same lie as a
-   claim nothing can reproduce. The precedent and the rest of the hygiene rules
-   are in `docs/rust-rewrite/w3-rulings.md`.
+   claim nothing can reproduce.
 10. **The capture wins over the prose.** When a brief, a doc or a comment
     disagrees with a command's actual output, the capture is authoritative;
     record the disagreement rather than copying the doc.
@@ -161,7 +156,7 @@ outranks the config file at `<OS config dir>/ado/config.toml`. When no config
 file exists yet, a one-time import reads the Elixir CLI's legacy
 `~/.ado_cli/config.json` so an existing install keeps working without a
 re-auth. A real `ado login` followed by `ado whoami` is the one live-path check
-the suite cannot make (`docs/rust-rewrite/w4-handoff.md` §6).
+the suite cannot make.
 
 ## The oracle harness (retired)
 
@@ -169,7 +164,7 @@ the suite cannot make (`docs/rust-rewrite/w4-handoff.md` §6).
 (the oracle: `ado 0.5.0`, rebuilt from `7a42dac`). `--mock` ran every recorded
 case against one instance of the testkit's `mock` server; the default mode ran
 the Wave 0 surface. Each case printed `MATCH`, `EXPECTED-DIFF` (a difference
-`contract-inventory.md` §9/§10 records) or `DIFF` (undocumented — a failure).
+a ruled divergence explains) or `DIFF` (undocumented — a failure).
 
 It was never part of `just ci`; it needed `cargo build --release --locked` and
 `cargo build -p ado-testkit --bin mock`. It retired with the Elixir tree: both
@@ -177,9 +172,7 @@ modes were re-run at the wave's frozen head as the final evidence,
 which is not repeatable from this
 tree — the escript the oracle needs is gone. The recovery recipe (rebuild the
 oracle in a worktree of the frozen commit) and the artefact's `sha256` are in
-`docs/rust-rewrite/w4-handoff.md` §5/§9 and the script's header. The integration
-suites are the live pins now; `contract-inventory.md` §10 stays as the
-description of what was compared.
+the script's header. The integration suites are the live pins now.
 
 ## Building and releasing
 
@@ -207,7 +200,7 @@ The release flow (the maintainer's):
 
 `1.0.0` is gated on one real `ado login` followed by `ado whoami`, with §6's
 observables itemized: the browser flow's live path is the one thing the suite
-cannot verify (`docs/rust-rewrite/w4-handoff.md` §6). The login has been run and
+cannot verify. The login has been run and
 the credential resolves, but the checklist is not itemized in the record, so the
 0.x line continues for now — the version is the maintainer's call, and only a
 prerelease publishes to npm's `next` dist-tag instead of `latest`

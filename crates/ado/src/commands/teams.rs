@@ -3,8 +3,7 @@
 //! REST surface, the
 //!
 //! The frozen CLI built `/{project}/_apis/teams` — the route Azure does not serve —
-//! so every command here answered 404 against a live organization
-//! (`w4-live-org-findings.md` F1, the divergence D58).
+//! so every command here answered 404 against a live organization (the divergence D58).
 //! table and detail views, and the module's own 404 wording. `delete` never
 //! prompts (R1/R5): the frozen CLI sends its DELETE on `n` and on EOF.
 

@@ -35,8 +35,7 @@ use crate::output::Report;
 
 /// The organization-scoped settings entry; the client injects the organization.
 /// The preview `api-version` the settings-entry surface requires: it answers
-/// 400 `VssInvalidPreviewVersionException` for a plain `7.1`
-/// (`w4-live-org-findings.md` F5).
+/// 400 `VssInvalidPreviewVersionException` for a plain `7.1` (D60).
 const PREVIEW_API_VERSION: &str = "7.1-preview.1";
 
 /// The preview pair the three calls below send; the client merges a caller's
@@ -48,7 +47,7 @@ fn preview_params() -> Vec<(String, String)> {
 /// The organization-wide banner entry. The settings surface is **scoped**: an
 /// organization-wide value lives under the `host` scope, and `entries/banners` is
 /// read as a scope *named* banners — which is why the API answers 400 `userId` for
-/// it (`w4-live-org-findings.md` F7, the divergence D62).
+/// it (the divergence D62).
 const BANNERS_PATH: &str = "/_apis/settings/entries/host/banners";
 
 /// The module's `Map.get(parsed.options, :type, "info")`.

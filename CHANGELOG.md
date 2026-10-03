@@ -9,10 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 The Rust rewrite, released as the next minor on the line 0.5.0 ended: `ado` is
 still the same CLI — the same binary name, the same commands, and the same
-`--json` contract (the observable behaviour captured in
-`docs/rust-rewrite/contract-inventory.md`, D1–D62) — rebuilt from the Elixir
+`--json` contract (the observable behaviour captured from the reference CLI,
+D1–D62) — rebuilt from the Elixir
 implementation that shipped through 0.5.0. `1.0.0` stays a separate promise: it
-waits on `w4-handoff.md` §6's live-sign-in checklist, item by item.
+waits on the live-sign-in checklist, item by item.
 
 ### Added
 
@@ -39,15 +39,14 @@ waits on `w4-handoff.md` §6's live-sign-in checklist, item by item.
 
 ### Changed
 
-- **`ado version` reports `0.6.0`.** Everything else recorded in
-  `contract-inventory.md` — the command surface, the `--json` envelopes, the
-  exit codes, the help text — reproduces 0.5.0, apart from the deliberate
-  differences the same record lists (D1–D62).
+- **`ado version` reports `0.6.0`.** Everything else — the command surface, the
+  `--json` envelopes, the exit codes, the help text — reproduces 0.5.0, apart
+  from the deliberate divergences the code labels `D1`–`D62`.
 
 ### Fixed
 
 - **Six behaviours the Elixir CLI got wrong, found against a live organization**
-  (D57–D62 in `contract-inventory.md` §9). All six are in the frozen 0.5.0 escript
+  (D57–D62). All six are in the frozen 0.5.0 escript
   too — inherited defects, not rewrite regressions — and a mock that answers the
   old request shapes cannot see them: `ado teams list` asked a route the service
   does not serve; `ado releases list` and `ado users list` read a shape the
@@ -61,8 +60,8 @@ waits on `w4-handoff.md` §6's live-sign-in checklist, item by item.
 - **The live sign-in, item by item.** The flow ships and is covered against a mock
   identity service, and it has now been exercised against a real organization — a
   fresh browser `ado login`, then `ado whoami` reporting the organization and
-  `Auth Method: browser` — but `w4-handoff.md` §6's observables are not each
-  itemized in the record: the auto-detect branch's `Detected org:`, and the
+  `Auth Method: browser` — but the observables are not each itemized: the
+  auto-detect branch's `Detected org:`, and the
   credential's placement in the store rather than in the config file. Whether that
   closes `1.0.0` is the maintainer's call.
 

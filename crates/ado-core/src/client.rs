@@ -63,8 +63,8 @@ enum Base {
 /// and extension management from `extmgmt`, at `{org}.vsrm.visualstudio.com`,
 /// `{org}.vsaex.visualstudio.com` and `{org}.extmgmt.visualstudio.com`. The
 /// frozen CLI addressed all three on the organization's own host and every one
-/// of them answers 404 against a live organization (`w4-live-org-findings.md`
-/// F2-F4), so a cloud request for one of those surfaces goes to the hub's host
+/// of them answers 404 against a live organization (D57; D60 for `extmgmt`),
+/// so a cloud request for one of those surfaces goes to the hub's host
 /// instead — the deliberate divergence D57. Azure DevOps Server has no hub
 /// hosts: a self-hosted base keeps every surface on its own server.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
