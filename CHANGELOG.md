@@ -64,8 +64,7 @@ waits on `w4-handoff.md` §6's live-sign-in checklist, item by item.
   `Auth Method: browser` — but `w4-handoff.md` §6's observables are not each
   itemized in the record: the auto-detect branch's `Detected org:`, and the
   credential's placement in the store rather than in the config file. Whether that
-  closes `1.0.0` is the maintainer's call (`docs/rust-rewrite/w4-verification.md`
-  §9).
+  closes `1.0.0` is the maintainer's call.
 
 ## [0.5.0] - 2026-07-22
 

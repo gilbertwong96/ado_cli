@@ -26,7 +26,7 @@ copy.
 observable behaviour captured from the reference CLI and every place this build
 deliberately differs (D1–D62), each with its citations. Read it before changing
 behaviour; do not re-derive the contract from this file. The per-wave gate
-records (`docs/rust-rewrite/w0-verification.md` …) carry the measured numbers,
+numbers are in `CHANGELOG.md` and in `just ci`'s own output,
 and `docs/rust-rewrite/w3-rulings.md` carries the rulings that shaped them.
 
 ## CI Quality Gate
@@ -92,8 +92,8 @@ CI. Never skip a stage before pushing.
 ## Coverage
 
 The floor is **85% lines**, enforced by step 7 of `just ci`. The last full gate
-recorded **97.18% lines / 96.49% regions**; `docs/rust-rewrite/w3-verification.md`
-§1 names the commands that produced the numbers. Keep it honest:
+recorded **97.18% lines / 96.49% regions**; `just ci` prints the current
+figures. Keep it honest:
 
 - new behaviour comes with a per-area integration suite
   (`crates/ado/tests/cli_<area>.rs`, mock-backed via `ado-testkit`);
@@ -173,8 +173,8 @@ the Wave 0 surface. Each case printed `MATCH`, `EXPECTED-DIFF` (a difference
 
 It was never part of `just ci`; it needed `cargo build --release --locked` and
 `cargo build -p ado-testkit --bin mock`. It retired with the Elixir tree: both
-modes were re-run at the wave's frozen head as the final evidence
-(`docs/rust-rewrite/w4-verification.md` §2), which is not repeatable from this
+modes were re-run at the wave's frozen head as the final evidence,
+which is not repeatable from this
 tree — the escript the oracle needs is gone. The recovery recipe (rebuild the
 oracle in a worktree of the frozen commit) and the artefact's `sha256` are in
 `docs/rust-rewrite/w4-handoff.md` §5/§9 and the script's header. The integration
