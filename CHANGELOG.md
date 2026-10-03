@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 The Rust rewrite. `ado` is still the same CLI — the same binary name, the same
 commands, and the same `--json` contract (the observable behaviour captured in
-`docs/rust-rewrite/contract-inventory.md`, D1–D56) — rebuilt from the Elixir
+`docs/rust-rewrite/contract-inventory.md`, D1–D62) — rebuilt from the Elixir
 implementation that shipped through 0.5.0.
 
 ### Added
@@ -20,9 +20,9 @@ implementation that shipped through 0.5.0.
   share). Edition 2024, `rust-version = 1.98`.
 - **`just` recipes for the whole gate** — `just ci` runs formatting, clippy with
   warnings as errors, a locked build, unused-dependency and advisory checks, the
-  test suite and an 85% line-coverage floor (currently 97.18% over 1,586 tests).
+  test suite and an 85% line-coverage floor (currently 96.50% over 1,591 tests).
   `just budget` measures startup (6.0 ms against a 50 ms limit) and the stripped
-  release binary (3.14 MiB against an 8 MiB limit).
+  release binary (3.15 MiB against an 8 MiB limit).
 - **Authentication through the OS credential store** — browser OAuth (PKCE,
   AAD and MSA), device code and PAT. The token lives in macOS Keychain, Windows
   Credential Manager or the Linux secret service (falling back to a `0600`
@@ -40,13 +40,30 @@ implementation that shipped through 0.5.0.
 - **`ado version` reports `1.0.0-rc.1`.** Everything else recorded in
   `contract-inventory.md` — the command surface, the `--json` envelopes, the
   exit codes, the help text — reproduces 0.5.0, apart from the deliberate
-  differences the same record lists (D1–D56).
+  differences the same record lists (D1–D62).
+
+### Fixed
+
+- **Six behaviours the Elixir CLI got wrong, found against a live organization**
+  (D57–D62 in `contract-inventory.md` §9). All six are in the frozen 0.5.0 escript
+  too — inherited defects, not rewrite regressions — and a mock that answers the
+  old request shapes cannot see them: `ado teams list` asked a route the service
+  does not serve; `ado releases list` and `ado users list` read a shape the
+  service does not return; `ado extensions list` asked a preview `api-version` of
+  a released endpoint; `ado banners show` read a settings entry without its `host`
+  scope; `ado imports list` addressed a repository-scoped surface as
+  project-scoped.
 
 ### Not verified in this release
 
-- **The live browser sign-in.** The flow ships and is covered against a mock
-  identity service, but a real `ado login` followed by `ado whoami` has not been
-  run end to end; that check gates `1.0.0`.
+- **The live sign-in, item by item.** The flow ships and is covered against a mock
+  identity service, and it has now been exercised against a real organization — a
+  fresh browser `ado login`, then `ado whoami` reporting the organization and
+  `Auth Method: browser` — but `w4-handoff.md` §6's observables are not each
+  itemized in the record: the auto-detect branch's `Detected org:`, and the
+  credential's placement in the store rather than in the config file. Whether that
+  closes `1.0.0` is the maintainer's call (`docs/rust-rewrite/w4-verification.md`
+  §9).
 
 ## [0.5.0] - 2026-07-22
 

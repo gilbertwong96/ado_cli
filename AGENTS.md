@@ -2,7 +2,7 @@
 
 ## What this is
 
-`ado` is a Rust CLI for Azure DevOps. Wave 4 (2026) retires the earlier Elixir
+`ado` is a Rust CLI for Azure DevOps. Wave 4 (2026) retired the earlier Elixir
 implementation — its tree survives in git history — and the record under
 `docs/rust-rewrite/` is where its behaviour is documented.
 
@@ -24,7 +24,7 @@ copy.
 
 **The contract record is `docs/rust-rewrite/contract-inventory.md`** — the
 observable behaviour captured from the reference CLI and every place this build
-deliberately differs (D1–D56), each with its citations. Read it before changing
+deliberately differs (D1–D62), each with its citations. Read it before changing
 behaviour; do not re-derive the contract from this file. The per-wave gate
 records (`docs/rust-rewrite/w0-verification.md` …) carry the measured numbers,
 and `docs/rust-rewrite/w3-rulings.md` carries the rulings that shaped them.
@@ -49,8 +49,9 @@ just ci
 | 6 | tests | `cargo nextest run --workspace` |
 | 7 | coverage floor | `cargo llvm-cov --workspace --fail-under-lines 85` |
 
-The gate deliberately does **not** run the oracle harness (`scripts/oracle-diff.sh`),
-which needs the retired Elixir escript — the Rust gate must not depend on it.
+The gate deliberately does **not** run the retired oracle harness
+(`scripts/oracle-diff.sh`), which needs the Elixir escript the deletion removed —
+the Rust gate must not depend on it.
 
 Run these before declaring a change complete:
 
@@ -64,9 +65,9 @@ Run these before declaring a change complete:
 - `dist plan` — the release plan (the standalone `dist` binary, cargo-dist
   0.32.0): five native archives, the shell/PowerShell installers and checksums,
   15 artefacts, exit 0. `cargo dist` is not installed here; use `dist`.
-- `just check` — the pre-tag aggregate. Wave 4's deletion task reduces it to
-  `just ci` + `just npm-test`; until that lands it also runs the frozen tree's
-  gate, so rely on the individual recipes meanwhile.
+- `just check` — the pre-tag aggregate: `just ci` + `just npm-test`. Wave 4's
+  deletion task landed with the Elixir tree, so it no longer runs the frozen
+  tree's gate; the `justfile` is the record (`check: ci npm-test`).
 
 ### GitHub Actions
 
@@ -162,21 +163,23 @@ file exists yet, a one-time import reads the Elixir CLI's legacy
 re-auth. A real `ado login` followed by `ado whoami` is the one live-path check
 the suite cannot make (`docs/rust-rewrite/w4-handoff.md` §6).
 
-## The oracle harness
+## The oracle harness (retired)
 
-`scripts/oracle-diff.sh` compares this binary against the frozen Elixir escript
-(the oracle: `ado 0.5.0`, rebuilt from `7a42dac`). `--mock` runs every recorded
-case against one instance of the testkit's `mock` server; the default mode runs
-the Wave 0 surface. Each case prints `MATCH`, `EXPECTED-DIFF` (a difference
+`scripts/oracle-diff.sh` compared this binary against the frozen Elixir escript
+(the oracle: `ado 0.5.0`, rebuilt from `7a42dac`). `--mock` ran every recorded
+case against one instance of the testkit's `mock` server; the default mode ran
+the Wave 0 surface. Each case printed `MATCH`, `EXPECTED-DIFF` (a difference
 `contract-inventory.md` §9/§10 records) or `DIFF` (undocumented — a failure).
 
-The harness is not part of `just ci`; it needs `cargo build --release --locked`
-and `cargo build -p ado-testkit --bin mock`. Wave 4's plan retires it with the
-Elixir tree: both modes are re-run once at the wave's frozen head as the final
-evidence, the recovery recipe and the artefact's `sha256` are in
-`docs/rust-rewrite/w4-handoff.md` §5/§9 and the script's header, and after
-retirement the integration suites are the live pins. `contract-inventory.md`
-§10 stays as the description of what was compared.
+It was never part of `just ci`; it needed `cargo build --release --locked` and
+`cargo build -p ado-testkit --bin mock`. It retired with the Elixir tree: both
+modes were re-run at the wave's frozen head as the final evidence
+(`docs/rust-rewrite/w4-verification.md` §2), which is not repeatable from this
+tree — the escript the oracle needs is gone. The recovery recipe (rebuild the
+oracle in a worktree of the frozen commit) and the artefact's `sha256` are in
+`docs/rust-rewrite/w4-handoff.md` §5/§9 and the script's header. The integration
+suites are the live pins now; `contract-inventory.md` §10 stays as the
+description of what was compared.
 
 ## Building and releasing
 
