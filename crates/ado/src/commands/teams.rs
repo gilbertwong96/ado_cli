@@ -1,5 +1,10 @@
 //! `ado teams list|show|create|update|delete` and `ado teams members list` — the
-//! team half of `lib/ado_cli/cli/teams.ex`: the `_apis/teams` REST surface, the
+//! team half of `lib/ado_cli/cli/teams.ex`: the `_apis/projects/{project}/teams`
+//! REST surface, the
+//!
+//! The frozen CLI built `/{project}/_apis/teams` — the route Azure does not serve —
+//! so every command here answered 404 against a live organization
+//! (`w4-live-org-findings.md` F1, the divergence D58).
 //! table and detail views, and the module's own 404 wording. `delete` never
 //! prompts (R1/R5): the frozen CLI sends its DELETE on `n` and on EOF.
 
@@ -15,7 +20,7 @@ use crate::output::Report;
 /// The module's guard when `update` carries no option at all.
 const NO_OPTIONS: &str = "At least one of --name or --description is required.";
 
-/// `ado teams list`: `GET /{project}/_apis/teams`, with the module's `$top` when
+/// `ado teams list`: `GET /_apis/projects/{project}/teams`, with the module's `$top` when
 /// `--top` is given. The value array unwraps to the value envelope; the human
 /// path is the module's three-column table.
 pub fn list(context: &mut Context, project: &str, top: Option<i64>) -> Result<Report, AdoError> {
@@ -140,9 +145,10 @@ pub fn members_list(
     )
 }
 
-/// The collection path: `/{project}/_apis/teams`.
+/// The collection path: `/_apis/projects/{project}/teams` — the project is
+/// segment-encoded in place, and the org is the host (D58).
 fn teams_path(project: &str) -> String {
-    format!("/{}/_apis/teams", encode_path_segment(project))
+    format!("/_apis/projects/{}/teams", encode_path_segment(project))
 }
 
 /// One team below the collection; the id is a single segment, so an id that
@@ -406,16 +412,22 @@ mod tests {
 
     #[test]
     fn the_paths_encode_each_segment_strictly() {
-        assert_eq!(teams_path("Alpha Beta"), "/Alpha%20Beta/_apis/teams");
-        assert_eq!(team_path("Alpha", "team/1"), "/Alpha/_apis/teams/team%2F1");
+        assert_eq!(
+            teams_path("Alpha Beta"),
+            "/_apis/projects/Alpha%20Beta/teams"
+        );
+        assert_eq!(
+            team_path("Alpha", "team/1"),
+            "/_apis/projects/Alpha/teams/team%2F1"
+        );
         assert_eq!(
             team_path("Alpha", "ada@example.com"),
-            "/Alpha/_apis/teams/ada%40example.com",
+            "/_apis/projects/Alpha/teams/ada%40example.com",
             "an @ is escaped, unlike the frozen URI.encode/1 (D22)"
         );
         assert_eq!(
             members_path("Alpha", "team-1"),
-            "/Alpha/_apis/teams/team-1/members"
+            "/_apis/projects/Alpha/teams/team-1/members"
         );
     }
 }

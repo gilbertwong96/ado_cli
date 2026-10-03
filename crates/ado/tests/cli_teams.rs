@@ -1,6 +1,8 @@
 //! End-to-end tests for `ado teams list|show|create|update|delete` and
 //! `ado teams members list`: the REST surface the frozen
-//! `lib/ado_cli/cli/teams.ex` builds under `_apis/teams`, the `--json`
+//! `lib/ado_cli/cli/teams.ex` built under `/{project}/_apis/teams` — which Azure
+//! does not serve, so every command answered 404 live. These tests pin the
+//! corrected `_apis/projects/{project}/teams` route (D58), the `--json`
 //! envelopes, the human table and detail views, and the guard/error paths.
 //!
 //! Every test owns its environment: a `TempHome` for the config directory, a
@@ -16,7 +18,7 @@ use ado_testkit::{
 use serde_json::{Value, json};
 
 const ORG: &str = "myorg";
-const TEAMS: &str = "/myorg/Alpha/_apis/teams";
+const TEAMS: &str = "/myorg/_apis/projects/Alpha/teams";
 
 fn command(home: &TempHome, server: &MockServer, args: &[&str]) -> Command {
     let mut command = ado_cmd();

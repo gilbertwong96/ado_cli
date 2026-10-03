@@ -37,7 +37,7 @@ const DEFAULT_LICENSE: &str = "express";
 /// three-column table.
 pub fn list(context: &mut Context, top: Option<i64>) -> Result<Report, AdoError> {
     let params = top_params(top);
-    let users = items(
+    let users = entitlements(
         context
             .client()?
             .hub(Hub::Entitlements)
@@ -148,6 +148,19 @@ fn add_body(email: &str, license: &str) -> Value {
         "accessLevel": {"accountLicenseType": license},
         "user": {"principalName": email, "subjectKind": "user"},
     })
+}
+
+/// The entitlement list's members. The live service answers an object carrying
+/// `items` beside its `continuationToken`, while the frozen responses carry
+/// `{"value": […]}` — which `Client::list` has already unwrapped by this point.
+/// An object with an `items` array is that live shape; anything else goes
+/// through the shared `items` helper (`w4-live-org-findings.md` F3's display
+/// half, the divergence D59).
+fn entitlements(body: Value) -> Vec<Value> {
+    match body.get("items") {
+        Some(Value::Array(items)) => items.clone(),
+        _ => items(body),
+    }
 }
 
 /// The module's `print_users_table/1` columns (ID, Email, License), with the

@@ -189,6 +189,52 @@ fn list_renders_the_module_columns() {
     );
 }
 
+/// The live service answers the list as an object carrying `items` beside a
+/// `continuationToken` — not as the `{"value": …}` the mock's fixture pins and
+/// the frozen CLI read. Both the table and the envelope have to see it, or the
+/// command renders a header with no rows against a real organization
+/// (`w4-live-org-findings.md` F3's display half, the divergence D59).
+#[test]
+fn list_reads_the_live_items_shape() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+
+    let live = json!({
+        "continuationToken": null,
+        "items": [entitlement("user-1", "Ada Lovelace", "ada@example.com", "express")],
+        "totalCount": 1
+    });
+
+    server.expect("GET", USERS, MockResponse::json(200, live.clone()));
+
+    let output = run(&home, &server, &["users", "list"]);
+
+    assert_success(&output);
+    let stdout = stdout_of(&output);
+    let lines = stdout.lines().collect::<Vec<_>>();
+
+    assert!(
+        lines.len() >= 3,
+        "a row below the rule, not a header alone: {stdout}"
+    );
+    assert!(
+        lines[2].contains("user-1") && lines[2].contains("ada@example.com"),
+        "the row carries the module's fields: {stdout}"
+    );
+
+    server.expect("GET", USERS, MockResponse::json(200, live));
+
+    let as_json = run(&home, &server, &["users", "list", "--json"]);
+
+    assert_eq!(
+        envelope(&as_json),
+        json!({"ok": true, "result": [
+            entitlement("user-1", "Ada Lovelace", "ada@example.com", "express")
+        ]}),
+        "the envelope carries the users, not the wrapper object"
+    );
+}
+
 #[test]
 fn list_empty_prints_the_frozen_sentence() {
     let home = TempHome::new();

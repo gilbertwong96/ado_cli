@@ -108,7 +108,7 @@ fn list_emits_the_value_envelope_and_the_org_path() {
     assert_eq!(requests[0].path, EXTENSIONS);
     assert_eq!(
         requests[0].query_pairs(),
-        vec![("api-version".to_owned(), "7.1".to_owned())],
+        vec![("api-version".to_owned(), "7.1-preview.1".to_owned())],
         "the list sends no filter pair"
     );
 }
@@ -292,7 +292,7 @@ fn search_filters_the_extension_name_case_insensitively_and_sends_no_query() {
     for request in requests(&server) {
         assert_eq!(
             request.query_pairs(),
-            vec![("api-version".to_owned(), "7.1".to_owned())],
+            vec![("api-version".to_owned(), "7.1-preview.1".to_owned())],
             "the filter is client-side; nothing extra reaches the wire"
         );
     }
@@ -364,7 +364,7 @@ fn show_emits_the_value_envelope_and_the_extension_path() {
     assert_eq!(requests[0].path, BUILD_QUALITY_CHECKS);
     assert_eq!(
         requests[0].query_pairs(),
-        vec![("api-version".to_owned(), "7.1".to_owned())]
+        vec![("api-version".to_owned(), "7.1-preview.1".to_owned())]
     );
 }
 

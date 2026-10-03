@@ -529,7 +529,7 @@ and per-endpoint coverage.
 | Pipeline Artifacts | `{project}/_apis/build/builds/{id}/artifacts` | list, download |
 | Releases | `{project}/_apis/release/releases` | list, show |
 | Wikis | `{project}/_apis/wiki/wikis`, `pages` | list, show, pages (list/show/create/update) |
-| Teams | `_apis/teams` | list, show, create, update, delete, members |
+| Teams | `_apis/projects/{project}/teams` | list, show, create, update, delete, members |
 | Users | `_apis/userentitlements` | list, show, add, remove |
 | Extensions | `_apis/extensionmanagement/installedextensions` | list, show, install, uninstall, enable, disable |
 | Agent Pools | `_apis/distributedtask/pools`, `/queues` | list, show, queues |

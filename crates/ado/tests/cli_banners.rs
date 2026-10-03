@@ -121,7 +121,7 @@ fn show_emits_the_value_object_and_the_org_path() {
     assert_eq!(requests[0].path, BANNERS);
     assert_eq!(
         requests[0].query_pairs(),
-        vec![("api-version".to_owned(), "7.1".to_owned())]
+        vec![("api-version".to_owned(), "7.1-preview.1".to_owned())]
     );
 }
 

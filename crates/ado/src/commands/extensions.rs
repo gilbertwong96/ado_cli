@@ -47,6 +47,17 @@ use crate::output::Report;
 
 /// The organization-scoped collection every path here builds on; the client
 /// injects the organization ahead of it.
+/// The preview `api-version` this surface requires: it is preview-only and
+/// answers 400 `VssInvalidPreviewVersionException` for a plain `7.1`
+/// (`w4-live-org-findings.md` F4's second half).
+const PREVIEW_API_VERSION: &str = "7.1-preview.1";
+
+/// The preview pair each call below sends; the client merges a caller's
+/// `api-version` over its own default.
+fn preview_params() -> Vec<(String, String)> {
+    vec![("api-version".to_owned(), PREVIEW_API_VERSION.to_owned())]
+}
+
 const EXTENSIONS_PATH: &str = "/_apis/extensionmanagement/installedextensions";
 
 /// `ado extensions list [--search SEARCH]`: `GET …/installedextensions`. The
@@ -57,7 +68,7 @@ pub fn list(context: &mut Context, search: Option<String>) -> Result<Report, Ado
         context
             .client()?
             .hub(Hub::Extensions)
-            .list(EXTENSIONS_PATH, &[])?,
+            .list(EXTENSIONS_PATH, &preview_params())?,
     );
     let filtered = filter_by_search(extensions, search.as_deref());
 
@@ -75,7 +86,7 @@ pub fn show(context: &mut Context, extension_id: &str) -> Result<Report, AdoErro
     match context
         .client()?
         .hub(Hub::Extensions)
-        .get(&extension_path(extension_id), &[])
+        .get(&extension_path(extension_id), &preview_params())
     {
         Ok(extension) => Ok(context.json_or_report(ok_value(extension.clone()), || {
             Report::Text(extension_detail(&extension))
@@ -94,7 +105,7 @@ pub fn install(context: &mut Context, publisher: &str, name: &str) -> Result<Rep
     context.client()?.hub(Hub::Extensions).post(
         EXTENSIONS_PATH,
         &install_body(publisher, name),
-        &[],
+        &preview_params(),
     )?;
 
     Ok(success_line(
@@ -112,7 +123,7 @@ pub fn uninstall(context: &mut Context, publisher: &str, name: &str) -> Result<R
     match context
         .client()?
         .hub(Hub::Extensions)
-        .delete(&dotted_path(publisher, name), &[])
+        .delete(&dotted_path(publisher, name), &preview_params())
     {
         Ok(()) => Ok(success_line(
             context,
@@ -150,7 +161,7 @@ fn patch_install_state(
     context.client()?.hub(Hub::Extensions).patch(
         &dotted_path(publisher, name),
         &install_state_body(publisher, name, flags),
-        &[],
+        &preview_params(),
     )?;
 
     Ok(success_line(

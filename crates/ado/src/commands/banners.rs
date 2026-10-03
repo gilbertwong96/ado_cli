@@ -34,6 +34,17 @@ use crate::context::Context;
 use crate::output::Report;
 
 /// The organization-scoped settings entry; the client injects the organization.
+/// The preview `api-version` the settings-entry surface requires: it answers
+/// 400 `VssInvalidPreviewVersionException` for a plain `7.1`
+/// (`w4-live-org-findings.md` F5).
+const PREVIEW_API_VERSION: &str = "7.1-preview.1";
+
+/// The preview pair the three calls below send; the client merges a caller's
+/// `api-version` over its own default.
+fn preview_params() -> Vec<(String, String)> {
+    vec![("api-version".to_owned(), PREVIEW_API_VERSION.to_owned())]
+}
+
 const BANNERS_PATH: &str = "/_apis/settings/entries/banners";
 
 /// The module's `Map.get(parsed.options, :type, "info")`.
@@ -53,7 +64,7 @@ const NO_BANNER: &str = "\nNo banner configured.\n\n\n";
 /// as the empty banner: the same sentence in human mode and the empty-value
 /// envelope under `--json`.
 pub fn show(context: &mut Context) -> Result<Report, AdoError> {
-    let value = match context.client()?.get(BANNERS_PATH, &[]) {
+    let value = match context.client()?.get(BANNERS_PATH, &preview_params()) {
         Ok(entry) => banner_value(&entry),
         Err(error) if error.code == ErrorCode::NotFound => json!({}),
         Err(error) => return Err(error),
@@ -72,9 +83,11 @@ pub fn set(
 ) -> Result<Report, AdoError> {
     let message = resolve_message(message)?;
 
-    context
-        .client()?
-        .put(BANNERS_PATH, &set_body(&message, banner_type, level), &[])?;
+    context.client()?.put(
+        BANNERS_PATH,
+        &set_body(&message, banner_type, level),
+        &preview_params(),
+    )?;
 
     Ok(success_line(context, format!("Banner set: \"{message}\"")))
 }
@@ -83,7 +96,7 @@ pub fn set(
 /// wording (no envelope); every other failure is the classified envelope. There is
 /// no confirmation — the frozen command prompts for nothing (captured).
 pub fn delete(context: &mut Context) -> Result<Report, AdoError> {
-    match context.client()?.delete(BANNERS_PATH, &[]) {
+    match context.client()?.delete(BANNERS_PATH, &preview_params()) {
         Ok(()) => Ok(success_line(context, "Banner removed.".to_owned())),
         Err(error) if error.code == ErrorCode::NotFound => Err(AdoError {
             message: "No banner to delete.".to_owned(),
