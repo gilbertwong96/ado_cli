@@ -1873,9 +1873,23 @@ fn schema_imports_node_lists_every_shipped_subcommand() {
         json!(true),
         "the oracle says false and enforces it anyway; ours describes the parse tree (D23)"
     );
+    assert_eq!(
+        argument(&list, "repository")["required"],
+        json!(true),
+        "the imports surface is repository-scoped; the oracle's project-scoped route is F6, repaired by D61"
+    );
+    assert_eq!(
+        argument(&list, "repository")["doc"],
+        json!("Repository name or ID")
+    );
 
     let show = find_node("imports show").expect("the show node");
     assert_eq!(option_names(&show), GLOBALS, "show declares no option");
+    assert_eq!(
+        argument(&show, "repository")["required"],
+        json!(true),
+        "the same required repository as `list`"
+    );
     assert_eq!(argument(&show, "import_id")["type"], json!("string"));
     assert_eq!(
         argument(&show, "import_id")["doc"],

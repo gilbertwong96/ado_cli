@@ -188,7 +188,7 @@ ado imports create MyProject my-new-repo \
   --password $GITHUB_TOKEN
 
 # Check progress
-ado imports show MyProject {import_id}
+ado imports show MyProject my-new-repo {import_id}
 ```
 
 ## Publish test results

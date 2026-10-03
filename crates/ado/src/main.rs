@@ -410,11 +410,17 @@ fn main() -> ExitCode {
                     list.get_one::<String>("project")
                         .expect("the positional is required")
                         .as_str(),
+                    list.get_one::<String>("repository")
+                        .expect("the positional is required")
+                        .as_str(),
                     list.get_one::<i64>("top").copied(),
                 ),
                 Some(("show", show)) => commands::imports::show(
                     &mut context,
                     show.get_one::<String>("project")
+                        .expect("the positional is required")
+                        .as_str(),
+                    show.get_one::<String>("repository")
                         .expect("the positional is required")
                         .as_str(),
                     show.get_one::<String>("import_id")

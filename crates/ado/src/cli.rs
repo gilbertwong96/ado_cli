@@ -552,6 +552,12 @@ pub fn command() -> Command {
                                 .help("Project name or ID"),
                         )
                         .arg(
+                            Arg::new("repository")
+                                .value_name("REPOSITORY")
+                                .required(true)
+                                .help("Repository name or ID"),
+)
+                        .arg(
                             Arg::new("top")
                                 .long("top")
                                 .value_name("N")
@@ -570,6 +576,12 @@ pub fn command() -> Command {
                                 .required(true)
                                 .help("Project name or ID"),
                         )
+                        .arg(
+                            Arg::new("repository")
+                                .value_name("REPOSITORY")
+                                .required(true)
+                                .help("Repository name or ID"),
+)
                         .arg(
                             Arg::new("import_id")
                                 .value_name("IMPORT_ID")

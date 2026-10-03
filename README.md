@@ -517,7 +517,7 @@ and per-endpoint coverage.
 | Git / Repos | `{project}/_apis/git/repositories` | list, show, create, delete |
 | Git / Pull Requests | `{project}/_apis/git/repositories/{id}/pullrequests` | list, show, create, complete, abandon, vote, comments |
 | Git / Policies | `{project}/_apis/policy/configurations` | list, show, create, update, delete |
-| Git / Imports | `{project}/_apis/git/importRequests` | list, show, create |
+| Git / Imports | `{project}/_apis/git/repositories/{repo}/importRequests` | list, show, create |
 | Work Items | `{project}/_apis/wit/wiql`, `_apis/wit/workitems/{id}` | query, show, create, update, delete, comments, attachments |
 | Sprints / Iterations | `{project}/_apis/work/teamsettings/iterations` | list, show, create, update, delete |
 | Area Paths | `{project}/_apis/wit/classificationNodes/areas` | list, show, create, update, delete |

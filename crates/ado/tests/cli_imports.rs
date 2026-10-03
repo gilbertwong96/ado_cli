@@ -1,5 +1,6 @@
 //! End-to-end tests for `ado imports list|show|create`: the project-scoped
-//! `_apis/git/importRequests` surface the frozen `lib/ado_cli/cli/imports.ex`
+//! `_apis/git/repositories/{repo}/importRequests` surface the frozen
+//! `lib/ado_cli/cli/imports.ex`
 //! builds, the `$top` pair, the create body, the human views and the error
 //! paths.
 //!
@@ -16,9 +17,9 @@ use ado_testkit::{
 use serde_json::{Value, json};
 
 const ORG: &str = "myorg";
-const COLLECTION: &str = "/myorg/Alpha/_apis/git/importRequests";
-const IMPORT: &str = "/myorg/Alpha/_apis/git/importRequests/imp-1";
-const REPOSITORIES: &str = "/myorg/Alpha/_apis/git/repositories/NewRepo/importRequests";
+const REPOSITORY: &str = "NewRepo";
+const COLLECTION: &str = "/myorg/Alpha/_apis/git/repositories/NewRepo/importRequests";
+const IMPORT: &str = "/myorg/Alpha/_apis/git/repositories/NewRepo/importRequests/imp-1";
 
 fn command(home: &TempHome, server: &MockServer, org: &str, args: &[&str]) -> Command {
     let mut command = ado_cmd();
@@ -123,7 +124,11 @@ fn list_emits_the_value_envelope_and_the_collection_path() {
     let server = MockServer::start();
     server.expect("GET", COLLECTION, MockResponse::json(200, imports()));
 
-    let output = run(&home, &server, &["imports", "list", "Alpha", "--json"]);
+    let output = run(
+        &home,
+        &server,
+        &["imports", "list", "Alpha", REPOSITORY, "--json"],
+    );
 
     assert_success(&output);
     assert_eq!(
@@ -151,7 +156,9 @@ fn list_sends_the_dollar_top_pair_only_when_the_option_is_given() {
     let output = run(
         &home,
         &server,
-        &["imports", "list", "Alpha", "--top", "5", "--json"],
+        &[
+            "imports", "list", "Alpha", REPOSITORY, "--top", "5", "--json",
+        ],
     );
 
     assert_success(&output);
@@ -171,7 +178,9 @@ fn list_sends_the_dollar_top_pair_only_when_the_option_is_given() {
     let output = run(
         &home,
         &server,
-        &["imports", "list", "Alpha", "--top", "0", "--json"],
+        &[
+            "imports", "list", "Alpha", REPOSITORY, "--top", "0", "--json",
+        ],
     );
 
     assert_success(&output);
@@ -191,7 +200,7 @@ fn list_renders_the_modules_columns_and_the_source_url() {
     let server = MockServer::start();
     server.expect("GET", COLLECTION, MockResponse::json(200, imports()));
 
-    let output = run(&home, &server, &["imports", "list", "Alpha"]);
+    let output = run(&home, &server, &["imports", "list", "Alpha", REPOSITORY]);
 
     assert_success(&output);
     let stdout = stdout_of(&output);
@@ -221,7 +230,7 @@ fn list_empty_prints_the_modules_sentence() {
         MockResponse::json(200, json!({"count": 0, "value": []})),
     );
 
-    let output = run(&home, &server, &["imports", "list", "Alpha"]);
+    let output = run(&home, &server, &["imports", "list", "Alpha", REPOSITORY]);
 
     assert_success(&output);
     assert_eq!(stdout_of(&output).trim_end(), "No imports found.");
@@ -234,7 +243,11 @@ fn list_empty_prints_the_modules_sentence() {
         MockResponse::json(200, json!({"count": 0, "value": []})),
     );
 
-    let output = run(&home, &server, &["imports", "list", "Alpha", "--json"]);
+    let output = run(
+        &home,
+        &server,
+        &["imports", "list", "Alpha", REPOSITORY, "--json"],
+    );
 
     assert_success(&output);
     assert_eq!(envelope(&output), json!({"ok": true, "result": []}));
@@ -259,7 +272,11 @@ fn list_404_and_500_are_the_classified_envelopes() {
             MockResponse::json(status, json!({"message": "upstream refused"})),
         );
 
-        let output = run(&home, &server, &["imports", "list", "Alpha", "--json"]);
+        let output = run(
+            &home,
+            &server,
+            &["imports", "list", "Alpha", REPOSITORY, "--json"],
+        );
 
         assert_eq!(output.status.code(), Some(1));
         let envelope = envelope(&output);
@@ -286,7 +303,7 @@ fn list_404_human_writes_the_labelled_line_to_stderr() {
         MockResponse::json(404, json!({"message": "Not found"})),
     );
 
-    let output = run(&home, &server, &["imports", "list", "Alpha"]);
+    let output = run(&home, &server, &["imports", "list", "Alpha", REPOSITORY]);
 
     assert_eq!(output.status.code(), Some(1));
     assert!(
@@ -312,15 +329,34 @@ fn list_requires_the_project_positional() {
 }
 
 #[test]
+fn list_requires_the_repository_positional() {
+    let home = TempHome::new();
+    let server = MockServer::start();
+
+    let output = run(&home, &server, &["imports", "list", "Alpha"]);
+
+    usage_error(&output, "REPOSITORY");
+    assert!(requests(&server).is_empty(), "a usage error sends nothing");
+}
+
+#[test]
 fn list_rejects_an_extra_positional_and_an_unknown_flag() {
     let home = TempHome::new();
     let server = MockServer::start();
 
-    let output = run(&home, &server, &["imports", "list", "Alpha", "Extra"]);
+    let output = run(
+        &home,
+        &server,
+        &["imports", "list", "Alpha", REPOSITORY, "Extra"],
+    );
 
     usage_error(&output, "Extra");
 
-    let output = run(&home, &server, &["imports", "list", "Alpha", "--nope"]);
+    let output = run(
+        &home,
+        &server,
+        &["imports", "list", "Alpha", REPOSITORY, "--nope"],
+    );
 
     usage_error(&output, "nope");
     assert!(requests(&server).is_empty(), "a usage error sends nothing");
@@ -334,7 +370,7 @@ fn list_rejects_a_non_numeric_top() {
     let output = run(
         &home,
         &server,
-        &["imports", "list", "Alpha", "--top", "abc"],
+        &["imports", "list", "Alpha", REPOSITORY, "--top", "abc"],
     );
 
     usage_error(&output, "top");
@@ -352,7 +388,7 @@ fn show_emits_the_value_envelope_and_the_id_path() {
     let output = run(
         &home,
         &server,
-        &["imports", "show", "Alpha", "imp-1", "--json"],
+        &["imports", "show", "Alpha", REPOSITORY, "imp-1", "--json"],
     );
 
     assert_success(&output);
@@ -373,20 +409,27 @@ fn show_escapes_the_project_and_the_id_as_one_segment_each() {
     let server = MockServer::start();
     server.expect(
         "GET",
-        "/myorg/Alpha%20Beta/_apis/git/importRequests/imp%201",
+        "/myorg/Alpha%20Beta/_apis/git/repositories/NewRepo/importRequests/imp%201",
         MockResponse::json(200, import()),
     );
 
     let output = run(
         &home,
         &server,
-        &["imports", "show", "Alpha Beta", "imp 1", "--json"],
+        &[
+            "imports",
+            "show",
+            "Alpha Beta",
+            REPOSITORY,
+            "imp 1",
+            "--json",
+        ],
     );
 
     assert_success(&output);
     assert_eq!(
         requests(&server)[0].path,
-        "/myorg/Alpha%20Beta/_apis/git/importRequests/imp%201",
+        "/myorg/Alpha%20Beta/_apis/git/repositories/NewRepo/importRequests/imp%201",
         "a space is %20 on both sides; a slash is %2F here and raw in the oracle (D22)"
     );
 }
@@ -397,7 +440,11 @@ fn show_renders_the_modules_detail_and_its_falsy_detail_line() {
     let server = MockServer::start();
     server.expect("GET", IMPORT, MockResponse::json(200, import()));
 
-    let output = run(&home, &server, &["imports", "show", "Alpha", "imp-1"]);
+    let output = run(
+        &home,
+        &server,
+        &["imports", "show", "Alpha", REPOSITORY, "imp-1"],
+    );
 
     assert_success(&output);
     assert_eq!(
@@ -434,7 +481,11 @@ fn show_prints_the_none_placeholder_only_for_a_nil_url() {
         ),
     );
 
-    let output = run(&home, &server, &["imports", "show", "Alpha", "imp-1"]);
+    let output = run(
+        &home,
+        &server,
+        &["imports", "show", "Alpha", REPOSITORY, "imp-1"],
+    );
 
     assert_success(&output);
     let stdout = stdout_of(&output);
@@ -460,7 +511,11 @@ fn show_omits_the_detail_line_when_detailed_status_is_absent() {
         ),
     );
 
-    let output = run(&home, &server, &["imports", "show", "Alpha", "imp-1"]);
+    let output = run(
+        &home,
+        &server,
+        &["imports", "show", "Alpha", REPOSITORY, "imp-1"],
+    );
 
     assert_success(&output);
     let stdout = stdout_of(&output);
@@ -478,14 +533,14 @@ fn show_404_is_the_modules_wording_with_no_envelope() {
     let server = MockServer::start();
     server.expect(
         "GET",
-        "/myorg/Alpha/_apis/git/importRequests/missing",
+        "/myorg/Alpha/_apis/git/repositories/NewRepo/importRequests/missing",
         MockResponse::json(404, json!({"message": "Import request not found."})),
     );
 
     let output = run(
         &home,
         &server,
-        &["imports", "show", "Alpha", "missing", "--json"],
+        &["imports", "show", "Alpha", REPOSITORY, "missing", "--json"],
     );
 
     assert_eq!(output.status.code(), Some(1));
@@ -512,7 +567,7 @@ fn show_requires_both_positionals() {
 
     usage_error(
         &run(&home, &server, &["imports", "show", "Alpha"]),
-        "IMPORT_ID",
+        "REPOSITORY",
     );
     usage_error(&run(&home, &server, &["imports", "show"]), "PROJECT");
     assert!(requests(&server).is_empty(), "a usage error sends nothing");
@@ -524,7 +579,7 @@ fn show_requires_both_positionals() {
 fn create_posts_the_module_body_and_reports_the_response() {
     let home = TempHome::new();
     let server = MockServer::start();
-    server.expect("POST", REPOSITORIES, MockResponse::json(200, created()));
+    server.expect("POST", COLLECTION, MockResponse::json(200, created()));
 
     let output = run(
         &home,
@@ -550,7 +605,7 @@ fn create_posts_the_module_body_and_reports_the_response() {
     let requests = requests(&server);
     assert_eq!(requests.len(), 1);
     assert_eq!(requests[0].method, "POST");
-    assert_eq!(requests[0].path, REPOSITORIES);
+    assert_eq!(requests[0].path, COLLECTION);
     assert_eq!(
         sent_body(&requests[0]),
         json!({"parameters": {
@@ -565,7 +620,7 @@ fn create_posts_the_module_body_and_reports_the_response() {
 fn create_prints_the_modules_block_in_human_mode() {
     let home = TempHome::new();
     let server = MockServer::start();
-    server.expect("POST", REPOSITORIES, MockResponse::json(200, created()));
+    server.expect("POST", COLLECTION, MockResponse::json(200, created()));
 
     let output = run(
         &home,
@@ -601,7 +656,7 @@ fn create_prints_the_modules_block_in_human_mode() {
 fn create_adds_the_credential_fields_only_when_given() {
     let home = TempHome::new();
     let server = MockServer::start();
-    server.expect("POST", REPOSITORIES, MockResponse::json(200, created()));
+    server.expect("POST", COLLECTION, MockResponse::json(200, created()));
 
     let output = run(
         &home,
@@ -636,7 +691,7 @@ fn create_adds_the_credential_fields_only_when_given() {
 fn create_sends_an_empty_url_when_the_option_is_present_and_empty() {
     let home = TempHome::new();
     let server = MockServer::start();
-    server.expect("POST", REPOSITORIES, MockResponse::json(200, created()));
+    server.expect("POST", COLLECTION, MockResponse::json(200, created()));
 
     let output = run(
         &home,
@@ -708,7 +763,7 @@ fn create_404_is_the_classified_envelope() {
     let server = MockServer::start();
     server.expect(
         "POST",
-        REPOSITORIES,
+        COLLECTION,
         MockResponse::json(404, json!({"message": "The project does not exist."})),
     );
 
@@ -738,7 +793,7 @@ fn create_400_is_the_api_error_envelope_with_the_upstream_body() {
     let home = TempHome::new();
     let server = MockServer::start();
     let body = json!({"message": "The repository 'NewRepo' already exists."});
-    server.expect("POST", REPOSITORIES, MockResponse::json(400, body.clone()));
+    server.expect("POST", COLLECTION, MockResponse::json(400, body.clone()));
 
     let output = run(
         &home,

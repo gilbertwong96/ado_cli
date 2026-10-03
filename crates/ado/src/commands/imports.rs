@@ -28,16 +28,19 @@ use crate::commands::items::items;
 use crate::context::Context;
 use crate::output::Report;
 
-/// The project-scoped collection every path here builds on.
-const IMPORT_REQUESTS_PATH: &str = "/_apis/git/importRequests";
-
-/// `ado imports list PROJECT [--top N]`: `GET …/git/importRequests`, with the
-/// module's `$top` pair only when the option is present.
-pub fn list(context: &mut Context, project: &str, top: Option<i64>) -> Result<Report, AdoError> {
+/// `ado imports list PROJECT REPOSITORY [--top N]`: `GET
+/// …/git/repositories/{repo}/importRequests`, with the module's `$top` pair only
+/// when the option is present.
+pub fn list(
+    context: &mut Context,
+    project: &str,
+    repository: &str,
+    top: Option<i64>,
+) -> Result<Report, AdoError> {
     let imports = items(
         context
             .client()?
-            .list(&collection_path(project), &top_params(top))?,
+            .list(&repository_path(project, repository), &top_params(top))?,
     );
 
     Ok(
@@ -47,11 +50,20 @@ pub fn list(context: &mut Context, project: &str, top: Option<i64>) -> Result<Re
     )
 }
 
-/// `ado imports show PROJECT IMPORT_ID`: `GET …/importRequests/{id}`. A 404 takes
+/// `ado imports show PROJECT REPOSITORY IMPORT_ID`: `GET
+/// …/git/repositories/{repo}/importRequests/{id}`. A 404 takes
 /// the module's own wording ([`ErrorCode::NotFound`]'s class), which the frozen
 /// CLI writes to stderr with no envelope even under `--json` (D4).
-pub fn show(context: &mut Context, project: &str, import_id: &str) -> Result<Report, AdoError> {
-    match context.client()?.get(&import_path(project, import_id), &[]) {
+pub fn show(
+    context: &mut Context,
+    project: &str,
+    repository: &str,
+    import_id: &str,
+) -> Result<Report, AdoError> {
+    match context
+        .client()?
+        .get(&import_path(project, repository, import_id), &[])
+    {
         Ok(import) => Ok(context.json_or_report(ok_value(import.clone()), || {
             Report::Text(import_detail(&import))
         })),
@@ -86,23 +98,19 @@ pub fn create(
     }))
 }
 
-/// The module's `"/#{URI.encode(project)}/_apis/git/importRequests"`; the frozen
-/// `URI.encode/1` leaves a `/` raw and this build escapes every segment strictly
-/// (D22).
-fn collection_path(project: &str) -> String {
-    format!("/{}{IMPORT_REQUESTS_PATH}", encode_path_segment(project))
-}
-
 /// One import request below the collection, encoded the same way.
-fn import_path(project: &str, import_id: &str) -> String {
+fn import_path(project: &str, repository: &str, import_id: &str) -> String {
     format!(
         "{}/{}",
-        collection_path(project),
+        repository_path(project, repository),
         encode_path_segment(import_id)
     )
 }
 
-/// The create target: the new repository's own `importRequests` collection.
+/// The repository's own `importRequests` collection: the `list` target, and the
+/// base of `show` and `create`. Azure serves the imports surface per repository
+/// and never per project (`w4-live-org-findings.md` F6, the divergence D61);
+/// the frozen module interpolated the repo name raw (D22).
 fn repository_path(project: &str, repo_name: &str) -> String {
     format!(
         "/{}/_apis/git/repositories/{}/importRequests",
@@ -295,16 +303,19 @@ mod tests {
     }
 
     #[test]
-    fn the_collection_path_escapes_the_project_as_one_segment() {
-        assert_eq!(collection_path("Alpha"), "/Alpha/_apis/git/importRequests");
+    fn the_repository_path_escapes_both_segments() {
         assert_eq!(
-            collection_path("a/b"),
-            "/a%2Fb/_apis/git/importRequests",
+            repository_path("Alpha", "NewRepo"),
+            "/Alpha/_apis/git/repositories/NewRepo/importRequests"
+        );
+        assert_eq!(
+            repository_path("a/b", "c/d"),
+            "/a%2Fb/_apis/git/repositories/c%2Fd/importRequests",
             "the frozen URI.encode/1 leaves the slash raw (D22)"
         );
         assert_eq!(
-            collection_path("Alpha Beta"),
-            "/Alpha%20Beta/_apis/git/importRequests",
+            repository_path("Alpha Beta", "My Repo"),
+            "/Alpha%20Beta/_apis/git/repositories/My%20Repo/importRequests",
             "the one spelling both sides share"
         );
     }
@@ -312,8 +323,8 @@ mod tests {
     #[test]
     fn the_import_and_repository_paths_escape_their_segments() {
         assert_eq!(
-            import_path("Alpha", "imp 1"),
-            "/Alpha/_apis/git/importRequests/imp%201"
+            import_path("Alpha", "NewRepo", "imp 1"),
+            "/Alpha/_apis/git/repositories/NewRepo/importRequests/imp%201"
         );
         assert_eq!(
             repository_path("Alpha", "a/b"),
