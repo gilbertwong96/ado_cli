@@ -17,7 +17,7 @@ use ado_testkit::{
 use serde_json::{Value, json};
 
 const ORG: &str = "myorg";
-const BANNERS: &str = "/myorg/_apis/settings/entries/banners";
+const BANNERS: &str = "/myorg/_apis/settings/entries/host/banners";
 
 fn command(home: &TempHome, server: &MockServer, org: &str, args: &[&str]) -> Command {
     let mut command = ado_cmd();

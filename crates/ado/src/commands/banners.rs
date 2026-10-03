@@ -45,7 +45,11 @@ fn preview_params() -> Vec<(String, String)> {
     vec![("api-version".to_owned(), PREVIEW_API_VERSION.to_owned())]
 }
 
-const BANNERS_PATH: &str = "/_apis/settings/entries/banners";
+/// The organization-wide banner entry. The settings surface is **scoped**: an
+/// organization-wide value lives under the `host` scope, and `entries/banners` is
+/// read as a scope *named* banners — which is why the API answers 400 `userId` for
+/// it (`w4-live-org-findings.md` F7, the divergence D62).
+const BANNERS_PATH: &str = "/_apis/settings/entries/host/banners";
 
 /// The module's `Map.get(parsed.options, :type, "info")`.
 const DEFAULT_TYPE: &str = "info";
