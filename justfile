@@ -104,8 +104,12 @@ budget: build-release
 # Run the npm package's release-artifact suite (node --test): the postinstall
 # downloader and the archive resolution that fetch the dist archives, plus
 # the shell-completion install, which runs the release binary built here.
+#
+# The files are named rather than pointed at by directory: the Linux runner's
+# Node 22 leaves a directory argument unresolved (`Cannot find module`), while
+# the directory form is accepted from Node 24 on.
 npm-test: build-release
-    node --test npm/@gilbertwong1996-ado/test
+    node --test 'npm/@gilbertwong1996-ado/test/*.test.js'
 
 # ── Helpers ────────────────────────────────────────────────────────────
 
