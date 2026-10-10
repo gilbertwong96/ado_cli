@@ -405,7 +405,7 @@ fn login_failed(error: AdoError) -> AdoError {
 mod tests {
     use std::collections::VecDeque;
     use std::io::{self, Read, Write};
-    use std::net::{TcpListener, TcpStream};
+    use std::net::{Shutdown, TcpListener, TcpStream};
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::{Arc, Mutex, MutexGuard};
     use std::thread::{self, JoinHandle};
@@ -808,6 +808,89 @@ mod tests {
         fn flush(&mut self) -> io::Result<()> {
             Ok(())
         }
+    }
+
+    /// A raw connection to the fake, for a client `ureq` cannot be: the mock's read
+    /// paths are reached only by a socket that closes or fragments in the middle.
+    fn connect_raw(fake: &FakeIdentity) -> TcpStream {
+        TcpStream::connect(fake.base_url().strip_prefix("http://").expect("an address"))
+            .expect("a connection")
+    }
+
+    /// What the mock answered. Reading it to the end is also what says the request has
+    /// been recorded: the reply is written after the recording, and the connection is
+    /// closed after the reply.
+    fn answer_of(stream: &mut TcpStream) -> String {
+        let mut answer = Vec::new();
+        stream.read_to_end(&mut answer).expect("the answer");
+
+        String::from_utf8_lossy(&answer).into_owned()
+    }
+
+    /// A client that declares a body, sends part of it and then closes is still a request
+    /// the mock records: the read loop takes what arrived rather than waiting for the
+    /// rest, and the connection is free for the next one. The body loop runs only when the
+    /// declared `content-length` outlives a single read, which `ureq` makes a matter of
+    /// timing — the half-closed socket pins it instead of the scheduler.
+    #[test]
+    fn a_client_that_closes_mid_body_is_recorded_rather_than_awaited() {
+        let fake = FakeIdentity::start(vec![reply(200, json!({"access_token": "half"}))], None);
+        let mut stream = connect_raw(&fake);
+
+        stream
+            .write_all(
+                b"POST /organizations/oauth2/token HTTP/1.1\r\nhost: localhost\r\n\
+                  content-length: 400\r\n\r\n",
+            )
+            .expect("the head");
+        stream
+            .write_all(b"grant_type=half")
+            .expect("part of the body");
+        stream
+            .shutdown(Shutdown::Write)
+            .expect("a half close, which is how the mock sees a body that ended early");
+
+        assert!(
+            answer_of(&mut stream).starts_with("HTTP/1.1 200 OK"),
+            "the mock answers a body that ended early"
+        );
+
+        let received = fake.received();
+        assert_eq!(received.len(), 1, "the mock recorded {received:?}");
+        assert_eq!(received[0].path, "/organizations/oauth2/token");
+        assert_eq!(received[0].form_value("grant_type"), Some("half"));
+    }
+
+    /// The other side of the same loop: when the body does arrive, in pieces, the mock
+    /// reads it to the declared `content-length` rather than to the first read, so the form
+    /// is whole. The delay is the client's, and it is what makes the shape a fact rather
+    /// than a bet on how the two writes coalesce.
+    #[test]
+    fn a_body_that_arrives_in_pieces_is_read_to_its_declared_length() {
+        let fake = FakeIdentity::start(vec![reply(200, json!({"access_token": "pieces"}))], None);
+        let mut stream = connect_raw(&fake);
+
+        stream
+            .write_all(
+                b"POST /organizations/oauth2/token HTTP/1.1\r\nhost: localhost\r\n\
+                  content-length: 25\r\n\r\n",
+            )
+            .expect("the head");
+        stream
+            .write_all(b"grant_type=half")
+            .expect("the first piece");
+        thread::sleep(Duration::from_millis(50));
+        stream.write_all(b"&code=rest").expect("the second piece");
+
+        assert!(
+            answer_of(&mut stream).starts_with("HTTP/1.1 200 OK"),
+            "the mock answers a body that arrived in pieces"
+        );
+
+        let received = fake.received();
+        assert_eq!(received.len(), 1, "the mock recorded {received:?}");
+        assert_eq!(received[0].form_value("grant_type"), Some("half"));
+        assert_eq!(received[0].form_value("code"), Some("rest"));
     }
 
     // ── the PAT method ────────────────────────────────────────────────────
