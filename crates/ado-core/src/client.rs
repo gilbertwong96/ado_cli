@@ -196,6 +196,7 @@ impl Client {
             .max_redirects(0)
             .timeout_global(Some(REQUEST_TIMEOUT))
             .timeout_connect(Some(CONNECT_TIMEOUT))
+            .tls_config(crate::tls::config())
             .build()
             .new_agent();
 
@@ -802,6 +803,17 @@ mod tests {
         }
 
         Client::from_env(&credentials, &env).expect("a client")
+    }
+
+    /// The trust anchors are the operating system's, not a bundle (see
+    /// `crate::tls`): a TLS-inspecting proxy's root is in the system store and
+    /// nowhere else, and every request through it would fail the handshake.
+    #[test]
+    fn the_client_trusts_the_operating_systems_roots() {
+        assert!(matches!(
+            client(None).agent.config().tls_config().root_certs(),
+            ureq::tls::RootCerts::PlatformVerifier
+        ));
     }
 
     #[test]

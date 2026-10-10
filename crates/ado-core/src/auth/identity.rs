@@ -25,6 +25,7 @@ pub fn agent() -> ureq::Agent {
         .max_redirects(0)
         .timeout_global(Some(REQUEST_TIMEOUT))
         .timeout_connect(Some(CONNECT_TIMEOUT))
+        .tls_config(crate::tls::config())
         .build()
         .new_agent()
 }
@@ -134,5 +135,15 @@ mod tests {
             endpoint("http://127.0.0.1:9999/", "organizations/oauth2/token"),
             "http://127.0.0.1:9999/organizations/oauth2/token"
         );
+    }
+
+    /// The login flows reach `login.microsoftonline.com` through the same trust
+    /// anchors as the API client — an inspecting proxy intercepts those too.
+    #[test]
+    fn the_identity_agent_trusts_the_operating_systems_roots() {
+        assert!(matches!(
+            agent().config().tls_config().root_certs(),
+            ureq::tls::RootCerts::PlatformVerifier
+        ));
     }
 }

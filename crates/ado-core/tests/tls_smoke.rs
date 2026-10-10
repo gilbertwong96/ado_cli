@@ -1,11 +1,15 @@
 //! R34: the one test that leaves the machine. It proves the rustls handshake,
-//! the bundled roots (ureq's `rustls` feature links `webpki-roots` v1.0.9, not
-//! the operating system's certificate store) and the redirect-to-`auth_required`
+//! the platform's trust store (`RootCerts::PlatformVerifier`, which
+//! `ado_core::tls` puts on both agents) and the redirect-to-`auth_required`
 //! mapping together, against `https://dev.azure.com`.
 //!
 //! Deliberately `#[ignore]`d: neither `just ci` nor a GitHub runner may depend on
 //! the network. Run it by hand with
 //! `cargo test -p ado-core --test tls_smoke -- --ignored --nocapture`.
+//!
+//! On a machine behind a TLS-inspecting proxy this is the test that tells the two
+//! trust-anchor choices apart: a bundled root list fails the handshake, while the
+//! proxy's own root, installed where the operating system looks, is trusted.
 
 use ado_core::client::Client;
 use ado_core::config::AuthMethod;

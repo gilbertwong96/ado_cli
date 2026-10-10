@@ -15,7 +15,14 @@ sha2 = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 toml = { workspace = true }
-ureq = { workspace = true, features = ["rustls"] }
+
+# `platform-verifier` is what lets a TLS-inspecting proxy's root be trusted: it
+# verifies against the operating system's store instead of `webpki-roots`. See
+# `src/tls.rs` — `RootCerts::PlatformVerifier` panics without the feature.
+ureq = { workspace = true, features = ["rustls", "platform-verifier"] }
 
 [dev-dependencies]
 ado-testkit = { path = "../ado-testkit" }
+# The enterprise-CA reproduction (`tests/tls_enterprise_ca.rs`) stands its own TLS
+# server up, so it needs the same rustls `ureq` links, features and all.
+rustls = { version = "0.23", default-features = false, features = ["logging", "std", "tls12", "ring"] }
