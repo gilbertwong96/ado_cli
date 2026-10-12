@@ -697,14 +697,14 @@ before they go public.
 
 ```bash
 # 1. Bump every live version source (asserting each one)
-just bump 0.6.0
+just bump 0.6.1
 # 2. Write the CHANGELOG.md entry by hand (the bump does not touch it)
 # 3. Confirm the gate
 just ci && just npm-test
 # 4. Commit and tag (the maintainer's step)
-git add -u && git commit -m 'chore: bump to 0.6.0'
-git tag -a v0.6.0 -m 'Release 0.6.0'
-git push github main v0.6.0
+git add -u && git commit -m 'chore: bump to 0.6.1'
+git tag -a v0.6.1 -m 'Release 0.6.1'
+git push github main v0.6.1
 ```
 
 Pushing the tag triggers the dist-generated `release` workflow, which builds the
@@ -716,14 +716,14 @@ the archives are named by target triple and never carry the version, so
 Wait a few minutes for CI to finish. Verify the release is up:
 
 ```bash
-gh release view v0.6.0
+gh release view v0.6.1
 ```
 
 Then publish to npm locally:
 
 ```bash
-# Downloads the five archives from the v0.6.0 release + publishes all 6 pkgs
-./scripts/npm-publish.sh 0.6.0
+# Downloads the five archives from the v0.6.1 release + publishes all 6 pkgs
+./scripts/npm-publish.sh 0.6.1
 ```
 
 That's it. The script handles everything else.
@@ -749,8 +749,8 @@ skipped the optional dependency, and installs shell completion.
 ### Useful flags
 
 ```bash
-./scripts/npm-publish.sh 0.6.0 --dry-run       # show what would happen, no network
-./scripts/npm-publish.sh 0.6.0 --skip-download  # binaries already in place
+./scripts/npm-publish.sh 0.6.1 --dry-run       # show what would happen, no network
+./scripts/npm-publish.sh 0.6.1 --skip-download  # binaries already in place
 ```
 
 ### Verifying a publish
@@ -806,7 +806,7 @@ locally. The script has no assumptions about where it runs.
 npm allows unpublishing within 72 hours of release:
 
 ```bash
-npm unpublish @gilbertwong1996/ado@0.6.0
+npm unpublish @gilbertwong1996/ado@0.6.1
 ```
 
 After 72 hours, you'll need to publish a new patch version. Prefer

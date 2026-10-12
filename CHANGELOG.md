@@ -5,6 +5,44 @@ All notable changes to `ado` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.1] - 2026-10-12
+
+### Fixed
+
+- **Every request failed with `invalid peer certificate: UnknownIssuer` behind a
+  TLS-inspecting proxy (Zscaler and the like).** `ureq`'s `rustls` feature verified
+  against `webpki-roots` — Mozilla's root list, compiled into the binary — so the
+  host's own certificate store was never consulted, and a proxy that re-signs the
+  connection with an enterprise root failed the handshake before a request went
+  out. OTP read the system store, which is why the Elixir CLI worked behind one.
+  Both agents — the API client and the login flows' identity requests — now use
+  `RootCerts::PlatformVerifier`: `Security.framework` on macOS, the platform's own
+  certificate API on Windows, and the system CA bundle, `SSL_CERT_FILE` and
+  `SSL_CERT_DIR` included, on Linux and the BSDs. No `D`-label: this restores the
+  frozen CLI's trust model rather than diverging from it.
+
+  `crates/ado-core/tests/tls_enterprise_ca.rs` is the reproduction, `#[ignore]`d
+  like the TLS smoke test because it needs a CA the machine itself trusts. Against
+  a TLS server signed by such a CA the shipped configuration completes the
+  handshake and the same request on a `RootCerts::WebPki` agent fails with exactly
+  the error above. Verified on macOS with the CA trusted in the login keychain,
+  and on Linux under `SSL_CERT_FILE`.
+
+- **`scripts/npm-publish.sh` could not unpack the Windows archive.** It read every
+  release archive with `tar -xf` and then copied the binary from a directory named
+  after the archive. That holds for the four tar archives, but cargo-dist's Windows
+  zip is flat — `ado.exe` sits at its root — so the copy failed:
+
+      cp: .../unpacked-win32-x64/ado-x86_64-pc-windows-msvc/ado.exe: No such file or directory
+
+  The dry run stopped there, before updating versions or packing anything. Zips go
+  through `unzip` now, and the binary is taken from the archive directory when it
+  exists and from the root when it does not. Verified with
+  `./scripts/npm-publish.sh 0.6.0 --dry-run`: exit 0, five archives unpacked, six
+  packages listed, nothing published. v0.6.0's tag and release are unaffected — npm
+  packages are packed from the tree plus the published archives, so the next
+  publish uses this fix.
+
 ## [0.6.0] - 2026-10-03
 
 The Rust rewrite, released as the next minor on the line 0.5.0 ended: `ado` is
