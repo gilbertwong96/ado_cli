@@ -704,7 +704,7 @@ just ci && just npm-test
 # 4. Commit and tag (the maintainer's step)
 git add -u && git commit -m 'chore: bump to 0.6.1'
 git tag -a v0.6.1 -m 'Release 0.6.1'
-git push github main v0.6.1
+git push origin main v0.6.1
 ```
 
 Pushing the tag triggers the dist-generated `release` workflow, which builds the

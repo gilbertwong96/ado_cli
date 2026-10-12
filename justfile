@@ -367,7 +367,7 @@ bump new_version:
     echo "  3. Commit and tag (the maintainer's step):"
     echo "       git add -u && git commit -m 'chore: bump to $NEW'"
     echo "       git tag -a v$NEW -m 'Release $NEW'"
-    echo "       git push github main v$NEW"
+    echo "       git push origin main v$NEW"
     echo "       (the release workflow builds the five dist archives)"
     echo "  4. Publish the npm packages (the maintainer's step):"
     echo "       ./scripts/npm-publish.sh $NEW"
